@@ -1,5 +1,6 @@
 @import "tailwindcss";
 @import "tw-animate-css";
+@import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&family=Inter:wght@300;400;500;600&display=swap');
 
 @custom-variant dark (&:is(.dark *));
 
@@ -43,74 +44,77 @@
 }
 
 :root {
-  --primary: var(--color-blue-700);
-  --primary-foreground: var(--color-blue-50);
-  --sidebar-primary: var(--color-blue-600);
-  --sidebar-primary-foreground: var(--color-blue-50);
-  --chart-1: var(--color-blue-300);
-  --chart-2: var(--color-blue-500);
-  --chart-3: var(--color-blue-600);
-  --chart-4: var(--color-blue-700);
-  --chart-5: var(--color-blue-800);
-  --radius: 0.65rem;
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.235 0.015 65);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.235 0.015 65);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.235 0.015 65);
-  --secondary: oklch(0.98 0.001 286.375);
-  --secondary-foreground: oklch(0.4 0.015 65);
-  --muted: oklch(0.967 0.001 286.375);
-  --muted-foreground: oklch(0.552 0.016 285.938);
-  --accent: oklch(0.967 0.001 286.375);
-  --accent-foreground: oklch(0.141 0.005 285.823);
-  --destructive: oklch(0.577 0.245 27.325);
-  --destructive-foreground: oklch(0.985 0 0);
-  --border: oklch(0.92 0.004 286.32);
-  --input: oklch(0.92 0.004 286.32);
-  --ring: oklch(0.623 0.214 259.815);
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.235 0.015 65);
-  --sidebar-accent: oklch(0.967 0.001 286.375);
-  --sidebar-accent-foreground: oklch(0.141 0.005 285.823);
-  --sidebar-border: oklch(0.92 0.004 286.32);
-  --sidebar-ring: oklch(0.623 0.214 259.815);
+  /* Bike To Go brand golden */
+  --primary: oklch(0.68 0.12 65);
+  --primary-foreground: oklch(0.10 0.005 240);
+  --sidebar-primary: oklch(0.68 0.12 65);
+  --sidebar-primary-foreground: oklch(0.10 0.005 240);
+  --chart-1: oklch(0.68 0.12 65);
+  --chart-2: oklch(0.60 0.15 200);
+  --chart-3: oklch(0.60 0.18 145);
+  --chart-4: oklch(0.65 0.18 50);
+  --chart-5: oklch(0.55 0.15 280);
+  --radius: 0.375rem;
+  /* Light mode (fallback, app runs dark) */
+  --background: oklch(0.12 0.005 240);
+  --foreground: oklch(0.92 0.005 240);
+  --card: oklch(0.16 0.006 240);
+  --card-foreground: oklch(0.92 0.005 240);
+  --popover: oklch(0.16 0.006 240);
+  --popover-foreground: oklch(0.92 0.005 240);
+  --secondary: oklch(0.20 0.006 240);
+  --secondary-foreground: oklch(0.80 0.005 240);
+  --muted: oklch(0.20 0.006 240);
+  --muted-foreground: oklch(0.55 0.005 240);
+  --accent: oklch(0.22 0.008 240);
+  --accent-foreground: oklch(0.92 0.005 240);
+  --destructive: oklch(0.55 0.22 25);
+  --destructive-foreground: oklch(0.98 0 0);
+  --border: oklch(0.25 0.006 240);
+  --input: oklch(0.20 0.006 240);
+  --ring: oklch(0.68 0.12 65);
+  --sidebar: oklch(0.14 0.006 240);
+  --sidebar-foreground: oklch(0.92 0.005 240);
+  --sidebar-accent: oklch(0.22 0.008 240);
+  --sidebar-accent-foreground: oklch(0.92 0.005 240);
+  --sidebar-border: oklch(0.25 0.006 240);
+  --sidebar-ring: oklch(0.68 0.12 65);
 }
 
 .dark {
-  --primary: var(--color-blue-700);
-  --primary-foreground: var(--color-blue-50);
-  --sidebar-primary: var(--color-blue-500);
-  --sidebar-primary-foreground: var(--color-blue-50);
-  --background: oklch(0.141 0.005 285.823);
-  --foreground: oklch(0.85 0.005 65);
-  --card: oklch(0.21 0.006 285.885);
-  --card-foreground: oklch(0.85 0.005 65);
-  --popover: oklch(0.21 0.006 285.885);
-  --popover-foreground: oklch(0.85 0.005 65);
-  --secondary: oklch(0.24 0.006 286.033);
-  --secondary-foreground: oklch(0.7 0.005 65);
-  --muted: oklch(0.274 0.006 286.033);
-  --muted-foreground: oklch(0.705 0.015 286.067);
-  --accent: oklch(0.274 0.006 286.033);
-  --accent-foreground:  oklch(0.92 0.005 65);
-  --destructive: oklch(0.704 0.191 22.216);
-  --destructive-foreground: oklch(0.985 0 0);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.488 0.243 264.376);
-  --chart-1: var(--color-blue-300);
-  --chart-2: var(--color-blue-500);
-  --chart-3: var(--color-blue-600);
-  --chart-4: var(--color-blue-700);
-  --chart-5: var(--color-blue-800);
-  --sidebar: oklch(0.21 0.006 285.885);
-  --sidebar-foreground: oklch(0.85 0.005 65);
-  --sidebar-accent: oklch(0.274 0.006 286.033);
-  --sidebar-accent-foreground:  oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.488 0.243 264.376);
+  /* Same as :root — app is always dark */
+  --primary: oklch(0.68 0.12 65);
+  --primary-foreground: oklch(0.10 0.005 240);
+  --sidebar-primary: oklch(0.68 0.12 65);
+  --sidebar-primary-foreground: oklch(0.10 0.005 240);
+  --background: oklch(0.12 0.005 240);
+  --foreground: oklch(0.92 0.005 240);
+  --card: oklch(0.16 0.006 240);
+  --card-foreground: oklch(0.92 0.005 240);
+  --popover: oklch(0.16 0.006 240);
+  --popover-foreground: oklch(0.92 0.005 240);
+  --secondary: oklch(0.20 0.006 240);
+  --secondary-foreground: oklch(0.80 0.005 240);
+  --muted: oklch(0.20 0.006 240);
+  --muted-foreground: oklch(0.55 0.005 240);
+  --accent: oklch(0.22 0.008 240);
+  --accent-foreground: oklch(0.92 0.005 240);
+  --destructive: oklch(0.55 0.22 25);
+  --destructive-foreground: oklch(0.98 0 0);
+  --border: oklch(0.25 0.006 240);
+  --input: oklch(0.20 0.006 240);
+  --ring: oklch(0.68 0.12 65);
+  --chart-1: oklch(0.68 0.12 65);
+  --chart-2: oklch(0.60 0.15 200);
+  --chart-3: oklch(0.60 0.18 145);
+  --chart-4: oklch(0.65 0.18 50);
+  --chart-5: oklch(0.55 0.15 280);
+  --sidebar: oklch(0.14 0.006 240);
+  --sidebar-foreground: oklch(0.92 0.005 240);
+  --sidebar-accent: oklch(0.22 0.008 240);
+  --sidebar-accent-foreground: oklch(0.92 0.005 240);
+  --sidebar-border: oklch(0.25 0.006 240);
+  --sidebar-ring: oklch(0.68 0.12 65);
 }
 
 @layer base {
@@ -119,7 +123,16 @@
   }
   body {
     @apply bg-background text-foreground;
+    font-family: 'Inter', system-ui, sans-serif;
   }
+  h1, h2, h3, h4, h5, h6 {
+    font-family: 'Montserrat', system-ui, sans-serif;
+    @apply font-semibold;
+  }
+  ::-webkit-scrollbar { width: 5px; height: 5px; }
+  ::-webkit-scrollbar-track { background: oklch(0.14 0.005 240); }
+  ::-webkit-scrollbar-thumb { background: oklch(0.28 0.006 240); border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: oklch(0.68 0.12 65); }
   button:not(:disabled),
   [role="button"]:not([aria-disabled="true"]),
   [type="button"]:not(:disabled),
@@ -169,9 +182,59 @@
 
   @media (min-width: 1024px) {
     .container {
-      padding-left: 2rem; /* 32px - desktop padding */
+      padding-left: 2rem;
       padding-right: 2rem;
-      max-width: 1280px; /* Standard content width */
+      max-width: 1400px;
     }
+  }
+
+  /* ─── Status Badges ─────────────────────────────────────────────────────── */
+  .badge-lead {
+    display: inline-flex; align-items: center;
+    padding: 2px 8px; border-radius: 4px;
+    font-size: 0.7rem; font-weight: 600; letter-spacing: 0.03em;
+    background-color: oklch(0.65 0.18 50 / 0.18);
+    color: oklch(0.82 0.18 50);
+    border: 1px solid oklch(0.65 0.18 50 / 0.35);
+  }
+  .badge-verified {
+    display: inline-flex; align-items: center;
+    padding: 2px 8px; border-radius: 4px;
+    font-size: 0.7rem; font-weight: 600; letter-spacing: 0.03em;
+    background-color: oklch(0.60 0.15 200 / 0.18);
+    color: oklch(0.78 0.15 200);
+    border: 1px solid oklch(0.60 0.15 200 / 0.35);
+  }
+  .badge-blocked {
+    display: inline-flex; align-items: center;
+    padding: 2px 8px; border-radius: 4px;
+    font-size: 0.7rem; font-weight: 600; letter-spacing: 0.03em;
+    background-color: oklch(0.50 0.18 25 / 0.18);
+    color: oklch(0.72 0.18 25);
+    border: 1px solid oklch(0.50 0.18 25 / 0.35);
+  }
+  .badge-available {
+    display: inline-flex; align-items: center;
+    padding: 2px 8px; border-radius: 4px;
+    font-size: 0.7rem; font-weight: 600; letter-spacing: 0.03em;
+    background-color: oklch(0.60 0.18 145 / 0.18);
+    color: oklch(0.78 0.18 145);
+    border: 1px solid oklch(0.60 0.18 145 / 0.35);
+  }
+  .badge-rented {
+    display: inline-flex; align-items: center;
+    padding: 2px 8px; border-radius: 4px;
+    font-size: 0.7rem; font-weight: 600; letter-spacing: 0.03em;
+    background-color: oklch(0.65 0.18 50 / 0.18);
+    color: oklch(0.82 0.18 50);
+    border: 1px solid oklch(0.65 0.18 50 / 0.35);
+  }
+  .badge-maintenance {
+    display: inline-flex; align-items: center;
+    padding: 2px 8px; border-radius: 4px;
+    font-size: 0.7rem; font-weight: 600; letter-spacing: 0.03em;
+    background-color: oklch(0.55 0.15 280 / 0.18);
+    color: oklch(0.78 0.15 280);
+    border: 1px solid oklch(0.55 0.15 280 / 0.35);
   }
 }
