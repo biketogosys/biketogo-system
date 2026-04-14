@@ -59,3 +59,7 @@
 - [x] Módulo de Acessórios (schema, router, página com CRUD)
 - [x] Substituir select de cliente por autocomplete com busca em tempo real no módulo de Aluguéis
 - [x] Rota /acessorios registrada no App.tsx e DashboardLayout
+
+## Correções v1.2
+- [x] Corrigir erro "Too big: limit <=200" nas queries de paginação
+- [x] Adicionar seleção de acessórios no formulário de cadastro de aluguel

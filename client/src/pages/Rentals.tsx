@@ -1,7 +1,7 @@
 import { trpc } from "@/lib/trpc";
 import { useState, useRef, useEffect } from "react";
 import { toast } from "sonner";
-import { Plus, Loader2, Bike, Search, X, ChevronsUpDown, Check } from "lucide-react";
+import { Plus, Loader2, Bike, Search, X, Check, Package } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -35,7 +35,6 @@ function ClientAutocomplete({
 
   const clients = data?.items ?? [];
 
-  // Close on outside click
   useEffect(() => {
     function handleClick(e: MouseEvent) {
       if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
@@ -129,6 +128,8 @@ function ClientAutocomplete({
 // ─── New Rental Dialog ────────────────────────────────────────────────────────
 function NewRentalDialog({ onClose, onSuccess }: { onClose: () => void; onSuccess: () => void }) {
   const { data: bikesData } = trpc.bikes.list.useQuery({ status: "available" });
+  const { data: accessoriesData } = trpc.accessories.list.useQuery({ status: "available" });
+
   const [form, setForm] = useState({
     clientId: "",
     clientName: "",
@@ -141,6 +142,9 @@ function NewRentalDialog({ onClose, onSuccess }: { onClose: () => void; onSucces
     notes: "",
   });
 
+  // Selected accessories: { [accessoryId]: quantity }
+  const [selectedAccessories, setSelectedAccessories] = useState<Record<number, number>>({});
+
   const createMutation = trpc.rentals.create.useMutation({
     onSuccess: () => { toast.success("Aluguel registrado!"); onSuccess(); },
     onError: (e) => toast.error(e.message),
@@ -150,6 +154,21 @@ function NewRentalDialog({ onClose, onSuccess }: { onClose: () => void; onSucces
     e.preventDefault();
     if (!form.clientId) return toast.error("Selecione um cliente.");
     if (!form.bikeId) return toast.error("Selecione uma bicicleta.");
+
+    // Build accessories note
+    const accessoryList = Object.entries(selectedAccessories)
+      .filter(([, qty]) => qty > 0)
+      .map(([id, qty]) => ({ id: parseInt(id), quantity: qty }));
+
+    const accessoryNote = accessoryList.length > 0
+      ? `Acessórios: ${accessoryList.map((a) => {
+          const acc = (accessoriesData ?? []).find((x) => x.id === a.id);
+          return `${acc?.name ?? `#${a.id}`} (x${a.quantity})`;
+        }).join(", ")}`
+      : "";
+
+    const finalNotes = [form.notes, accessoryNote].filter(Boolean).join("\n");
+
     createMutation.mutate({
       clientId: parseInt(form.clientId),
       bikeId: parseInt(form.bikeId),
@@ -158,11 +177,29 @@ function NewRentalDialog({ onClose, onSuccess }: { onClose: () => void; onSucces
       dailyRate: form.dailyRate || undefined,
       totalAmount: form.totalAmount || undefined,
       paymentMethod: (form.paymentMethod || undefined) as any,
-      notes: form.notes || undefined,
+      notes: finalNotes || undefined,
     });
   };
 
+  function toggleAccessory(id: number) {
+    setSelectedAccessories((prev) => {
+      if (prev[id]) {
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      }
+      return { ...prev, [id]: 1 };
+    });
+  }
+
+  function setAccessoryQty(id: number, qty: number) {
+    if (qty < 1) return;
+    setSelectedAccessories((prev) => ({ ...prev, [id]: qty }));
+  }
+
   const bikes = bikesData ?? [];
+  const accessories = accessoriesData ?? [];
+  const selectedCount = Object.keys(selectedAccessories).length;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -204,6 +241,77 @@ function NewRentalDialog({ onClose, onSuccess }: { onClose: () => void; onSucces
                 </option>
               ))}
             </select>
+          </div>
+
+          {/* Accessories */}
+          <div>
+            <Label className="text-xs text-muted-foreground mb-1.5 flex items-center gap-1.5">
+              <Package className="w-3.5 h-3.5" />
+              Acessórios
+              {selectedCount > 0 && (
+                <span className="ml-1 px-1.5 py-0.5 rounded-full bg-[#C8920A]/20 text-[#C8920A] text-[10px] font-semibold">
+                  {selectedCount} selecionado(s)
+                </span>
+              )}
+            </Label>
+            {accessories.length === 0 ? (
+              <p className="text-xs text-muted-foreground bg-secondary rounded-md px-3 py-2">
+                Nenhum acessório disponível no momento
+              </p>
+            ) : (
+              <div className="bg-secondary rounded-md border border-border divide-y divide-border/50 max-h-40 overflow-y-auto">
+                {accessories.map((acc) => {
+                  const isSelected = !!selectedAccessories[acc.id];
+                  return (
+                    <div key={acc.id} className="flex items-center gap-3 px-3 py-2">
+                      <button
+                        type="button"
+                        onClick={() => toggleAccessory(acc.id)}
+                        className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 transition-colors ${
+                          isSelected
+                            ? "bg-[#C8920A] border-[#C8920A]"
+                            : "border-border bg-background hover:border-[#C8920A]/50"
+                        }`}
+                      >
+                        {isSelected && <Check className="w-2.5 h-2.5 text-white" />}
+                      </button>
+                      <div className="flex-1 min-w-0">
+                        <span className="text-sm text-foreground truncate">{acc.name}</span>
+                        {acc.category && (
+                          <span className="text-xs text-muted-foreground ml-1.5">({acc.category})</span>
+                        )}
+                        {acc.dailyRate && (
+                          <span className="text-xs text-[#C8920A] ml-1.5">
+                            R$ {parseFloat(acc.dailyRate).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}/dia
+                          </span>
+                        )}
+                      </div>
+                      {isSelected && (
+                        <div className="flex items-center gap-1 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => setAccessoryQty(acc.id, (selectedAccessories[acc.id] ?? 1) - 1)}
+                            className="w-5 h-5 rounded bg-background border border-border text-xs flex items-center justify-center hover:border-[#C8920A]/50"
+                          >
+                            −
+                          </button>
+                          <span className="text-xs text-foreground w-4 text-center">
+                            {selectedAccessories[acc.id]}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setAccessoryQty(acc.id, (selectedAccessories[acc.id] ?? 1) + 1)}
+                            className="w-5 h-5 rounded bg-background border border-border text-xs flex items-center justify-center hover:border-[#C8920A]/50"
+                          >
+                            +
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
           <div className="grid grid-cols-2 gap-3">
@@ -309,8 +417,7 @@ export default function Rentals() {
     offset: 0,
   });
 
-  // Load all clients once to show names in table
-  const { data: allClients } = trpc.clients.list.useQuery({ limit: 500, offset: 0 });
+  const { data: allClients } = trpc.clients.list.useQuery({ limit: 1000, offset: 0 });
   const { data: allBikes } = trpc.bikes.list.useQuery({});
   const clientMap = Object.fromEntries((allClients?.items ?? []).map((c) => [c.id, c.name]));
   const bikeMap = Object.fromEntries((allBikes ?? []).map((b) => [b.id, `${b.model} #${b.serialNumber}`]));
@@ -334,189 +441,189 @@ export default function Rentals() {
 
   return (
     <div className="p-6 max-w-6xl mx-auto">
-        <div className="flex items-center justify-between mb-6">
-          <div>
-            <h1 className="text-2xl font-bold text-foreground">Aluguéis</h1>
-            <p className="text-sm text-muted-foreground mt-0.5">
-              {data?.total ?? 0} aluguel(s) registrado(s)
-            </p>
-          </div>
-          <Button
-            onClick={() => setShowNew(true)}
-            className="gap-2 bg-[#C8920A] hover:bg-[#A87608] text-white"
-          >
-            <Plus className="w-4 h-4" /> Novo aluguel
-          </Button>
+      <div className="flex items-center justify-between mb-6">
+        <div>
+          <h1 className="text-2xl font-bold text-foreground">Aluguéis</h1>
+          <p className="text-sm text-muted-foreground mt-0.5">
+            {data?.total ?? 0} aluguel(s) registrado(s)
+          </p>
         </div>
+        <Button
+          onClick={() => setShowNew(true)}
+          className="gap-2 bg-[#C8920A] hover:bg-[#A87608] text-white"
+        >
+          <Plus className="w-4 h-4" /> Novo aluguel
+        </Button>
+      </div>
 
-        <div className="flex flex-col sm:flex-row gap-3 mb-6">
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-            <Input
-              placeholder="Buscar por cliente ou bicicleta..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="pl-9 bg-card border-border"
-            />
-          </div>
-          <div className="flex gap-2 flex-wrap">
-            {([undefined, "active", "returned", "overdue", "cancelled"] as (RentalStatus | undefined)[]).map((s) => (
-              <button
-                key={String(s)}
-                onClick={() => setStatusFilter(s)}
-                className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all border ${
-                  statusFilter === s
-                    ? "bg-[#C8920A]/15 border-[#C8920A]/40 text-[#C8920A]"
-                    : "bg-card border-border text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                {s === undefined ? "Todos" : rentalStatusConfig[s].label}
-              </button>
-            ))}
-          </div>
+      <div className="flex flex-col sm:flex-row gap-3 mb-6">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+          <Input
+            placeholder="Buscar por cliente ou bicicleta..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="pl-9 bg-card border-border"
+          />
         </div>
+        <div className="flex gap-2 flex-wrap">
+          {([undefined, "active", "returned", "overdue", "cancelled"] as (RentalStatus | undefined)[]).map((s) => (
+            <button
+              key={String(s)}
+              onClick={() => setStatusFilter(s)}
+              className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all border ${
+                statusFilter === s
+                  ? "bg-[#C8920A]/15 border-[#C8920A]/40 text-[#C8920A]"
+                  : "bg-card border-border text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              {s === undefined ? "Todos" : rentalStatusConfig[s].label}
+            </button>
+          ))}
+        </div>
+      </div>
 
-        {isLoading ? (
-          <div className="flex items-center justify-center h-48">
-            <Loader2 className="w-6 h-6 animate-spin text-[#C8920A]" />
-          </div>
-        ) : rentals.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-48 text-muted-foreground">
-            <Bike className="w-10 h-10 mb-3 opacity-30" />
-            <p className="text-sm">Nenhum aluguel encontrado</p>
-          </div>
-        ) : (
-          <div className="bg-card border border-border rounded-xl overflow-hidden">
-            <table className="w-full hidden md:table">
-              <thead>
-                <tr className="border-b border-border">
-                  {["#", "Cliente", "Bicicleta", "Saída", "Devolução", "Total", "Pagamento", "Status", ""].map((h) => (
-                    <th
-                      key={h}
-                      className="text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider px-4 py-3"
-                    >
-                      {h}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {rentals.map((rental, idx) => (
-                  <tr
-                    key={rental.id}
-                    className={`border-b border-border/50 hover:bg-accent/30 transition-colors ${
-                      idx === rentals.length - 1 ? "border-b-0" : ""
-                    }`}
+      {isLoading ? (
+        <div className="flex items-center justify-center h-48">
+          <Loader2 className="w-6 h-6 animate-spin text-[#C8920A]" />
+        </div>
+      ) : rentals.length === 0 ? (
+        <div className="flex flex-col items-center justify-center h-48 text-muted-foreground">
+          <Bike className="w-10 h-10 mb-3 opacity-30" />
+          <p className="text-sm">Nenhum aluguel encontrado</p>
+        </div>
+      ) : (
+        <div className="bg-card border border-border rounded-xl overflow-hidden">
+          <table className="w-full hidden md:table">
+            <thead>
+              <tr className="border-b border-border">
+                {["#", "Cliente", "Bicicleta", "Saída", "Devolução", "Total", "Pagamento", "Status", ""].map((h) => (
+                  <th
+                    key={h}
+                    className="text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider px-4 py-3"
                   >
-                    <td className="px-4 py-3 text-xs text-muted-foreground font-mono">#{rental.id}</td>
-                    <td className="px-4 py-3 text-sm text-foreground font-medium">
-                      {clientMap[rental.clientId] ?? `Cliente #${rental.clientId}`}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-foreground">
-                      {bikeMap[rental.bikeId] ?? `Bike #${rental.bikeId}`}
-                    </td>
-                    <td className="px-4 py-3 text-xs text-muted-foreground">
-                      {new Date(rental.startDate).toLocaleDateString("pt-BR")}
-                    </td>
-                    <td className="px-4 py-3 text-xs text-muted-foreground">
-                      {rental.returnedAt
-                        ? new Date(rental.returnedAt).toLocaleDateString("pt-BR")
-                        : rental.endDate
-                        ? new Date(rental.endDate).toLocaleDateString("pt-BR")
-                        : "—"}
-                    </td>
-                    <td className="px-4 py-3 text-xs text-foreground">
-                      {rental.totalAmount
-                        ? `R$ ${parseFloat(rental.totalAmount).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`
-                        : "—"}
-                    </td>
-                    <td className="px-4 py-3 text-xs text-muted-foreground capitalize">
-                      {rental.paymentMethod
-                        ? { pix: "PIX", credit_card: "Crédito", debit_card: "Débito", cash: "Dinheiro", other: "Outro" }[rental.paymentMethod] ?? rental.paymentMethod
-                        : "—"}
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className={rentalStatusConfig[rental.status as RentalStatus]?.cls ?? "badge-lead"}>
-                        {rentalStatusConfig[rental.status as RentalStatus]?.label ?? rental.status}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3">
-                      {rental.status === "active" && (
-                        <button
-                          onClick={() =>
-                            returnMutation.mutate({
-                              id: rental.id,
-                              returnedAt: new Date(),
-                              status: "returned",
-                            })
-                          }
-                          className="text-xs text-[#C8920A] hover:underline"
-                        >
-                          Devolver
-                        </button>
-                      )}
-                    </td>
-                  </tr>
+                    {h}
+                  </th>
                 ))}
-              </tbody>
-            </table>
-
-            {/* Mobile */}
-            <div className="md:hidden divide-y divide-border">
-              {rentals.map((rental) => (
-                <div key={rental.id} className="p-4">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-sm font-medium text-foreground">
-                      {clientMap[rental.clientId] ?? `Cliente #${rental.clientId}`}
-                    </span>
+              </tr>
+            </thead>
+            <tbody>
+              {rentals.map((rental, idx) => (
+                <tr
+                  key={rental.id}
+                  className={`border-b border-border/50 hover:bg-accent/30 transition-colors ${
+                    idx === rentals.length - 1 ? "border-b-0" : ""
+                  }`}
+                >
+                  <td className="px-4 py-3 text-xs text-muted-foreground font-mono">#{rental.id}</td>
+                  <td className="px-4 py-3 text-sm text-foreground font-medium">
+                    {clientMap[rental.clientId] ?? `Cliente #${rental.clientId}`}
+                  </td>
+                  <td className="px-4 py-3 text-sm text-foreground">
+                    {bikeMap[rental.bikeId] ?? `Bike #${rental.bikeId}`}
+                  </td>
+                  <td className="px-4 py-3 text-xs text-muted-foreground">
+                    {new Date(rental.startDate).toLocaleDateString("pt-BR")}
+                  </td>
+                  <td className="px-4 py-3 text-xs text-muted-foreground">
+                    {rental.returnedAt
+                      ? new Date(rental.returnedAt).toLocaleDateString("pt-BR")
+                      : rental.endDate
+                      ? new Date(rental.endDate).toLocaleDateString("pt-BR")
+                      : "—"}
+                  </td>
+                  <td className="px-4 py-3 text-xs text-foreground">
+                    {rental.totalAmount
+                      ? `R$ ${parseFloat(rental.totalAmount).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`
+                      : "—"}
+                  </td>
+                  <td className="px-4 py-3 text-xs text-muted-foreground capitalize">
+                    {rental.paymentMethod
+                      ? { pix: "PIX", credit_card: "Crédito", debit_card: "Débito", cash: "Dinheiro", other: "Outro" }[rental.paymentMethod] ?? rental.paymentMethod
+                      : "—"}
+                  </td>
+                  <td className="px-4 py-3">
                     <span className={rentalStatusConfig[rental.status as RentalStatus]?.cls ?? "badge-lead"}>
                       {rentalStatusConfig[rental.status as RentalStatus]?.label ?? rental.status}
                     </span>
-                  </div>
-                  <p className="text-xs text-muted-foreground">
-                    {bikeMap[rental.bikeId] ?? `Bike #${rental.bikeId}`}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    Saída: {new Date(rental.startDate).toLocaleDateString("pt-BR")}
-                  </p>
-                  {rental.totalAmount && (
-                    <p className="text-xs text-foreground mt-1">
-                      R${" "}
-                      {parseFloat(rental.totalAmount).toLocaleString("pt-BR", {
-                        minimumFractionDigits: 2,
-                      })}
-                    </p>
-                  )}
-                  {rental.status === "active" && (
-                    <button
-                      onClick={() =>
-                        returnMutation.mutate({
-                          id: rental.id,
-                          returnedAt: new Date(),
-                          status: "returned",
-                        })
-                      }
-                      className="mt-2 text-xs text-[#C8920A] hover:underline"
-                    >
-                      Registrar devolução
-                    </button>
-                  )}
-                </div>
+                  </td>
+                  <td className="px-4 py-3">
+                    {rental.status === "active" && (
+                      <button
+                        onClick={() =>
+                          returnMutation.mutate({
+                            id: rental.id,
+                            returnedAt: new Date(),
+                            status: "returned",
+                          })
+                        }
+                        className="text-xs text-[#C8920A] hover:underline"
+                      >
+                        Devolver
+                      </button>
+                    )}
+                  </td>
+                </tr>
               ))}
-            </div>
-          </div>
-        )}
+            </tbody>
+          </table>
 
-        {showNew && (
-          <NewRentalDialog
-            onClose={() => setShowNew(false)}
-            onSuccess={() => {
-              setShowNew(false);
-              utils.rentals.list.invalidate();
-              utils.bikes.list.invalidate();
-            }}
-          />
-        )}
+          {/* Mobile */}
+          <div className="md:hidden divide-y divide-border">
+            {rentals.map((rental) => (
+              <div key={rental.id} className="p-4">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-sm font-medium text-foreground">
+                    {clientMap[rental.clientId] ?? `Cliente #${rental.clientId}`}
+                  </span>
+                  <span className={rentalStatusConfig[rental.status as RentalStatus]?.cls ?? "badge-lead"}>
+                    {rentalStatusConfig[rental.status as RentalStatus]?.label ?? rental.status}
+                  </span>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {bikeMap[rental.bikeId] ?? `Bike #${rental.bikeId}`}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Saída: {new Date(rental.startDate).toLocaleDateString("pt-BR")}
+                </p>
+                {rental.totalAmount && (
+                  <p className="text-xs text-foreground mt-1">
+                    R${" "}
+                    {parseFloat(rental.totalAmount).toLocaleString("pt-BR", {
+                      minimumFractionDigits: 2,
+                    })}
+                  </p>
+                )}
+                {rental.status === "active" && (
+                  <button
+                    onClick={() =>
+                      returnMutation.mutate({
+                        id: rental.id,
+                        returnedAt: new Date(),
+                        status: "returned",
+                      })
+                    }
+                    className="mt-2 text-xs text-[#C8920A] hover:underline"
+                  >
+                    Registrar devolução
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {showNew && (
+        <NewRentalDialog
+          onClose={() => setShowNew(false)}
+          onSuccess={() => {
+            setShowNew(false);
+            utils.rentals.list.invalidate();
+            utils.bikes.list.invalidate();
+          }}
+        />
+      )}
     </div>
   );
 }

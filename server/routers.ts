@@ -47,7 +47,7 @@ const clientsRouter = router({
       z.object({
         search: z.string().optional(),
         status: z.enum(["lead", "verified", "blocked"]).optional(),
-        limit: z.number().min(1).max(200).default(50),
+        limit: z.number().min(1).max(1000).default(50),
         offset: z.number().min(0).default(0),
       })
     )
@@ -235,7 +235,7 @@ const rentalsRouter = router({
         clientId: z.number().optional(),
         bikeId: z.number().optional(),
         status: z.enum(["active", "returned", "overdue", "cancelled"]).optional(),
-        limit: z.number().min(1).max(200).default(50),
+        limit: z.number().min(1).max(1000).default(50),
         offset: z.number().min(0).default(0),
       })
     )
