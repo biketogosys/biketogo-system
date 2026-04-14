@@ -10,6 +10,7 @@ import Clients from "./pages/Clients";
 import ClientProfile from "./pages/ClientProfile";
 import Bikes from "./pages/Bikes";
 import Rentals from "./pages/Rentals";
+import Accessories from "./pages/Accessories";
 import { useAuth } from "./_core/hooks/useAuth";
 import { Loader2 } from "lucide-react";
 import DashboardLayout from "./components/DashboardLayout";
@@ -44,6 +45,7 @@ function Router() {
       <Route path="/clientes/:id" component={() => <ProtectedRoute component={ClientProfile} />} />
       <Route path="/bicicletas" component={() => <ProtectedRoute component={Bikes} />} />
       <Route path="/alugueis" component={() => <ProtectedRoute component={Rentals} />} />
+      <Route path="/acessorios" component={() => <ProtectedRoute component={Accessories} />} />
       <Route path="/login" component={Login} />
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />

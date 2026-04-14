@@ -2,11 +2,15 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import {
   addClientDocument,
+  createAccessory,
   createBike,
   createClient,
   createRental,
+  deleteAccessory,
   deleteBike,
   deleteClientDocument,
+  getAccessories,
+  getAccessoryById,
   getBikeById,
   getBikes,
   getBikeStats,
@@ -17,6 +21,7 @@ import {
   getRentalById,
   getRentals,
   getRentalStats,
+  updateAccessory,
   updateBike,
   updateClient,
   updateRental,
@@ -303,6 +308,74 @@ const rentalsRouter = router({
   stats: protectedProcedure.query(() => getRentalStats()),
 });
 
+// ─── Accessories router ─────────────────────────────────────────────────────────────
+const accessoriesRouter = router({
+  list: protectedProcedure
+    .input(
+      z.object({
+        status: z.enum(["available", "rented", "maintenance", "lost"]).optional(),
+        search: z.string().optional(),
+        category: z.string().optional(),
+      })
+    )
+    .query(({ input }) => getAccessories(input)),
+
+  byId: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .query(async ({ input }) => {
+      const item = await getAccessoryById(input.id);
+      if (!item) throw new TRPCError({ code: "NOT_FOUND", message: "Acessório não encontrado." });
+      return item;
+    }),
+
+  create: adminProcedure
+    .input(
+      z.object({
+        name: z.string().min(1),
+        description: z.string().optional(),
+        category: z.string().optional(),
+        serialNumber: z.string().optional(),
+        quantity: z.number().min(1).default(1),
+        dailyRate: z.string().optional(),
+        purchasePrice: z.string().optional(),
+        status: z.enum(["available", "rented", "maintenance", "lost"]).default("available"),
+        notes: z.string().optional(),
+      })
+    )
+    .mutation(async ({ input }) => {
+      const id = await createAccessory(input as any);
+      return { id };
+    }),
+
+  update: adminProcedure
+    .input(
+      z.object({
+        id: z.number(),
+        name: z.string().optional(),
+        description: z.string().optional(),
+        category: z.string().optional(),
+        serialNumber: z.string().optional(),
+        quantity: z.number().optional(),
+        dailyRate: z.string().optional(),
+        purchasePrice: z.string().optional(),
+        status: z.enum(["available", "rented", "maintenance", "lost"]).optional(),
+        notes: z.string().optional(),
+      })
+    )
+    .mutation(async ({ input }) => {
+      const { id, ...data } = input;
+      await updateAccessory(id, data as any);
+      return { success: true };
+    }),
+
+  delete: adminProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input }) => {
+      await deleteAccessory(input.id);
+      return { success: true };
+    }),
+});
+
 // ─── App router ───────────────────────────────────────────────────────────────
 export const appRouter = router({
   system: systemRouter,
@@ -319,6 +392,7 @@ export const appRouter = router({
   clients: clientsRouter,
   bikes: bikesRouter,
   rentals: rentalsRouter,
+  accessories: accessoriesRouter,
 
   dashboard: router({
     summary: protectedProcedure.query(async () => {

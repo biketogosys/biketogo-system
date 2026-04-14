@@ -127,3 +127,22 @@ export const rentals = mysqlTable("rentals", {
 
 export type Rental = typeof rentals.$inferSelect;
 export type InsertRental = typeof rentals.$inferInsert;
+
+// ─── Accessories ─────────────────────────────────────────────────────────────
+export const accessories = mysqlTable("accessories", {
+  id: int("id").autoincrement().primaryKey(),
+  name: varchar("name", { length: 255 }).notNull(),
+  description: text("description"),
+  category: varchar("category", { length: 100 }),
+  serialNumber: varchar("serialNumber", { length: 100 }),
+  quantity: int("quantity").default(1).notNull(),
+  dailyRate: decimal("dailyRate", { precision: 10, scale: 2 }),
+  purchasePrice: decimal("purchasePrice", { precision: 10, scale: 2 }),
+  status: mysqlEnum("status", ["available", "rented", "maintenance", "lost"]).default("available").notNull(),
+  notes: text("notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type Accessory = typeof accessories.$inferSelect;
+export type InsertAccessory = typeof accessories.$inferInsert;

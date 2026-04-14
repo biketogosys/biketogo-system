@@ -15,6 +15,13 @@
       "when": 1775933407446,
       "tag": "0001_dark_wendell_vaughn",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1776196064480,
+      "tag": "0002_outgoing_fabian_cortez",
+      "breakpoints": true
     }
   ]
 }

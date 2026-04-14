@@ -52,4 +52,10 @@
 
 ## Testes & Entrega
 - [x] Testes Vitest para routers principais (15 testes passando)
-- [ ] Checkpoint e publicação
+- [x] Checkpoint e publicação
+
+## Melhorias v1.1
+- [x] Upload e exibição da logo Bike To Go na sidebar
+- [x] Módulo de Acessórios (schema, router, página com CRUD)
+- [x] Substituir select de cliente por autocomplete com busca em tempo real no módulo de Aluguéis
+- [x] Rota /acessorios registrada no App.tsx e DashboardLayout

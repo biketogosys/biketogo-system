@@ -21,7 +21,7 @@ import {
 } from "@/components/ui/sidebar";
 import { getLoginUrl } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
-import { LayoutDashboard, LogOut, PanelLeft, Users, Bike, ClipboardList } from "lucide-react";
+import { LayoutDashboard, LogOut, PanelLeft, Users, Bike, ClipboardList, Package } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
@@ -32,7 +32,10 @@ const menuItems = [
   { icon: Users, label: "Clientes", path: "/clientes" },
   { icon: Bike, label: "Bicicletas", path: "/bicicletas" },
   { icon: ClipboardList, label: "Aluguéis", path: "/alugueis" },
+  { icon: Package, label: "Acessórios", path: "/acessorios" },
 ];
+
+const LOGO_URL = "https://d2xsxph8kpxj0f.cloudfront.net/310419663031602743/9oQjN6PX9fNMedgfErUfQE/biketogo-logo_71a6645b.png";
 
 const SIDEBAR_WIDTH_KEY = "sidebar-width";
 const DEFAULT_WIDTH = 280;
@@ -172,14 +175,20 @@ function DashboardLayoutContent({
               </button>
               {!isCollapsed ? (
                 <div className="flex items-center gap-2 min-w-0">
-                  <div className="flex flex-col min-w-0">
-                    <span className="font-bold tracking-tight truncate text-sm" style={{ color: "oklch(0.68 0.12 65)", fontFamily: "'Montserrat', sans-serif" }}>
-                      Bike To Go
-                    </span>
-                    <span className="text-xs text-muted-foreground truncate">Floripa</span>
-                  </div>
+                  <img
+                    src={LOGO_URL}
+                    alt="Bike To Go"
+                    className="h-10 w-auto object-contain shrink-0"
+                    style={{ maxWidth: "140px" }}
+                  />
                 </div>
-              ) : null}
+              ) : (
+                <img
+                  src={LOGO_URL}
+                  alt="Bike To Go"
+                  className="h-7 w-7 object-contain rounded-md"
+                />
+              )}
             </div>
           </SidebarHeader>
 

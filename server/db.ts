@@ -1,15 +1,18 @@
 import { and, desc, eq, like, or, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import {
+  Accessory,
   Bike,
   Client,
   ClientDocument,
+  InsertAccessory,
   InsertBike,
   InsertClient,
   InsertClientDocument,
   InsertRental,
   InsertUser,
   Rental,
+  accessories,
   bikes,
   clientDocuments,
   clients,
@@ -277,6 +280,53 @@ export async function updateRental(id: number, data: Partial<InsertRental>) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   await db.update(rentals).set(data).where(eq(rentals.id, id));
+}
+
+// ─── Accessories ─────────────────────────────────────────────────────────────
+export async function getAccessories(opts?: {
+  status?: Accessory["status"];
+  search?: string;
+  category?: string;
+}) {
+  const db = await getDb();
+  if (!db) return [];
+
+  const conditions = [];
+  if (opts?.status) conditions.push(eq(accessories.status, opts.status));
+  if (opts?.category) conditions.push(eq(accessories.category, opts.category));
+  if (opts?.search) {
+    const q = `%${opts.search}%`;
+    conditions.push(or(like(accessories.name, q), like(accessories.serialNumber, q)));
+  }
+
+  const where = conditions.length > 0 ? and(...conditions) : undefined;
+  return db.select().from(accessories).where(where).orderBy(desc(accessories.createdAt));
+}
+
+export async function getAccessoryById(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(accessories).where(eq(accessories.id, id)).limit(1);
+  return result[0];
+}
+
+export async function createAccessory(data: InsertAccessory): Promise<number> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(accessories).values(data);
+  return (result[0] as any).insertId as number;
+}
+
+export async function updateAccessory(id: number, data: Partial<InsertAccessory>) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(accessories).set(data).where(eq(accessories.id, id));
+}
+
+export async function deleteAccessory(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.delete(accessories).where(eq(accessories.id, id));
 }
 
 export async function getRentalStats() {
