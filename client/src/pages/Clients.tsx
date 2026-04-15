@@ -1,7 +1,8 @@
 import { trpc } from "@/lib/trpc";
 import { useState } from "react";
 import { Link } from "wouter";
-import { Search, Plus, Loader2, User, MapPin, Calendar, ChevronRight } from "lucide-react";
+import { Search, Plus, Loader2, User, MapPin, Calendar, ChevronRight, Trash2 } from "lucide-react";
+import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import NewClientDialog from "@/components/NewClientDialog";
@@ -29,6 +30,11 @@ export default function Clients() {
     status,
     limit: 100,
     offset: 0,
+  });
+
+  const deleteMutation = trpc.clients.delete.useMutation({
+    onSuccess: () => { toast.success("Cliente removido."); utils.clients.list.invalidate(); },
+    onError: (e) => toast.error(e.message),
   });
 
   const clients = data?.items ?? [];
@@ -171,11 +177,19 @@ export default function Clients() {
                     </div>
                   </td>
                   <td className="px-4 py-3">
-                    <Link href={`/clientes/${client.id}`}>
-                      <button className="flex items-center gap-1 text-xs text-primary hover:underline">
-                        Ver <ChevronRight className="w-3 h-3" />
+                    <div className="flex items-center gap-2">
+                      <Link href={`/clientes/${client.id}`}>
+                        <button className="flex items-center gap-1 text-xs text-primary hover:underline">
+                          Ver <ChevronRight className="w-3 h-3" />
+                        </button>
+                      </Link>
+                      <button
+                        onClick={() => { if (confirm(`Remover ${client.name}?`)) deleteMutation.mutate({ id: client.id }); }}
+                        className="text-muted-foreground hover:text-destructive"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
                       </button>
-                    </Link>
+                    </div>
                   </td>
                 </tr>
               ))}

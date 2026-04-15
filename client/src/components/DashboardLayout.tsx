@@ -19,9 +19,8 @@ import {
   SidebarTrigger,
   useSidebar,
 } from "@/components/ui/sidebar";
-import { getLoginUrl } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
-import { LayoutDashboard, LogOut, PanelLeft, Users, Bike, ClipboardList, Package } from "lucide-react";
+import { LayoutDashboard, LogOut, PanelLeft, Users, Bike, ClipboardList, Package, DollarSign, Settings, UserCog } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
@@ -33,6 +32,9 @@ const menuItems = [
   { icon: Bike, label: "Bicicletas", path: "/bicicletas" },
   { icon: ClipboardList, label: "Aluguéis", path: "/alugueis" },
   { icon: Package, label: "Acessórios", path: "/acessorios" },
+  { icon: DollarSign, label: "Financeiro", path: "/financeiro" },
+  { icon: UserCog, label: "Usuários", path: "/usuarios" },
+  { icon: Settings, label: "Configurações", path: "/configuracoes" },
 ];
 
 const LOGO_URL = "https://d2xsxph8kpxj0f.cloudfront.net/310419663031602743/9oQjN6PX9fNMedgfErUfQE/biketogo-logo_71a6645b.png";
@@ -67,20 +69,20 @@ export default function DashboardLayout({
         <div className="flex flex-col items-center gap-8 p-8 max-w-md w-full">
           <div className="flex flex-col items-center gap-6">
             <h1 className="text-2xl font-semibold tracking-tight text-center">
-              Sign in to continue
+              Acesso restrito
             </h1>
             <p className="text-sm text-muted-foreground text-center max-w-sm">
-              Access to this dashboard requires authentication. Continue to launch the login flow.
+              Faça login para acessar o painel de gestão.
             </p>
           </div>
           <Button
             onClick={() => {
-              window.location.href = getLoginUrl();
+              window.location.href = "/login";
             }}
             size="lg"
             className="w-full shadow-lg hover:shadow-xl transition-all"
           >
-            Sign in
+            Fazer login
           </Button>
         </div>
       </div>

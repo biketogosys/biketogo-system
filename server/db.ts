@@ -1,22 +1,46 @@
-import { and, desc, eq, like, or, sql } from "drizzle-orm";
+import { and, between, desc, eq, gte, like, lte, or, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import {
   Accessory,
+  AdminUser,
   Bike,
+  BikeDiscountRule,
   Client,
   ClientDocument,
+  Expense,
+  ExpenseCategory,
   InsertAccessory,
+  InsertAdminUser,
   InsertBike,
+  InsertBikeDiscountRule,
   InsertClient,
   InsertClientDocument,
+  InsertExpense,
+  InsertExpenseCategory,
   InsertRental,
+  InsertRentalAccessory,
+  InsertRevenue,
+  InsertRevenueCategory,
+  InsertSystemSetting,
   InsertUser,
   Rental,
+  RentalAccessory,
+  Revenue,
+  RevenueCategory,
+  SystemSetting,
   accessories,
+  adminUsers,
+  bikeDiscountRules,
   bikes,
   clientDocuments,
   clients,
+  expenseCategories,
+  expenses,
+  rentalAccessories,
   rentals,
+  revenueCategories,
+  revenues,
+  systemSettings,
   users,
 } from "../drizzle/schema";
 import { ENV } from "./_core/env";
@@ -35,7 +59,7 @@ export async function getDb() {
   return _db;
 }
 
-// ─── Users ────────────────────────────────────────────────────────────────────
+// ─── Users (Manus auth — backward compat) ───────────────────────────────────
 export async function upsertUser(user: InsertUser): Promise<void> {
   if (!user.openId) throw new Error("User openId is required for upsert");
   const db = await getDb();
@@ -78,7 +102,62 @@ export async function getUserByOpenId(openId: string) {
   return result[0];
 }
 
-// ─── Clients ──────────────────────────────────────────────────────────────────
+// ─── Admin Users (email + senha) ─────────────────────────────────────────────
+export async function getAdminUserByEmail(email: string) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(adminUsers).where(eq(adminUsers.email, email.toLowerCase())).limit(1);
+  return result[0];
+}
+
+export async function getAdminUserById(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(adminUsers).where(eq(adminUsers.id, id)).limit(1);
+  return result[0];
+}
+
+export async function getAllAdminUsers() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select({
+    id: adminUsers.id,
+    name: adminUsers.name,
+    email: adminUsers.email,
+    role: adminUsers.role,
+    active: adminUsers.active,
+    lastLoginAt: adminUsers.lastLoginAt,
+    createdAt: adminUsers.createdAt,
+  }).from(adminUsers).orderBy(desc(adminUsers.createdAt));
+}
+
+export async function createAdminUser(data: InsertAdminUser): Promise<number> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(adminUsers).values({ ...data, email: data.email.toLowerCase() });
+  return (result[0] as any).insertId as number;
+}
+
+export async function updateAdminUser(id: number, data: Partial<InsertAdminUser>) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  if (data.email) data.email = data.email.toLowerCase();
+  await db.update(adminUsers).set(data).where(eq(adminUsers.id, id));
+}
+
+export async function deleteAdminUser(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.delete(adminUsers).where(eq(adminUsers.id, id));
+}
+
+export async function updateAdminUserLastLogin(id: number) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(adminUsers).set({ lastLoginAt: new Date() }).where(eq(adminUsers.id, id));
+}
+
+// ─── Clients ─────────────────────────────────────────────────────────────────
 export async function getClients(opts?: {
   search?: string;
   status?: "lead" | "verified" | "blocked";
@@ -129,15 +208,20 @@ export async function updateClient(id: number, data: Partial<InsertClient>) {
   await db.update(clients).set(data).where(eq(clients.id, id));
 }
 
+export async function deleteClient(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  // Delete related documents first
+  await db.delete(clientDocuments).where(eq(clientDocuments.clientId, id));
+  await db.delete(clients).where(eq(clients.id, id));
+}
+
 export async function getClientStats() {
   const db = await getDb();
   if (!db) return { total: 0, leads: 0, verified: 0, blocked: 0 };
 
   const result = await db
-    .select({
-      status: clients.status,
-      count: sql<number>`count(*)`,
-    })
+    .select({ status: clients.status, count: sql<number>`count(*)` })
     .from(clients)
     .groupBy(clients.status);
 
@@ -152,7 +236,7 @@ export async function getClientStats() {
   return stats;
 }
 
-// ─── Client Documents ─────────────────────────────────────────────────────────
+// ─── Client Documents ────────────────────────────────────────────────────────
 export async function getClientDocuments(clientId: number) {
   const db = await getDb();
   if (!db) return [];
@@ -172,16 +256,17 @@ export async function deleteClientDocument(id: number) {
   await db.delete(clientDocuments).where(eq(clientDocuments.id, id));
 }
 
-// ─── Bikes ────────────────────────────────────────────────────────────────────
-export async function getBikes(opts?: { status?: Bike["status"]; search?: string }) {
+// ─── Bikes ───────────────────────────────────────────────────────────────────
+export async function getBikes(opts?: { status?: Bike["status"]; search?: string; category?: string }) {
   const db = await getDb();
   if (!db) return [];
 
   const conditions = [];
   if (opts?.status) conditions.push(eq(bikes.status, opts.status));
+  if (opts?.category) conditions.push(eq(bikes.category, opts.category as any));
   if (opts?.search) {
     const q = `%${opts.search}%`;
-    conditions.push(or(like(bikes.model, q), like(bikes.serialNumber, q)));
+    conditions.push(or(like(bikes.model, q), like(bikes.serialNumber, q), like(bikes.brand, q)));
   }
 
   const where = conditions.length > 0 ? and(...conditions) : undefined;
@@ -211,6 +296,8 @@ export async function updateBike(id: number, data: Partial<InsertBike>) {
 export async function deleteBike(id: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
+  // Delete related discount rules first
+  await db.delete(bikeDiscountRules).where(eq(bikeDiscountRules.bikeId, id));
   await db.delete(bikes).where(eq(bikes.id, id));
 }
 
@@ -232,6 +319,32 @@ export async function getBikeStats() {
     if (row.status === "maintenance") stats.maintenance = count;
   }
   return stats;
+}
+
+// ─── Bike Discount Rules ─────────────────────────────────────────────────────
+export async function getBikeDiscountRules(bikeId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(bikeDiscountRules).where(eq(bikeDiscountRules.bikeId, bikeId)).orderBy(bikeDiscountRules.minDays);
+}
+
+export async function createBikeDiscountRule(data: InsertBikeDiscountRule): Promise<number> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(bikeDiscountRules).values(data);
+  return (result[0] as any).insertId as number;
+}
+
+export async function deleteBikeDiscountRule(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.delete(bikeDiscountRules).where(eq(bikeDiscountRules.id, id));
+}
+
+export async function deleteAllBikeDiscountRules(bikeId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.delete(bikeDiscountRules).where(eq(bikeDiscountRules.bikeId, bikeId));
 }
 
 // ─── Rentals ─────────────────────────────────────────────────────────────────
@@ -282,6 +395,55 @@ export async function updateRental(id: number, data: Partial<InsertRental>) {
   await db.update(rentals).set(data).where(eq(rentals.id, id));
 }
 
+export async function deleteRental(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  // Delete related rental accessories first
+  await db.delete(rentalAccessories).where(eq(rentalAccessories.rentalId, id));
+  await db.delete(rentals).where(eq(rentals.id, id));
+}
+
+// Check bike availability for a date range
+export async function checkBikeAvailability(bikeId: number, startDate: string, endDate: string, excludeRentalId?: number) {
+  const db = await getDb();
+  if (!db) return false;
+
+  const conditions = [
+    eq(rentals.bikeId, bikeId),
+    eq(rentals.status, "active"),
+    // Overlapping dates
+    lte(rentals.startDate, new Date(endDate)),
+    gte(rentals.endDate, new Date(startDate)),
+  ];
+
+  if (excludeRentalId) {
+    conditions.push(sql`${rentals.id} != ${excludeRentalId}`);
+  }
+
+  const result = await db.select({ count: sql<number>`count(*)` }).from(rentals).where(and(...conditions));
+  return Number(result[0]?.count ?? 0) === 0;
+}
+
+// ─── Rental Accessories ──────────────────────────────────────────────────────
+export async function getRentalAccessories(rentalId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(rentalAccessories).where(eq(rentalAccessories.rentalId, rentalId));
+}
+
+export async function createRentalAccessory(data: InsertRentalAccessory): Promise<number> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(rentalAccessories).values(data);
+  return (result[0] as any).insertId as number;
+}
+
+export async function deleteRentalAccessories(rentalId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.delete(rentalAccessories).where(eq(rentalAccessories.rentalId, rentalId));
+}
+
 // ─── Accessories ─────────────────────────────────────────────────────────────
 export async function getAccessories(opts?: {
   status?: Accessory["status"];
@@ -329,6 +491,174 @@ export async function deleteAccessory(id: number) {
   await db.delete(accessories).where(eq(accessories.id, id));
 }
 
+// ─── Expense Categories ──────────────────────────────────────────────────────
+export async function getExpenseCategories() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(expenseCategories).orderBy(expenseCategories.name);
+}
+
+export async function createExpenseCategory(data: InsertExpenseCategory): Promise<number> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(expenseCategories).values(data);
+  return (result[0] as any).insertId as number;
+}
+
+export async function deleteExpenseCategory(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.delete(expenses).where(eq(expenses.categoryId, id));
+  await db.delete(expenseCategories).where(eq(expenseCategories.id, id));
+}
+
+export async function updateExpenseCategory(id: number, data: Partial<InsertExpenseCategory>) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(expenseCategories).set(data).where(eq(expenseCategories.id, id));
+}
+
+// ─── Revenue Categories ──────────────────────────────────────────────────────
+export async function getRevenueCategories() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(revenueCategories).orderBy(revenueCategories.name);
+}
+
+export async function createRevenueCategory(data: InsertRevenueCategory): Promise<number> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(revenueCategories).values(data);
+  return (result[0] as any).insertId as number;
+}
+
+export async function deleteRevenueCategory(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.delete(revenues).where(eq(revenues.categoryId, id));
+  await db.delete(revenueCategories).where(eq(revenueCategories.id, id));
+}
+
+export async function updateRevenueCategory(id: number, data: Partial<InsertRevenueCategory>) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(revenueCategories).set(data).where(eq(revenueCategories.id, id));
+}
+
+// ─── Expenses ────────────────────────────────────────────────────────────────
+export async function getExpenses(opts?: { categoryId?: number; startDate?: string; endDate?: string; limit?: number; offset?: number }) {
+  const db = await getDb();
+  if (!db) return { items: [], total: 0 };
+
+  const conditions = [];
+  if (opts?.categoryId) conditions.push(eq(expenses.categoryId, opts.categoryId));
+  if (opts?.startDate) conditions.push(gte(expenses.date, new Date(opts.startDate)));
+  if (opts?.endDate) conditions.push(lte(expenses.date, new Date(opts.endDate)));
+
+  const where = conditions.length > 0 ? and(...conditions) : undefined;
+  const limit = opts?.limit ?? 50;
+  const offset = opts?.offset ?? 0;
+
+  const [items, countResult] = await Promise.all([
+    db.select().from(expenses).where(where).orderBy(desc(expenses.date)).limit(limit).offset(offset),
+    db.select({ count: sql<number>`count(*)` }).from(expenses).where(where),
+  ]);
+
+  return { items, total: Number(countResult[0]?.count ?? 0) };
+}
+
+export async function createExpense(data: InsertExpense): Promise<number> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(expenses).values(data);
+  return (result[0] as any).insertId as number;
+}
+
+export async function updateExpense(id: number, data: Partial<InsertExpense>) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(expenses).set(data).where(eq(expenses.id, id));
+}
+
+export async function deleteExpense(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.delete(expenses).where(eq(expenses.id, id));
+}
+
+// ─── Revenues ────────────────────────────────────────────────────────────────
+export async function getRevenues(opts?: { categoryId?: number; startDate?: string; endDate?: string; limit?: number; offset?: number }) {
+  const db = await getDb();
+  if (!db) return { items: [], total: 0 };
+
+  const conditions = [];
+  if (opts?.categoryId) conditions.push(eq(revenues.categoryId, opts.categoryId));
+  if (opts?.startDate) conditions.push(gte(revenues.date, new Date(opts.startDate)));
+  if (opts?.endDate) conditions.push(lte(revenues.date, new Date(opts.endDate)));
+
+  const where = conditions.length > 0 ? and(...conditions) : undefined;
+  const limit = opts?.limit ?? 50;
+  const offset = opts?.offset ?? 0;
+
+  const [items, countResult] = await Promise.all([
+    db.select().from(revenues).where(where).orderBy(desc(revenues.date)).limit(limit).offset(offset),
+    db.select({ count: sql<number>`count(*)` }).from(revenues).where(where),
+  ]);
+
+  return { items, total: Number(countResult[0]?.count ?? 0) };
+}
+
+export async function createRevenue(data: InsertRevenue): Promise<number> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(revenues).values(data);
+  return (result[0] as any).insertId as number;
+}
+
+export async function updateRevenue(id: number, data: Partial<InsertRevenue>) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(revenues).set(data).where(eq(revenues.id, id));
+}
+
+export async function deleteRevenue(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.delete(revenues).where(eq(revenues.id, id));
+}
+
+// ─── Financial Report ────────────────────────────────────────────────────────
+export async function getFinancialReport(startDate: string, endDate: string) {
+  const db = await getDb();
+  if (!db) return { rentalRevenue: "0", extraRevenue: "0", totalExpenses: "0" };
+
+  const start = new Date(startDate);
+  const end = new Date(endDate);
+
+  const [rentalResult, revenueResult, expenseResult] = await Promise.all([
+    db.select({ total: sql<string>`COALESCE(SUM(totalAmount), 0)` })
+      .from(rentals)
+      .where(and(
+        eq(rentals.paymentStatus, "paid"),
+        gte(rentals.startDate, start),
+        lte(rentals.startDate, end),
+      )),
+    db.select({ total: sql<string>`COALESCE(SUM(amount), 0)` })
+      .from(revenues)
+      .where(and(gte(revenues.date, start), lte(revenues.date, end))),
+    db.select({ total: sql<string>`COALESCE(SUM(amount), 0)` })
+      .from(expenses)
+      .where(and(gte(expenses.date, start), lte(expenses.date, end))),
+  ]);
+
+  return {
+    rentalRevenue: String(rentalResult[0]?.total ?? "0"),
+    extraRevenue: String(revenueResult[0]?.total ?? "0"),
+    totalExpenses: String(expenseResult[0]?.total ?? "0"),
+  };
+}
+
+// ─── Rental Stats ────────────────────────────────────────────────────────────
 export async function getRentalStats() {
   const db = await getDb();
   if (!db) return { active: 0, monthRevenue: "0" };
@@ -337,23 +667,37 @@ export async function getRentalStats() {
   const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
 
   const [activeResult, revenueResult] = await Promise.all([
-    db
-      .select({ count: sql<number>`count(*)` })
+    db.select({ count: sql<number>`count(*)` }).from(rentals).where(eq(rentals.status, "active")),
+    db.select({ total: sql<string>`COALESCE(SUM(totalAmount), 0)` })
       .from(rentals)
-      .where(eq(rentals.status, "active")),
-    db
-      .select({ total: sql<string>`COALESCE(SUM(totalAmount), 0)` })
-      .from(rentals)
-      .where(
-        and(
-          eq(rentals.paymentStatus, "paid"),
-          sql`createdAt >= ${startOfMonth.toISOString().slice(0, 19).replace("T", " ")}`
-        )
-      ),
+      .where(and(
+        eq(rentals.paymentStatus, "paid"),
+        sql`createdAt >= ${startOfMonth.toISOString().slice(0, 19).replace("T", " ")}`
+      )),
   ]);
 
   return {
     active: Number(activeResult[0]?.count ?? 0),
     monthRevenue: String(revenueResult[0]?.total ?? "0"),
   };
+}
+
+// ─── System Settings ─────────────────────────────────────────────────────────
+export async function getSetting(key: string): Promise<string | null> {
+  const db = await getDb();
+  if (!db) return null;
+  const result = await db.select().from(systemSettings).where(eq(systemSettings.key, key)).limit(1);
+  return result[0]?.value ?? null;
+}
+
+export async function setSetting(key: string, value: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.insert(systemSettings).values({ key, value }).onDuplicateKeyUpdate({ set: { value } });
+}
+
+export async function getAllSettings() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(systemSettings);
 }

@@ -1,7 +1,7 @@
 import { trpc } from "@/lib/trpc";
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { toast } from "sonner";
-import { Plus, Loader2, Bike, Search, X, Check, Package } from "lucide-react";
+import { Plus, Loader2, Bike, Search, X, Check, Package, Truck, Clock, Trash2, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -14,6 +14,28 @@ const rentalStatusConfig: Record<RentalStatus, { cls: string; label: string }> =
   overdue: { cls: "badge-blocked", label: "Atrasado" },
   cancelled: { cls: "badge-maintenance", label: "Cancelado" },
 };
+
+// Helper: generate time slots
+function generateTimeSlots(start = "09:00", end = "19:00") {
+  const slots: string[] = [];
+  const [sh, sm] = start.split(":").map(Number);
+  const [eh, em] = end.split(":").map(Number);
+  let h = sh, m = sm;
+  while (h < eh || (h === eh && m <= em)) {
+    slots.push(`${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`);
+    m += 30;
+    if (m >= 60) { h++; m = 0; }
+  }
+  return slots;
+}
+
+// Helper: calculate days between dates
+function daysBetween(start: string, end: string) {
+  if (!start || !end) return 0;
+  const d1 = new Date(start);
+  const d2 = new Date(end);
+  return Math.max(1, Math.ceil((d2.getTime() - d1.getTime()) / (1000 * 60 * 60 * 24)));
+}
 
 // ─── Client Autocomplete ──────────────────────────────────────────────────────
 function ClientAutocomplete({
@@ -125,10 +147,114 @@ function ClientAutocomplete({
   );
 }
 
+// ─── Return Dialog ──────────────────────────────────────────────────────────
+function ReturnDialog({
+  rental,
+  onClose,
+  onSuccess,
+}: {
+  rental: any;
+  onClose: () => void;
+  onSuccess: () => void;
+}) {
+  const [condition, setCondition] = useState<"ok" | "damaged">("ok");
+  const [conditionNotes, setConditionNotes] = useState("");
+
+  const returnMutation = trpc.rentals.update.useMutation({
+    onSuccess: () => {
+      toast.success("Devolução registrada!");
+      onSuccess();
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const handleReturn = () => {
+    const notes = [
+      rental.notes || "",
+      `Devolução: ${condition === "ok" ? "Bike OK" : "Com dano"}`,
+      conditionNotes ? `Obs devolução: ${conditionNotes}` : "",
+    ].filter(Boolean).join("\n");
+
+    returnMutation.mutate({
+      id: rental.id,
+      returnedAt: new Date(),
+      status: "returned",
+      notes,
+    });
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative bg-card border border-border rounded-xl w-full max-w-sm shadow-2xl">
+        <div className="flex items-center justify-between p-5 border-b border-border">
+          <h2 className="text-base font-semibold text-foreground">Registrar Devolução</h2>
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+        <div className="p-5 space-y-4">
+          <div>
+            <Label className="text-xs text-muted-foreground mb-2 block">Condição da bicicleta</Label>
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => setCondition("ok")}
+                className={`flex-1 py-2.5 rounded-lg text-sm font-medium border transition-all ${
+                  condition === "ok"
+                    ? "bg-green-500/15 border-green-500/40 text-green-400"
+                    : "bg-secondary border-border text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                <Check className="w-4 h-4 inline mr-1" />OK
+              </button>
+              <button
+                type="button"
+                onClick={() => setCondition("damaged")}
+                className={`flex-1 py-2.5 rounded-lg text-sm font-medium border transition-all ${
+                  condition === "damaged"
+                    ? "bg-red-500/15 border-red-500/40 text-red-400"
+                    : "bg-secondary border-border text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                <AlertTriangle className="w-4 h-4 inline mr-1" />Com dano
+              </button>
+            </div>
+          </div>
+          {condition === "damaged" && (
+            <div>
+              <Label className="text-xs text-muted-foreground mb-1.5 block">Descreva o dano</Label>
+              <textarea
+                value={conditionNotes}
+                onChange={(e) => setConditionNotes(e.target.value)}
+                rows={2}
+                className="w-full px-3 py-2 rounded-md bg-secondary border border-border text-sm text-foreground resize-none"
+                placeholder="Descreva o dano observado..."
+              />
+            </div>
+          )}
+          <div className="flex gap-3">
+            <Button type="button" variant="outline" onClick={onClose} className="flex-1">Cancelar</Button>
+            <Button
+              onClick={handleReturn}
+              disabled={returnMutation.isPending}
+              className="flex-1"
+              style={{ background: "oklch(0.68 0.12 65)", color: "oklch(0.10 0.005 240)" }}
+            >
+              {returnMutation.isPending ? "Salvando..." : "Confirmar devolução"}
+            </Button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── New Rental Dialog ────────────────────────────────────────────────────────
 function NewRentalDialog({ onClose, onSuccess }: { onClose: () => void; onSuccess: () => void }) {
   const { data: bikesData } = trpc.bikes.list.useQuery({ status: "available" });
   const { data: accessoriesData } = trpc.accessories.list.useQuery({ status: "available" });
+  const { data: settingsData } = trpc.settings.getAll.useQuery();
 
   const [form, setForm] = useState({
     clientId: "",
@@ -136,14 +262,65 @@ function NewRentalDialog({ onClose, onSuccess }: { onClose: () => void; onSucces
     bikeId: "",
     startDate: new Date().toISOString().split("T")[0],
     expectedReturnDate: "",
+    deliveryTime: "",
+    includeDelivery: false,
     dailyRate: "",
     totalAmount: "",
     paymentMethod: "",
+    paymentType: "presencial" as "online" | "presencial",
     notes: "",
   });
 
   // Selected accessories: { [accessoryId]: quantity }
   const [selectedAccessories, setSelectedAccessories] = useState<Record<number, number>>({});
+
+  // Settings
+  const settingsMap = useMemo(() => {
+    const map: Record<string, string> = {};
+    (settingsData ?? []).forEach((s: any) => { map[s.key] = s.value; });
+    return map;
+  }, [settingsData]);
+  const deliveryFee = parseFloat(settingsMap["delivery_fee"] || "30");
+  const timeSlots = useMemo(() => generateTimeSlots(
+    settingsMap["opening_time"] || "09:00",
+    settingsMap["closing_time"] || "19:00"
+  ), [settingsMap]);
+
+  // Auto-fill daily rate from selected bike
+  const selectedBike = useMemo(() => {
+    if (!form.bikeId) return null;
+    return (bikesData ?? []).find((b: any) => b.id === parseInt(form.bikeId));
+  }, [form.bikeId, bikesData]);
+
+  // Discount rules for selected bike
+  const { data: discountRules } = trpc.bikes.discountRules.useQuery(
+    { bikeId: parseInt(form.bikeId) },
+    { enabled: !!form.bikeId }
+  );
+
+  // Auto-calculate
+  const numDays = daysBetween(form.startDate, form.expectedReturnDate);
+  const baseRate = form.dailyRate ? parseFloat(form.dailyRate) : (selectedBike?.dailyRate ? parseFloat(selectedBike.dailyRate) : 0);
+
+  // Find best discount
+  const discountPercent = useMemo(() => {
+    if (!discountRules || numDays <= 0) return 0;
+    const sorted = [...discountRules].sort((a: any, b: any) => b.minDays - a.minDays);
+    const rule = sorted.find((r: any) => numDays >= r.minDays);
+    return rule ? parseFloat(rule.discountPercent) : 0;
+  }, [discountRules, numDays]);
+
+  const subtotal = baseRate * numDays;
+  const discountAmount = subtotal * (discountPercent / 100);
+  const deliveryTotal = form.includeDelivery ? deliveryFee : 0;
+  const calculatedTotal = subtotal - discountAmount + deliveryTotal;
+
+  // Auto-fill daily rate when bike changes
+  useEffect(() => {
+    if (selectedBike?.dailyRate && !form.dailyRate) {
+      setForm(prev => ({ ...prev, dailyRate: String(selectedBike.dailyRate) }));
+    }
+  }, [selectedBike]);
 
   const createMutation = trpc.rentals.create.useMutation({
     onSuccess: () => { toast.success("Aluguel registrado!"); onSuccess(); },
@@ -162,12 +339,22 @@ function NewRentalDialog({ onClose, onSuccess }: { onClose: () => void; onSucces
 
     const accessoryNote = accessoryList.length > 0
       ? `Acessórios: ${accessoryList.map((a) => {
-          const acc = (accessoriesData ?? []).find((x) => x.id === a.id);
+          const acc = (accessoriesData ?? []).find((x: any) => x.id === a.id);
           return `${acc?.name ?? `#${a.id}`} (x${a.quantity})`;
         }).join(", ")}`
       : "";
 
-    const finalNotes = [form.notes, accessoryNote].filter(Boolean).join("\n");
+    const deliveryNote = form.includeDelivery
+      ? `Entrega: R$ ${deliveryFee.toFixed(2)}${form.deliveryTime ? ` às ${form.deliveryTime}` : ""}`
+      : "";
+
+    const discountNote = discountPercent > 0
+      ? `Desconto: ${discountPercent}% (${numDays} dias)`
+      : "";
+
+    const finalNotes = [form.notes, accessoryNote, deliveryNote, discountNote].filter(Boolean).join("\n");
+
+    const finalTotal = form.totalAmount ? form.totalAmount : String(calculatedTotal.toFixed(2));
 
     createMutation.mutate({
       clientId: parseInt(form.clientId),
@@ -175,7 +362,7 @@ function NewRentalDialog({ onClose, onSuccess }: { onClose: () => void; onSucces
       startDate: form.startDate,
       endDate: form.expectedReturnDate || undefined,
       dailyRate: form.dailyRate || undefined,
-      totalAmount: form.totalAmount || undefined,
+      totalAmount: finalTotal || undefined,
       paymentMethod: (form.paymentMethod || undefined) as any,
       notes: finalNotes || undefined,
     });
@@ -335,6 +522,38 @@ function NewRentalDialog({ onClose, onSuccess }: { onClose: () => void; onSucces
             </div>
           </div>
 
+          {/* Delivery option */}
+          <div className="bg-secondary/50 rounded-lg border border-border p-3 space-y-3">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={form.includeDelivery}
+                onChange={(e) => setForm({ ...form, includeDelivery: e.target.checked })}
+                className="rounded border-border"
+              />
+              <Truck className="w-4 h-4 text-muted-foreground" />
+              <span className="text-xs text-foreground">Incluir entrega</span>
+              <span className="text-xs text-muted-foreground ml-auto">+ R$ {deliveryFee.toFixed(2)}</span>
+            </label>
+            {form.includeDelivery && (
+              <div>
+                <Label className="text-xs text-muted-foreground mb-1.5 flex items-center gap-1">
+                  <Clock className="w-3 h-3" /> Horário de entrega
+                </Label>
+                <select
+                  value={form.deliveryTime}
+                  onChange={(e) => setForm({ ...form, deliveryTime: e.target.value })}
+                  className="w-full px-3 py-2 rounded-md bg-secondary border border-border text-sm text-foreground"
+                >
+                  <option value="">Selecionar horário...</option>
+                  {timeSlots.map((t) => (
+                    <option key={t} value={t}>{t}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+          </div>
+
           <div className="grid grid-cols-2 gap-3">
             <div>
               <Label className="text-xs text-muted-foreground mb-1.5 block">Diária (R$)</Label>
@@ -348,40 +567,80 @@ function NewRentalDialog({ onClose, onSuccess }: { onClose: () => void; onSucces
               />
             </div>
             <div>
-              <Label className="text-xs text-muted-foreground mb-1.5 block">Total (R$)</Label>
+              <Label className="text-xs text-muted-foreground mb-1.5 block">Total manual (R$)</Label>
               <Input
                 type="number"
                 step="0.01"
                 value={form.totalAmount}
                 onChange={(e) => setForm({ ...form, totalAmount: e.target.value })}
-                placeholder="0,00"
+                placeholder={calculatedTotal > 0 ? calculatedTotal.toFixed(2) : "0,00"}
                 className="bg-secondary border-border"
               />
             </div>
           </div>
 
-          <div>
-            <Label className="text-xs text-muted-foreground mb-1.5 block">Forma de pagamento</Label>
-            <select
-              value={form.paymentMethod}
-              onChange={(e) => setForm({ ...form, paymentMethod: e.target.value })}
-              className="w-full px-3 py-2 rounded-md bg-secondary border border-border text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-[#C8920A] focus:border-[#C8920A]"
-            >
-              <option value="">Selecionar...</option>
-              <option value="pix">PIX</option>
-              <option value="credit_card">Cartão de crédito</option>
-              <option value="debit_card">Cartão de débito</option>
-              <option value="cash">Dinheiro</option>
-              <option value="other">Outro</option>
-            </select>
+          {/* Auto-calculation summary */}
+          {numDays > 0 && baseRate > 0 && (
+            <div className="bg-secondary/50 rounded-lg border border-border p-3 text-xs space-y-1">
+              <div className="flex justify-between text-muted-foreground">
+                <span>{numDays} dia(s) x R$ {baseRate.toFixed(2)}</span>
+                <span>R$ {subtotal.toFixed(2)}</span>
+              </div>
+              {discountPercent > 0 && (
+                <div className="flex justify-between text-green-400">
+                  <span>Desconto progressivo ({discountPercent}%)</span>
+                  <span>- R$ {discountAmount.toFixed(2)}</span>
+                </div>
+              )}
+              {form.includeDelivery && (
+                <div className="flex justify-between text-muted-foreground">
+                  <span>Entrega</span>
+                  <span>+ R$ {deliveryFee.toFixed(2)}</span>
+                </div>
+              )}
+              <div className="flex justify-between font-semibold text-foreground pt-1 border-t border-border">
+                <span>Total calculado</span>
+                <span className="text-[#C8920A]">R$ {calculatedTotal.toFixed(2)}</span>
+              </div>
+            </div>
+          )}
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label className="text-xs text-muted-foreground mb-1.5 block">Forma de pagamento</Label>
+              <select
+                value={form.paymentMethod}
+                onChange={(e) => setForm({ ...form, paymentMethod: e.target.value })}
+                className="w-full px-3 py-2 rounded-md bg-secondary border border-border text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-[#C8920A] focus:border-[#C8920A]"
+              >
+                <option value="">Selecionar...</option>
+                <option value="pix">PIX</option>
+                <option value="credit_card">Cartão de crédito</option>
+                <option value="debit_card">Cartão de débito</option>
+                <option value="cash">Dinheiro</option>
+                <option value="other">Outro</option>
+              </select>
+            </div>
+            <div>
+              <Label className="text-xs text-muted-foreground mb-1.5 block">Tipo</Label>
+              <select
+                value={form.paymentType}
+                onChange={(e) => setForm({ ...form, paymentType: e.target.value as any })}
+                className="w-full px-3 py-2 rounded-md bg-secondary border border-border text-sm text-foreground"
+              >
+                <option value="presencial">Presencial</option>
+                <option value="online">Online</option>
+              </select>
+            </div>
           </div>
 
           <div>
             <Label className="text-xs text-muted-foreground mb-1.5 block">Observações</Label>
-            <Input
+            <textarea
               value={form.notes}
               onChange={(e) => setForm({ ...form, notes: e.target.value })}
-              className="bg-secondary border-border"
+              rows={2}
+              className="w-full px-3 py-2 rounded-md bg-secondary border border-border text-sm text-foreground resize-none"
               placeholder="Observações opcionais..."
             />
           </div>
@@ -409,6 +668,7 @@ export default function Rentals() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<RentalStatus | undefined>(undefined);
   const [showNew, setShowNew] = useState(false);
+  const [returnRental, setReturnRental] = useState<any>(null);
   const utils = trpc.useUtils();
 
   const { data, isLoading } = trpc.rentals.list.useQuery({
@@ -419,16 +679,12 @@ export default function Rentals() {
 
   const { data: allClients } = trpc.clients.list.useQuery({ limit: 1000, offset: 0 });
   const { data: allBikes } = trpc.bikes.list.useQuery({});
-  const clientMap = Object.fromEntries((allClients?.items ?? []).map((c) => [c.id, c.name]));
-  const bikeMap = Object.fromEntries((allBikes ?? []).map((b) => [b.id, `${b.model} #${b.serialNumber}`]));
+  const clientMap = Object.fromEntries((allClients?.items ?? []).map((c: any) => [c.id, c.name]));
+  const bikeMap = Object.fromEntries((allBikes ?? []).map((b: any) => [b.id, `${b.model} #${b.serialNumber}`]));
 
-  const returnMutation = trpc.rentals.update.useMutation({
-    onSuccess: () => {
-      toast.success("Devolução registrada!");
-      utils.rentals.list.invalidate();
-      utils.bikes.list.invalidate();
-    },
-    onError: (err: any) => toast.error(err.message),
+  const deleteMutation = trpc.rentals.delete.useMutation({
+    onSuccess: () => { toast.success("Aluguél removido."); utils.rentals.list.invalidate(); },
+    onError: (e) => toast.error(e.message),
   });
 
   const rentals = (data?.items ?? []).filter((r) => {
@@ -539,7 +795,7 @@ export default function Rentals() {
                   </td>
                   <td className="px-4 py-3 text-xs text-muted-foreground capitalize">
                     {rental.paymentMethod
-                      ? { pix: "PIX", credit_card: "Crédito", debit_card: "Débito", cash: "Dinheiro", other: "Outro" }[rental.paymentMethod] ?? rental.paymentMethod
+                      ? { pix: "PIX", credit_card: "Crédito", debit_card: "Débito", cash: "Dinheiro", stripe: "Stripe", other: "Outro" }[rental.paymentMethod] ?? rental.paymentMethod
                       : "—"}
                   </td>
                   <td className="px-4 py-3">
@@ -548,20 +804,25 @@ export default function Rentals() {
                     </span>
                   </td>
                   <td className="px-4 py-3">
-                    {rental.status === "active" && (
+                    <div className="flex gap-2">
+                      {rental.status === "active" && (
+                        <button
+                          onClick={() => setReturnRental(rental)}
+                          className="text-xs text-[#C8920A] hover:underline"
+                        >
+                          Devolver
+                        </button>
+                      )}
                       <button
-                        onClick={() =>
-                          returnMutation.mutate({
-                            id: rental.id,
-                            returnedAt: new Date(),
-                            status: "returned",
-                          })
-                        }
-                        className="text-xs text-[#C8920A] hover:underline"
+                        onClick={() => {
+                          if (confirm("Remover este aluguél?"))
+                            deleteMutation.mutate({ id: rental.id });
+                        }}
+                        className="text-xs text-muted-foreground hover:text-destructive"
                       >
-                        Devolver
+                        <Trash2 className="w-3 h-3" />
                       </button>
-                    )}
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -594,20 +855,25 @@ export default function Rentals() {
                     })}
                   </p>
                 )}
-                {rental.status === "active" && (
+                <div className="flex gap-3 mt-2">
+                  {rental.status === "active" && (
+                    <button
+                      onClick={() => setReturnRental(rental)}
+                      className="text-xs text-[#C8920A] hover:underline"
+                    >
+                      Registrar devolução
+                    </button>
+                  )}
                   <button
-                    onClick={() =>
-                      returnMutation.mutate({
-                        id: rental.id,
-                        returnedAt: new Date(),
-                        status: "returned",
-                      })
-                    }
-                    className="mt-2 text-xs text-[#C8920A] hover:underline"
+                    onClick={() => {
+                      if (confirm("Remover este aluguél?"))
+                        deleteMutation.mutate({ id: rental.id });
+                    }}
+                    className="text-xs text-muted-foreground hover:text-destructive"
                   >
-                    Registrar devolução
+                    Remover
                   </button>
-                )}
+                </div>
               </div>
             ))}
           </div>
@@ -619,6 +885,18 @@ export default function Rentals() {
           onClose={() => setShowNew(false)}
           onSuccess={() => {
             setShowNew(false);
+            utils.rentals.list.invalidate();
+            utils.bikes.list.invalidate();
+          }}
+        />
+      )}
+
+      {returnRental && (
+        <ReturnDialog
+          rental={returnRental}
+          onClose={() => setReturnRental(null)}
+          onSuccess={() => {
+            setReturnRental(null);
             utils.rentals.list.invalidate();
             utils.bikes.list.invalidate();
           }}

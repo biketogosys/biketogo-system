@@ -1,6 +1,9 @@
 import { trpc } from "@/lib/trpc";
-import { Bike, Users, TrendingUp, AlertCircle, Loader2, ArrowRight } from "lucide-react";
 import { Link } from "wouter";
+import {
+  Users, Bike, FileText, DollarSign, Loader2,
+  TrendingUp, AlertCircle, ArrowRight, Wrench,
+} from "lucide-react";
 
 function StatCard({
   title,
@@ -90,7 +93,7 @@ export default function Dashboard() {
           subtitle="Aguardando validação"
           icon={AlertCircle}
           color="oklch(0.65 0.18 50)"
-          href="/clientes?status=lead"
+          href="/clientes"
         />
         <StatCard
           title="Aluguéis ativos"
@@ -106,11 +109,13 @@ export default function Dashboard() {
           subtitle="Pagamentos confirmados"
           icon={TrendingUp}
           color="oklch(0.60 0.18 145)"
+          href="/financeiro"
         />
       </div>
 
-      {/* Bikes status */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      {/* Status panels */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-8">
+        {/* Bikes status */}
         <div className="bg-card border border-border rounded-xl p-5">
           <h2 className="text-sm font-semibold text-foreground mb-4 uppercase tracking-wider">
             Status das Bicicletas
@@ -145,6 +150,7 @@ export default function Dashboard() {
           </Link>
         </div>
 
+        {/* Clients status */}
         <div className="bg-card border border-border rounded-xl p-5">
           <h2 className="text-sm font-semibold text-foreground mb-4 uppercase tracking-wider">
             Status dos Clientes
@@ -178,7 +184,56 @@ export default function Dashboard() {
             Ver todos os clientes <ArrowRight className="w-3 h-3" />
           </Link>
         </div>
+
+        {/* Quick actions */}
+        <div className="bg-card border border-border rounded-xl p-5">
+          <h2 className="text-sm font-semibold text-foreground mb-4 uppercase tracking-wider">
+            Ações Rápidas
+          </h2>
+          <div className="space-y-2">
+            <Link href="/alugueis">
+              <button className="w-full text-left px-3 py-2.5 rounded-lg bg-secondary/50 hover:bg-secondary border border-border text-sm text-foreground transition-colors flex items-center gap-2">
+                <FileText className="w-4 h-4 text-primary" /> Novo aluguel
+              </button>
+            </Link>
+            <Link href="/clientes">
+              <button className="w-full text-left px-3 py-2.5 rounded-lg bg-secondary/50 hover:bg-secondary border border-border text-sm text-foreground transition-colors flex items-center gap-2">
+                <Users className="w-4 h-4 text-blue-400" /> Cadastrar cliente
+              </button>
+            </Link>
+            <Link href="/bicicletas">
+              <button className="w-full text-left px-3 py-2.5 rounded-lg bg-secondary/50 hover:bg-secondary border border-border text-sm text-foreground transition-colors flex items-center gap-2">
+                <Bike className="w-4 h-4 text-green-400" /> Adicionar bicicleta
+              </button>
+            </Link>
+            <Link href="/financeiro">
+              <button className="w-full text-left px-3 py-2.5 rounded-lg bg-secondary/50 hover:bg-secondary border border-border text-sm text-foreground transition-colors flex items-center gap-2">
+                <DollarSign className="w-4 h-4 text-purple-400" /> Lançar despesa
+              </button>
+            </Link>
+          </div>
+        </div>
       </div>
+
+      {/* Alerts */}
+      {bikeStats.maintenance > 0 && (
+        <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-4 flex items-center gap-3">
+          <Wrench className="w-5 h-5 text-amber-400 shrink-0" />
+          <div>
+            <p className="text-sm font-medium text-amber-400">
+              {bikeStats.maintenance} bicicleta(s) em manutenção
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Acompanhe o status na página de bicicletas.
+            </p>
+          </div>
+          <Link href="/bicicletas" className="ml-auto">
+            <button className="text-xs text-amber-400 hover:underline whitespace-nowrap">
+              Ver bicicletas
+            </button>
+          </Link>
+        </div>
+      )}
     </div>
   );
 }

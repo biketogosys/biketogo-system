@@ -1,59 +1,247 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
+import bcrypt from "bcryptjs";
+import jwt from "jsonwebtoken";
 import {
-  addClientDocument,
-  createAccessory,
-  createBike,
+  // Admin Users
+  getAdminUserByEmail,
+  getAdminUserById,
+  getAllAdminUsers,
+  createAdminUser,
+  updateAdminUser,
+  deleteAdminUser,
+  updateAdminUserLastLogin,
+  // Clients
+  getClients,
+  getClientById,
   createClient,
-  createRental,
-  deleteAccessory,
-  deleteBike,
+  updateClient,
+  deleteClient,
+  getClientStats,
+  getClientDocuments,
+  addClientDocument,
   deleteClientDocument,
+  // Bikes
+  getBikes,
+  getBikeById,
+  createBike,
+  updateBike,
+  deleteBike,
+  getBikeStats,
+  // Bike Discount Rules
+  getBikeDiscountRules,
+  createBikeDiscountRule,
+  deleteBikeDiscountRule,
+  deleteAllBikeDiscountRules,
+  // Rentals
+  getRentals,
+  getRentalById,
+  createRental,
+  updateRental,
+  deleteRental,
+  checkBikeAvailability,
+  getRentalStats,
+  // Rental Accessories
+  getRentalAccessories,
+  createRentalAccessory,
+  deleteRentalAccessories,
+  // Accessories
   getAccessories,
   getAccessoryById,
-  getBikeById,
-  getBikes,
-  getBikeStats,
-  getClientById,
-  getClientDocuments,
-  getClients,
-  getClientStats,
-  getRentalById,
-  getRentals,
-  getRentalStats,
+  createAccessory,
   updateAccessory,
-  updateBike,
-  updateClient,
-  updateRental,
+  deleteAccessory,
+  // Financial
+  getExpenseCategories,
+  createExpenseCategory,
+  deleteExpenseCategory,
+  updateExpenseCategory,
+  getRevenueCategories,
+  createRevenueCategory,
+  deleteRevenueCategory,
+  updateRevenueCategory,
+  getExpenses,
+  createExpense,
+  updateExpense,
+  deleteExpense,
+  getRevenues,
+  createRevenue,
+  updateRevenue,
+  deleteRevenue,
+  getFinancialReport,
+  // Settings
+  getSetting,
+  setSetting,
+  getAllSettings,
 } from "./db";
 import { notifyOwner } from "./_core/notification";
 import { COOKIE_NAME } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
+import { ENV } from "./_core/env";
 
-// ─── Admin guard ──────────────────────────────────────────────────────────────
-const adminProcedure = protectedProcedure.use(({ ctx, next }) => {
-  if (ctx.user.role !== "admin") {
+const JWT_SECRET = process.env.JWT_SECRET || "biketogo-secret-key-change-me";
+const ADMIN_COOKIE = "btg_session";
+
+// ─── Helper: sign admin JWT ──────────────────────────────────────────────────
+function signAdminToken(userId: number, role: string) {
+  return jwt.sign({ userId, role }, JWT_SECRET, { expiresIn: "7d" });
+}
+
+// ─── Admin auth procedure ────────────────────────────────────────────────────
+const adminAuthProcedure = publicProcedure.use(async ({ ctx, next }) => {
+  // Try admin cookie first
+  const token = ctx.req.cookies?.[ADMIN_COOKIE];
+  if (token) {
+    try {
+      const decoded = jwt.verify(token, JWT_SECRET) as { userId: number; role: string };
+      const user = await getAdminUserById(decoded.userId);
+      if (user && user.active) {
+        return next({ ctx: { ...ctx, adminUser: user } });
+      }
+    } catch {}
+  }
+
+  // Fallback: try Manus OAuth user with admin role
+  if (ctx.user && ctx.user.role === "admin") {
+    return next({
+      ctx: {
+        ...ctx,
+        adminUser: {
+          id: 0,
+          name: ctx.user.name || "Admin",
+          email: ctx.user.email || "",
+          role: "admin" as const,
+          active: true,
+        },
+      },
+    });
+  }
+
+  throw new TRPCError({ code: "UNAUTHORIZED", message: "Faça login para acessar o sistema." });
+});
+
+const adminOnlyProcedure = adminAuthProcedure.use(({ ctx, next }) => {
+  if ((ctx as any).adminUser?.role !== "admin") {
     throw new TRPCError({ code: "FORBIDDEN", message: "Acesso restrito a administradores." });
   }
   return next({ ctx });
 });
 
+// ─── Auth router (custom email + password) ───────────────────────────────────
+const authRouter = router({
+  me: publicProcedure.query(async (opts) => {
+    // Try admin cookie
+    const token = opts.ctx.req.cookies?.[ADMIN_COOKIE];
+    if (token) {
+      try {
+        const decoded = jwt.verify(token, JWT_SECRET) as { userId: number; role: string };
+        const user = await getAdminUserById(decoded.userId);
+        if (user && user.active) {
+          return { id: user.id, name: user.name, email: user.email, role: user.role, source: "local" };
+        }
+      } catch {}
+    }
+    // Fallback to Manus OAuth
+    if (opts.ctx.user) {
+      return { ...opts.ctx.user, source: "manus" };
+    }
+    return null;
+  }),
+
+  login: publicProcedure
+    .input(z.object({ email: z.string().email(), password: z.string().min(1) }))
+    .mutation(async ({ input, ctx }) => {
+      const user = await getAdminUserByEmail(input.email);
+      if (!user || !user.active) {
+        throw new TRPCError({ code: "UNAUTHORIZED", message: "E-mail ou senha incorretos." });
+      }
+
+      const valid = await bcrypt.compare(input.password, user.passwordHash);
+      if (!valid) {
+        throw new TRPCError({ code: "UNAUTHORIZED", message: "E-mail ou senha incorretos." });
+      }
+
+      const token = signAdminToken(user.id, user.role);
+      await updateAdminUserLastLogin(user.id);
+
+      ctx.res.cookie(ADMIN_COOKIE, token, {
+        httpOnly: true,
+        secure: ctx.req.secure || ctx.req.headers["x-forwarded-proto"] === "https",
+        sameSite: "lax",
+        maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+        path: "/",
+      });
+
+      return { success: true, user: { id: user.id, name: user.name, email: user.email, role: user.role } };
+    }),
+
+  logout: publicProcedure.mutation(({ ctx }) => {
+    // Clear admin cookie
+    ctx.res.clearCookie(ADMIN_COOKIE, { path: "/" });
+    // Clear Manus cookie
+    const cookieOptions = getSessionCookieOptions(ctx.req);
+    ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
+    return { success: true };
+  }),
+
+  // Manage admin users
+  listUsers: adminOnlyProcedure.query(() => getAllAdminUsers()),
+
+  createUser: adminOnlyProcedure
+    .input(z.object({
+      name: z.string().min(2),
+      email: z.string().email(),
+      password: z.string().min(6),
+      role: z.enum(["admin", "operator"]).default("operator"),
+    }))
+    .mutation(async ({ input }) => {
+      const existing = await getAdminUserByEmail(input.email);
+      if (existing) throw new TRPCError({ code: "CONFLICT", message: "E-mail já cadastrado." });
+
+      const passwordHash = await bcrypt.hash(input.password, 10);
+      const id = await createAdminUser({ name: input.name, email: input.email, passwordHash, role: input.role });
+      return { id };
+    }),
+
+  updateUser: adminOnlyProcedure
+    .input(z.object({
+      id: z.number(),
+      name: z.string().optional(),
+      email: z.string().email().optional(),
+      password: z.string().min(6).optional(),
+      role: z.enum(["admin", "operator"]).optional(),
+      active: z.boolean().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const { id, password, ...data } = input;
+      const updateData: any = { ...data };
+      if (password) updateData.passwordHash = await bcrypt.hash(password, 10);
+      await updateAdminUser(id, updateData);
+      return { success: true };
+    }),
+
+  deleteUser: adminOnlyProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input }) => {
+      await deleteAdminUser(input.id);
+      return { success: true };
+    }),
+});
+
 // ─── Clients router ───────────────────────────────────────────────────────────
 const clientsRouter = router({
-  list: protectedProcedure
-    .input(
-      z.object({
-        search: z.string().optional(),
-        status: z.enum(["lead", "verified", "blocked"]).optional(),
-        limit: z.number().min(1).max(1000).default(50),
-        offset: z.number().min(0).default(0),
-      })
-    )
+  list: adminAuthProcedure
+    .input(z.object({
+      search: z.string().optional(),
+      status: z.enum(["lead", "verified", "blocked"]).optional(),
+      limit: z.number().min(1).max(1000).default(50),
+      offset: z.number().min(0).default(0),
+    }))
     .query(({ input }) => getClients(input)),
 
-  byId: protectedProcedure
+  byId: adminAuthProcedure
     .input(z.object({ id: z.number() }))
     .query(async ({ input }) => {
       const client = await getClientById(input.id);
@@ -61,102 +249,101 @@ const clientsRouter = router({
       return client;
     }),
 
-  create: adminProcedure
-    .input(
-      z.object({
-        name: z.string().min(2),
-        cpf: z.string().optional(),
-        rg: z.string().optional(),
-        birthDate: z.string().optional(),
-        gender: z.string().optional(),
-        height: z.string().optional(),
-        pedalFrequency: z.string().optional(),
-        origin: z.string().optional(),
-        phone: z.string().optional(),
-        email: z.string().email().optional().or(z.literal("")),
-        instagram: z.string().optional(),
-        accommodation: z.string().optional(),
-        zipCode: z.string().optional(),
-        street: z.string().optional(),
-        number: z.string().optional(),
-        neighborhood: z.string().optional(),
-        city: z.string().optional(),
-        state: z.string().optional(),
-        country: z.string().optional(),
-        notes: z.string().optional(),
-        status: z.enum(["lead", "verified", "blocked"]).default("lead"),
-      })
-    )
+  create: adminAuthProcedure
+    .input(z.object({
+      name: z.string().min(2),
+      cpf: z.string().optional(),
+      rg: z.string().optional(),
+      birthDate: z.string().optional(),
+      gender: z.string().optional(),
+      height: z.string().optional(),
+      pedalFrequency: z.string().optional(),
+      origin: z.string().optional(),
+      phone: z.string().optional(),
+      email: z.string().email().optional().or(z.literal("")),
+      instagram: z.string().optional(),
+      accommodation: z.string().optional(),
+      zipCode: z.string().optional(),
+      street: z.string().optional(),
+      number: z.string().optional(),
+      neighborhood: z.string().optional(),
+      city: z.string().optional(),
+      state: z.string().optional(),
+      country: z.string().optional(),
+      notes: z.string().optional(),
+      status: z.enum(["lead", "verified", "blocked"]).default("lead"),
+    }))
     .mutation(async ({ input }) => {
       const id = await createClient({ ...input, source: "manual" });
       return { id };
     }),
 
-  update: adminProcedure
-    .input(
-      z.object({
-        id: z.number(),
-        name: z.string().min(2).optional(),
-        cpf: z.string().optional(),
-        rg: z.string().optional(),
-        birthDate: z.string().optional(),
-        gender: z.string().optional(),
-        height: z.string().optional(),
-        pedalFrequency: z.string().optional(),
-        origin: z.string().optional(),
-        phone: z.string().optional(),
-        email: z.string().optional(),
-        instagram: z.string().optional(),
-        accommodation: z.string().optional(),
-        zipCode: z.string().optional(),
-        street: z.string().optional(),
-        number: z.string().optional(),
-        neighborhood: z.string().optional(),
-        city: z.string().optional(),
-        state: z.string().optional(),
-        country: z.string().optional(),
-        notes: z.string().optional(),
-        status: z.enum(["lead", "verified", "blocked"]).optional(),
-        receiveEmail: z.boolean().optional(),
-        blocked: z.boolean().optional(),
-        expiresAt: z.date().optional().nullable(),
-      })
-    )
+  update: adminAuthProcedure
+    .input(z.object({
+      id: z.number(),
+      name: z.string().min(2).optional(),
+      cpf: z.string().optional(),
+      rg: z.string().optional(),
+      birthDate: z.string().optional(),
+      gender: z.string().optional(),
+      height: z.string().optional(),
+      pedalFrequency: z.string().optional(),
+      origin: z.string().optional(),
+      phone: z.string().optional(),
+      email: z.string().optional(),
+      instagram: z.string().optional(),
+      accommodation: z.string().optional(),
+      zipCode: z.string().optional(),
+      street: z.string().optional(),
+      number: z.string().optional(),
+      neighborhood: z.string().optional(),
+      city: z.string().optional(),
+      state: z.string().optional(),
+      country: z.string().optional(),
+      notes: z.string().optional(),
+      status: z.enum(["lead", "verified", "blocked"]).optional(),
+      receiveEmail: z.boolean().optional(),
+      blocked: z.boolean().optional(),
+    }))
     .mutation(async ({ input }) => {
       const { id, ...data } = input;
       await updateClient(id, data as any);
       return { success: true };
     }),
 
-  validate: adminProcedure
+  validate: adminAuthProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {
       await updateClient(input.id, { status: "verified" });
       return { success: true };
     }),
 
-  stats: protectedProcedure.query(() => getClientStats()),
+  delete: adminOnlyProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input }) => {
+      await deleteClient(input.id);
+      return { success: true };
+    }),
 
-  // Documents
-  documents: protectedProcedure
+  stats: adminAuthProcedure.query(() => getClientStats()),
+
+  documents: adminAuthProcedure
     .input(z.object({ clientId: z.number() }))
     .query(({ input }) => getClientDocuments(input.clientId)),
 
-  addDocument: adminProcedure
-    .input(
-      z.object({
-        clientId: z.number(),
-        type: z.enum(["rg_front", "rg_back", "other"]),
-        url: z.string().url(),
-        cloudinaryPublicId: z.string().optional(),
-      })
-    )
+  addDocument: adminAuthProcedure
+    .input(z.object({
+      clientId: z.number(),
+      type: z.enum(["rg_front", "rg_back", "other"]),
+      url: z.string().url(),
+      cloudinaryPublicId: z.string().optional(),
+    }))
     .mutation(async ({ input }) => {
       const id = await addClientDocument(input);
       return { id };
     }),
 
-  deleteDocument: adminProcedure
+  deleteDocument: adminAuthProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {
       await deleteClientDocument(input.id);
@@ -166,16 +353,15 @@ const clientsRouter = router({
 
 // ─── Bikes router ─────────────────────────────────────────────────────────────
 const bikesRouter = router({
-  list: protectedProcedure
-    .input(
-      z.object({
-        status: z.enum(["available", "rented", "maintenance"]).optional(),
-        search: z.string().optional(),
-      })
-    )
+  list: adminAuthProcedure
+    .input(z.object({
+      status: z.enum(["available", "rented", "maintenance"]).optional(),
+      search: z.string().optional(),
+      category: z.string().optional(),
+    }))
     .query(({ input }) => getBikes(input)),
 
-  byId: protectedProcedure
+  byId: adminAuthProcedure
     .input(z.object({ id: z.number() }))
     .query(async ({ input }) => {
       const bike = await getBikeById(input.id);
@@ -183,65 +369,122 @@ const bikesRouter = router({
       return bike;
     }),
 
-  create: adminProcedure
-    .input(
-      z.object({
-        serialNumber: z.string().min(1),
-        model: z.string().min(1),
-        size: z.string().optional(),
-        color: z.string().optional(),
-        notes: z.string().optional(),
-        status: z.enum(["available", "rented", "maintenance"]).default("available"),
-      })
-    )
+  create: adminAuthProcedure
+    .input(z.object({
+      serialNumber: z.string().min(1),
+      model: z.string().min(1),
+      brand: z.string().optional(),
+      category: z.enum(["mtb", "speed", "gravel"]).optional(),
+      size: z.string().optional(),
+      sizes: z.string().optional(),
+      color: z.string().optional(),
+      description: z.string().optional(),
+      weight: z.string().optional(),
+      weightLimit: z.string().optional(),
+      dailyRate: z.string().optional(),
+      photoUrl: z.string().optional(),
+      quantity: z.number().min(1).default(1),
+      notes: z.string().optional(),
+      status: z.enum(["available", "rented", "maintenance"]).default("available"),
+    }))
     .mutation(async ({ input }) => {
-      const id = await createBike(input);
+      const id = await createBike(input as any);
       return { id };
     }),
 
-  update: adminProcedure
-    .input(
-      z.object({
-        id: z.number(),
-        serialNumber: z.string().optional(),
-        model: z.string().optional(),
-        size: z.string().optional(),
-        color: z.string().optional(),
-        notes: z.string().optional(),
-        status: z.enum(["available", "rented", "maintenance"]).optional(),
-      })
-    )
+  update: adminAuthProcedure
+    .input(z.object({
+      id: z.number(),
+      serialNumber: z.string().optional(),
+      model: z.string().optional(),
+      brand: z.string().optional(),
+      category: z.enum(["mtb", "speed", "gravel"]).optional(),
+      size: z.string().optional(),
+      sizes: z.string().optional(),
+      color: z.string().optional(),
+      description: z.string().optional(),
+      weight: z.string().optional(),
+      weightLimit: z.string().optional(),
+      dailyRate: z.string().optional(),
+      photoUrl: z.string().optional(),
+      quantity: z.number().optional(),
+      notes: z.string().optional(),
+      status: z.enum(["available", "rented", "maintenance"]).optional(),
+    }))
     .mutation(async ({ input }) => {
       const { id, ...data } = input;
-      await updateBike(id, data);
+      await updateBike(id, data as any);
       return { success: true };
     }),
 
-  delete: adminProcedure
+  delete: adminOnlyProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {
       await deleteBike(input.id);
       return { success: true };
     }),
 
-  stats: protectedProcedure.query(() => getBikeStats()),
+  stats: adminAuthProcedure.query(() => getBikeStats()),
+
+  // Discount rules
+  discountRules: adminAuthProcedure
+    .input(z.object({ bikeId: z.number() }))
+    .query(({ input }) => getBikeDiscountRules(input.bikeId)),
+
+  addDiscountRule: adminAuthProcedure
+    .input(z.object({
+      bikeId: z.number(),
+      minDays: z.number().min(1),
+      discountPercent: z.string(),
+    }))
+    .mutation(async ({ input }) => {
+      const id = await createBikeDiscountRule(input);
+      return { id };
+    }),
+
+  deleteDiscountRule: adminAuthProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input }) => {
+      await deleteBikeDiscountRule(input.id);
+      return { success: true };
+    }),
+
+  setDiscountRules: adminAuthProcedure
+    .input(z.object({
+      bikeId: z.number(),
+      rules: z.array(z.object({ minDays: z.number().min(1), discountPercent: z.string() })),
+    }))
+    .mutation(async ({ input }) => {
+      await deleteAllBikeDiscountRules(input.bikeId);
+      for (const rule of input.rules) {
+        await createBikeDiscountRule({ bikeId: input.bikeId, ...rule });
+      }
+      return { success: true };
+    }),
+
+  // Check availability for a date range
+  checkAvailability: publicProcedure
+    .input(z.object({
+      bikeId: z.number(),
+      startDate: z.string(),
+      endDate: z.string(),
+    }))
+    .query(({ input }) => checkBikeAvailability(input.bikeId, input.startDate, input.endDate)),
 });
 
 // ─── Rentals router ───────────────────────────────────────────────────────────
 const rentalsRouter = router({
-  list: protectedProcedure
-    .input(
-      z.object({
-        clientId: z.number().optional(),
-        bikeId: z.number().optional(),
-        status: z.enum(["active", "returned", "overdue", "cancelled"]).optional(),
-        limit: z.number().min(1).max(1000).default(50),
-        offset: z.number().min(0).default(0),
-      })
-    )
+  list: adminAuthProcedure
+    .input(z.object({
+      clientId: z.number().optional(),
+      bikeId: z.number().optional(),
+      status: z.enum(["active", "returned", "overdue", "cancelled"]).optional(),
+      limit: z.number().min(1).max(1000).default(50),
+      offset: z.number().min(0).default(0),
+    }))
     .query(({ input }) => getRentals(input)),
 
-  byId: protectedProcedure
+  byId: adminAuthProcedure
     .input(z.object({ id: z.number() }))
     .query(async ({ input }) => {
       const rental = await getRentalById(input.id);
@@ -249,54 +492,78 @@ const rentalsRouter = router({
       return rental;
     }),
 
-  create: adminProcedure
-    .input(
-      z.object({
-        clientId: z.number(),
-        bikeId: z.number(),
-        startDate: z.string(),
-        endDate: z.string().optional(),
+  create: adminAuthProcedure
+    .input(z.object({
+      clientId: z.number(),
+      bikeId: z.number(),
+      startDate: z.string(),
+      endDate: z.string().optional(),
+      deliveryTime: z.string().optional(),
+      dailyRate: z.string().optional(),
+      totalAmount: z.string().optional(),
+      discountPercent: z.string().optional(),
+      deliveryFee: z.string().optional(),
+      depositAmount: z.string().optional(),
+      paymentMethod: z.enum(["pix", "credit_card", "debit_card", "cash", "stripe", "other"]).optional(),
+      paymentStatus: z.enum(["pending", "paid", "partial", "refunded"]).default("pending"),
+      notes: z.string().optional(),
+      accessories: z.array(z.object({
+        accessoryId: z.number(),
+        quantity: z.number().min(1).default(1),
         dailyRate: z.string().optional(),
-        totalAmount: z.string().optional(),
-        depositAmount: z.string().optional(),
-        paymentMethod: z.enum(["pix", "credit_card", "debit_card", "cash", "other"]).optional(),
-        paymentStatus: z.enum(["pending", "paid", "partial", "refunded"]).default("pending"),
-        notes: z.string().optional(),
-      })
-    )
+      })).optional(),
+    }))
     .mutation(async ({ input }) => {
-      const rentalData: any = {
-        ...input,
-        startDate: new Date(input.startDate),
-        endDate: input.endDate ? new Date(input.endDate) : null,
+      const { accessories: rentalAccs, ...rentalData } = input;
+
+      const data: any = {
+        ...rentalData,
+        startDate: new Date(rentalData.startDate),
+        endDate: rentalData.endDate ? new Date(rentalData.endDate) : null,
         status: "active",
+        source: "manual",
       };
-      const id = await createRental(rentalData);
+
+      const id = await createRental(data);
+
       // Mark bike as rented
       await updateBike(input.bikeId, { status: "rented" });
+
+      // Add accessories
+      if (rentalAccs && rentalAccs.length > 0) {
+        for (const acc of rentalAccs) {
+          await createRentalAccessory({ rentalId: id, ...acc });
+        }
+      }
+
       return { id };
     }),
 
-  update: adminProcedure
-    .input(
-      z.object({
-        id: z.number(),
-        endDate: z.string().optional(),
-        returnedAt: z.date().optional(),
-        totalAmount: z.string().optional(),
-        depositAmount: z.string().optional(),
-        paymentMethod: z.enum(["pix", "credit_card", "debit_card", "cash", "other"]).optional(),
-        paymentStatus: z.enum(["pending", "paid", "partial", "refunded"]).optional(),
-        status: z.enum(["active", "returned", "overdue", "cancelled"]).optional(),
-        notes: z.string().optional(),
-      })
-    )
+  update: adminAuthProcedure
+    .input(z.object({
+      id: z.number(),
+      endDate: z.string().optional(),
+      returnedAt: z.date().optional(),
+      totalAmount: z.string().optional(),
+      depositAmount: z.string().optional(),
+      deliveryFee: z.string().optional(),
+      discountPercent: z.string().optional(),
+      paymentMethod: z.enum(["pix", "credit_card", "debit_card", "cash", "stripe", "other"]).optional(),
+      paymentStatus: z.enum(["pending", "paid", "partial", "refunded"]).optional(),
+      status: z.enum(["active", "returned", "overdue", "cancelled"]).optional(),
+      bikeCondition: z.enum(["ok", "damaged"]).optional(),
+      returnNotes: z.string().optional(),
+      notes: z.string().optional(),
+    }))
     .mutation(async ({ input }) => {
       const { id, ...data } = input;
       const rental = await getRentalById(id);
       if (!rental) throw new TRPCError({ code: "NOT_FOUND" });
 
-      await updateRental(id, data as any);
+      const updateData: any = { ...data };
+      if (data.endDate) updateData.endDate = new Date(data.endDate);
+
+      await updateRental(id, updateData);
 
       // If returned or cancelled, free the bike
       if (data.status === "returned" || data.status === "cancelled") {
@@ -305,22 +572,58 @@ const rentalsRouter = router({
       return { success: true };
     }),
 
-  stats: protectedProcedure.query(() => getRentalStats()),
+  // Return / close rental with condition check
+  returnRental: adminAuthProcedure
+    .input(z.object({
+      id: z.number(),
+      bikeCondition: z.enum(["ok", "damaged"]),
+      returnNotes: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const rental = await getRentalById(input.id);
+      if (!rental) throw new TRPCError({ code: "NOT_FOUND" });
+
+      await updateRental(input.id, {
+        status: "returned",
+        returnedAt: new Date(),
+        bikeCondition: input.bikeCondition,
+        returnNotes: input.returnNotes || null,
+      } as any);
+
+      await updateBike(rental.bikeId, { status: "available" });
+      return { success: true };
+    }),
+
+  delete: adminOnlyProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input }) => {
+      const rental = await getRentalById(input.id);
+      if (rental && rental.status === "active") {
+        await updateBike(rental.bikeId, { status: "available" });
+      }
+      await deleteRental(input.id);
+      return { success: true };
+    }),
+
+  // Accessories for a rental
+  accessories: adminAuthProcedure
+    .input(z.object({ rentalId: z.number() }))
+    .query(({ input }) => getRentalAccessories(input.rentalId)),
+
+  stats: adminAuthProcedure.query(() => getRentalStats()),
 });
 
-// ─── Accessories router ─────────────────────────────────────────────────────────────
+// ─── Accessories router ─────────────────────────────────────────────────────
 const accessoriesRouter = router({
-  list: protectedProcedure
-    .input(
-      z.object({
-        status: z.enum(["available", "rented", "maintenance", "lost"]).optional(),
-        search: z.string().optional(),
-        category: z.string().optional(),
-      })
-    )
+  list: adminAuthProcedure
+    .input(z.object({
+      status: z.enum(["available", "rented", "maintenance", "lost"]).optional(),
+      search: z.string().optional(),
+      category: z.string().optional(),
+    }))
     .query(({ input }) => getAccessories(input)),
 
-  byId: protectedProcedure
+  byId: adminAuthProcedure
     .input(z.object({ id: z.number() }))
     .query(async ({ input }) => {
       const item = await getAccessoryById(input.id);
@@ -328,47 +631,43 @@ const accessoriesRouter = router({
       return item;
     }),
 
-  create: adminProcedure
-    .input(
-      z.object({
-        name: z.string().min(1),
-        description: z.string().optional(),
-        category: z.string().optional(),
-        serialNumber: z.string().optional(),
-        quantity: z.number().min(1).default(1),
-        dailyRate: z.string().optional(),
-        purchasePrice: z.string().optional(),
-        status: z.enum(["available", "rented", "maintenance", "lost"]).default("available"),
-        notes: z.string().optional(),
-      })
-    )
+  create: adminAuthProcedure
+    .input(z.object({
+      name: z.string().min(1),
+      description: z.string().optional(),
+      category: z.string().optional(),
+      serialNumber: z.string().optional(),
+      quantity: z.number().min(1).default(1),
+      dailyRate: z.string().optional(),
+      purchasePrice: z.string().optional(),
+      status: z.enum(["available", "rented", "maintenance", "lost"]).default("available"),
+      notes: z.string().optional(),
+    }))
     .mutation(async ({ input }) => {
       const id = await createAccessory(input as any);
       return { id };
     }),
 
-  update: adminProcedure
-    .input(
-      z.object({
-        id: z.number(),
-        name: z.string().optional(),
-        description: z.string().optional(),
-        category: z.string().optional(),
-        serialNumber: z.string().optional(),
-        quantity: z.number().optional(),
-        dailyRate: z.string().optional(),
-        purchasePrice: z.string().optional(),
-        status: z.enum(["available", "rented", "maintenance", "lost"]).optional(),
-        notes: z.string().optional(),
-      })
-    )
+  update: adminAuthProcedure
+    .input(z.object({
+      id: z.number(),
+      name: z.string().optional(),
+      description: z.string().optional(),
+      category: z.string().optional(),
+      serialNumber: z.string().optional(),
+      quantity: z.number().optional(),
+      dailyRate: z.string().optional(),
+      purchasePrice: z.string().optional(),
+      status: z.enum(["available", "rented", "maintenance", "lost"]).optional(),
+      notes: z.string().optional(),
+    }))
     .mutation(async ({ input }) => {
       const { id, ...data } = input;
       await updateAccessory(id, data as any);
       return { success: true };
     }),
 
-  delete: adminProcedure
+  delete: adminOnlyProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {
       await deleteAccessory(input.id);
@@ -376,34 +675,355 @@ const accessoriesRouter = router({
     }),
 });
 
+// ─── Financial router ────────────────────────────────────────────────────────
+const financialRouter = router({
+  // Expense categories
+  expenseCategories: adminAuthProcedure.query(() => getExpenseCategories()),
+  createExpenseCategory: adminAuthProcedure
+    .input(z.object({ name: z.string().min(1) }))
+    .mutation(async ({ input }) => {
+      const id = await createExpenseCategory(input);
+      return { id };
+    }),
+  updateExpenseCategory: adminAuthProcedure
+    .input(z.object({ id: z.number(), name: z.string().min(1) }))
+    .mutation(async ({ input }) => {
+      await updateExpenseCategory(input.id, { name: input.name });
+      return { success: true };
+    }),
+  deleteExpenseCategory: adminOnlyProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input }) => {
+      await deleteExpenseCategory(input.id);
+      return { success: true };
+    }),
+
+  // Revenue categories
+  revenueCategories: adminAuthProcedure.query(() => getRevenueCategories()),
+  createRevenueCategory: adminAuthProcedure
+    .input(z.object({ name: z.string().min(1) }))
+    .mutation(async ({ input }) => {
+      const id = await createRevenueCategory(input);
+      return { id };
+    }),
+  updateRevenueCategory: adminAuthProcedure
+    .input(z.object({ id: z.number(), name: z.string().min(1) }))
+    .mutation(async ({ input }) => {
+      await updateRevenueCategory(input.id, { name: input.name });
+      return { success: true };
+    }),
+  deleteRevenueCategory: adminOnlyProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input }) => {
+      await deleteRevenueCategory(input.id);
+      return { success: true };
+    }),
+
+  // Expenses
+  expenses: adminAuthProcedure
+    .input(z.object({
+      categoryId: z.number().optional(),
+      startDate: z.string().optional(),
+      endDate: z.string().optional(),
+      limit: z.number().min(1).max(1000).default(50),
+      offset: z.number().min(0).default(0),
+    }))
+    .query(({ input }) => getExpenses(input)),
+
+  createExpense: adminAuthProcedure
+    .input(z.object({
+      categoryId: z.number(),
+      description: z.string().min(1),
+      amount: z.string(),
+      date: z.string(),
+      notes: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const id = await createExpense({ ...input, date: new Date(input.date) } as any);
+      return { id };
+    }),
+
+  updateExpense: adminAuthProcedure
+    .input(z.object({
+      id: z.number(),
+      categoryId: z.number().optional(),
+      description: z.string().optional(),
+      amount: z.string().optional(),
+      date: z.string().optional(),
+      notes: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const { id, ...data } = input;
+      const updateData: any = { ...data };
+      if (data.date) updateData.date = new Date(data.date);
+      await updateExpense(id, updateData);
+      return { success: true };
+    }),
+
+  deleteExpense: adminAuthProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input }) => {
+      await deleteExpense(input.id);
+      return { success: true };
+    }),
+
+  // Revenues (extra)
+  revenues: adminAuthProcedure
+    .input(z.object({
+      categoryId: z.number().optional(),
+      startDate: z.string().optional(),
+      endDate: z.string().optional(),
+      limit: z.number().min(1).max(1000).default(50),
+      offset: z.number().min(0).default(0),
+    }))
+    .query(({ input }) => getRevenues(input)),
+
+  createRevenue: adminAuthProcedure
+    .input(z.object({
+      categoryId: z.number(),
+      description: z.string().min(1),
+      amount: z.string(),
+      date: z.string(),
+      notes: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const id = await createRevenue({ ...input, date: new Date(input.date) } as any);
+      return { id };
+    }),
+
+  updateRevenue: adminAuthProcedure
+    .input(z.object({
+      id: z.number(),
+      categoryId: z.number().optional(),
+      description: z.string().optional(),
+      amount: z.string().optional(),
+      date: z.string().optional(),
+      notes: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const { id, ...data } = input;
+      const updateData: any = { ...data };
+      if (data.date) updateData.date = new Date(data.date);
+      await updateRevenue(id, updateData);
+      return { success: true };
+    }),
+
+  deleteRevenue: adminAuthProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input }) => {
+      await deleteRevenue(input.id);
+      return { success: true };
+    }),
+
+  // Financial report
+  report: adminAuthProcedure
+    .input(z.object({
+      startDate: z.string(),
+      endDate: z.string(),
+    }))
+    .query(({ input }) => getFinancialReport(input.startDate, input.endDate)),
+});
+
+// ─── Settings router ─────────────────────────────────────────────────────────
+const settingsRouter = router({
+  getAll: adminAuthProcedure.query(() => getAllSettings()),
+
+  get: adminAuthProcedure
+    .input(z.object({ key: z.string() }))
+    .query(({ input }) => getSetting(input.key)),
+
+  set: adminOnlyProcedure
+    .input(z.object({ key: z.string(), value: z.string() }))
+    .mutation(async ({ input }) => {
+      await setSetting(input.key, input.value);
+      return { success: true };
+    }),
+});
+
+// ─── Public API (for Shopify integration) ────────────────────────────────────
+const publicApiRouter = router({
+  // Get available bikes for the public form
+  availableBikes: publicProcedure.query(async () => {
+    const allBikes = await getBikes();
+    return allBikes.map((b) => ({
+      id: b.id,
+      model: b.model,
+      brand: (b as any).brand || null,
+      category: (b as any).category || null,
+      size: b.size,
+      sizes: (b as any).sizes || null,
+      dailyRate: (b as any).dailyRate || null,
+      photoUrl: (b as any).photoUrl || null,
+      status: b.status,
+      description: (b as any).description || null,
+      weight: (b as any).weight || null,
+      weightLimit: (b as any).weightLimit || null,
+    }));
+  }),
+
+  // Get discount rules for a bike
+  bikeDiscountRules: publicProcedure
+    .input(z.object({ bikeId: z.number() }))
+    .query(({ input }) => getBikeDiscountRules(input.bikeId)),
+
+  // Check bike availability for dates
+  checkAvailability: publicProcedure
+    .input(z.object({
+      bikeId: z.number(),
+      startDate: z.string(),
+      endDate: z.string(),
+    }))
+    .query(({ input }) => checkBikeAvailability(input.bikeId, input.startDate, input.endDate)),
+
+  // Get available accessories
+  availableAccessories: publicProcedure.query(async () => {
+    const all = await getAccessories({ status: "available" });
+    return all.map((a) => ({
+      id: a.id,
+      name: a.name,
+      category: a.category,
+      dailyRate: a.dailyRate,
+      quantity: a.quantity,
+    }));
+  }),
+
+  // Get delivery fee setting
+  deliveryFee: publicProcedure.query(async () => {
+    const fee = await getSetting("delivery_fee");
+    return fee || "0";
+  }),
+
+  // Submit reservation from Shopify
+  submitReservation: publicProcedure
+    .input(z.object({
+      // Client data
+      name: z.string().min(2),
+      cpf: z.string().optional(),
+      rg: z.string().optional(),
+      birthDate: z.string().optional(),
+      gender: z.string().optional(),
+      height: z.string().optional(),
+      phone: z.string().optional(),
+      email: z.string().email().optional().or(z.literal("")),
+      instagram: z.string().optional(),
+      accommodation: z.string().optional(),
+      // Rental data
+      bikeId: z.number(),
+      startDate: z.string(),
+      endDate: z.string(),
+      deliveryTime: z.string().optional(),
+      totalAmount: z.string().optional(),
+      discountPercent: z.string().optional(),
+      deliveryFee: z.string().optional(),
+      paymentMethod: z.enum(["pix", "credit_card", "debit_card", "cash", "stripe", "other"]).optional(),
+      notes: z.string().optional(),
+      // Accessories
+      accessories: z.array(z.object({
+        accessoryId: z.number(),
+        quantity: z.number().min(1).default(1),
+      })).optional(),
+      // API key for security
+      apiKey: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      // Verify API key
+      const storedKey = await getSetting("shopify_api_key");
+      if (storedKey && input.apiKey !== storedKey) {
+        throw new TRPCError({ code: "UNAUTHORIZED", message: "Chave de API inválida." });
+      }
+
+      // Check bike availability
+      const available = await checkBikeAvailability(input.bikeId, input.startDate, input.endDate);
+      if (!available) {
+        throw new TRPCError({ code: "CONFLICT", message: "Bicicleta não disponível para o período selecionado." });
+      }
+
+      // Create client
+      const clientId = await createClient({
+        name: input.name,
+        cpf: input.cpf,
+        rg: input.rg,
+        birthDate: input.birthDate,
+        gender: input.gender,
+        height: input.height,
+        phone: input.phone,
+        email: input.email || null,
+        instagram: input.instagram,
+        accommodation: input.accommodation,
+        source: "shopify",
+        status: "lead",
+      } as any);
+
+      // Create rental
+      const rentalId = await createRental({
+        clientId,
+        bikeId: input.bikeId,
+        startDate: new Date(input.startDate),
+        endDate: new Date(input.endDate),
+        deliveryTime: input.deliveryTime,
+        totalAmount: input.totalAmount,
+        discountPercent: input.discountPercent,
+        deliveryFee: input.deliveryFee,
+        paymentMethod: input.paymentMethod,
+        paymentStatus: input.paymentMethod === "stripe" ? "pending" : "pending",
+        status: "active",
+        source: "shopify",
+        notes: input.notes,
+      } as any);
+
+      // Mark bike as rented
+      await updateBike(input.bikeId, { status: "rented" });
+
+      // Add accessories
+      if (input.accessories && input.accessories.length > 0) {
+        for (const acc of input.accessories) {
+          const accessory = await getAccessoryById(acc.accessoryId);
+          await createRentalAccessory({
+            rentalId,
+            accessoryId: acc.accessoryId,
+            quantity: acc.quantity,
+            dailyRate: accessory?.dailyRate || null,
+          } as any);
+        }
+      }
+
+      // Notify owner
+      try {
+        const bike = await getBikeById(input.bikeId);
+        await notifyOwner({
+          title: "Nova Reserva pelo Site!",
+          content: `Cliente: ${input.name}\nBike: ${bike?.model || "N/A"}\nPeríodo: ${input.startDate} a ${input.endDate}\nValor: R$ ${input.totalAmount || "N/A"}\nPagamento: ${input.paymentMethod || "N/A"}`,
+        });
+      } catch {}
+
+      return { clientId, rentalId, success: true };
+    }),
+});
+
+// ─── Dashboard router ────────────────────────────────────────────────────────
+const dashboardRouter = router({
+  summary: adminAuthProcedure.query(async () => {
+    const [clientStats, bikeStats, rentalStats] = await Promise.all([
+      getClientStats(),
+      getBikeStats(),
+      getRentalStats(),
+    ]);
+    return { clientStats, bikeStats, rentalStats };
+  }),
+});
+
 // ─── App router ───────────────────────────────────────────────────────────────
 export const appRouter = router({
   system: systemRouter,
-
-  auth: router({
-    me: publicProcedure.query((opts) => opts.ctx.user),
-    logout: publicProcedure.mutation(({ ctx }) => {
-      const cookieOptions = getSessionCookieOptions(ctx.req);
-      ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
-      return { success: true } as const;
-    }),
-  }),
-
+  auth: authRouter,
   clients: clientsRouter,
   bikes: bikesRouter,
   rentals: rentalsRouter,
   accessories: accessoriesRouter,
-
-  dashboard: router({
-    summary: protectedProcedure.query(async () => {
-      const [clientStats, bikeStats, rentalStats] = await Promise.all([
-        getClientStats(),
-        getBikeStats(),
-        getRentalStats(),
-      ]);
-      return { clientStats, bikeStats, rentalStats };
-    }),
-  }),
+  financial: financialRouter,
+  settings: settingsRouter,
+  publicApi: publicApiRouter,
+  dashboard: dashboardRouter,
 });
 
 export type AppRouter = typeof appRouter;

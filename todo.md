@@ -63,3 +63,80 @@
 ## Correções v1.2
 - [x] Corrigir erro "Too big: limit <=200" nas queries de paginação
 - [x] Adicionar seleção de acessórios no formulário de cadastro de aluguel
+
+## v2.0 — Escopo Completo
+
+### Banco de Dados — Novas tabelas e campos
+- [x] Bikes: adicionar campos marca, categoria, descrição técnica, peso, limite peso ciclista, preço por dia, foto URL, quantidade
+- [x] Nova tabela: bike_discount_rules (desconto progressivo por bike)
+- [x] Nova tabela: rental_accessories (vínculo acessórios-aluguel)
+- [x] Rentals: adicionar campos deliveryDate, deliveryTime, deliveryFee, returnCondition, paymentType (online/presencial), stripeSessionId
+- [x] Nova tabela: expense_categories (categorias de despesa editáveis)
+- [x] Nova tabela: revenue_categories (categorias de receita editáveis)
+- [x] Nova tabela: expenses (despesas operacionais)
+- [x] Nova tabela: revenues (receitas extras)
+- [x] Nova tabela: system_settings (taxa entrega, telefone WhatsApp, etc.)
+- [x] Nova tabela: admin_users (login próprio email+senha, fora do Manus OAuth)
+- [x] Gerar migrações e aplicar SQL
+
+### Autenticação — Sistema próprio (fora do Manus OAuth)
+- [x] Login com email + senha (bcrypt)
+- [x] Gerenciamento de usuários: adicionar/remover quem pode acessar
+- [x] Sessões JWT com expiração configurável
+- [x] Página de login atualizada
+
+### Módulo Bicicletas — Melhorias
+- [x] Formulário: novos campos (marca, categoria, tamanho, descrição, peso, limite peso, preço/dia, foto, quantidade)
+- [x] Tabela de desconto progressivo por bike (a partir de X dias, Y% off)
+- [ ] Pré-cadastro de todas as bikes do catálogo (sem fotos)
+- [x] Status: Disponível / Alugada / Em Manutenção visível no formulário Shopify
+
+### Módulo Aluguéis — Melhorias
+- [x] Seleção de bike com verificação de disponibilidade por período (calendário range)
+- [x] Seleção de horário de entrega (09h às 19h, intervalos 30min, margem 15-30min)
+- [x] Taxa de entrega fixa configurável no sistema
+- [x] Cálculo automático do valor com desconto progressivo
+- [x] Forma de pagamento: Online (Stripe) ou Presencial
+- [x] Tela de encerramento: confirmar devolução + condição da bike (OK / Com dano)
+- [x] Tabela rental_accessories vinculando acessórios ao aluguel
+
+### Módulo Financeiro — Novo
+- [x] Categorias de despesa: criar/editar/excluir livremente
+- [x] Categorias de receita: criar/editar/excluir livremente
+- [x] Registro de despesas com categoria, valor, data, descrição
+- [x] Registro de receitas extras (além dos aluguéis)
+- [x] Relatório de faturamento por mês e por período personalizado
+- [x] Cálculo: Receita bruta − Despesas = Lucro bruto / Lucro real
+- [x] Download do relatório em CSV/Excel
+
+### Integração Shopify — API pública
+- [x] Endpoint público para receber dados do formulário Shopify
+- [x] Endpoint público para listar bikes disponíveis (com status e períodos bloqueados)
+- [x] Chave de API secreta para autenticação do formulário
+- [ ] CORS restrito ao domínio Shopify
+
+### Notificações
+- [ ] Email automático para cliente ao confirmar reserva (remetente: biketogo.floripa@gmail.com)
+- [ ] Notificação WhatsApp para dono ao receber nova reserva
+- [ ] Campo no sistema para configurar telefone que recebe notificações
+
+### Segurança
+- [ ] Rate limiting nas rotas de login e API pública
+- [ ] Headers de segurança (Helmet.js)
+- [ ] Sanitização de inputs
+- [ ] Proteção contra SQL injection (Drizzle ORM parametrizado — já existe)
+
+### Exclusão de registros
+- [x] Botão excluir com confirmação em Clientes
+- [x] Botão excluir com confirmação em Aluguéis
+- [x] Botão excluir com confirmação em Acessórios (já existe)
+- [x] Botão excluir com confirmação em Bicicletas (já existe)
+
+### Configurações do sistema
+- [x] Tela de configurações: taxa de entrega, telefone WhatsApp, horário funcionamento
+- [x] Gerenciamento de usuários do sistema (adicionar/remover acesso)
+
+### Testes & Entrega v2.0
+- [x] Testes Vitest para novos routers e funcionalidades
+- [x] Verificação TypeScript sem erros
+- [x] Checkpoint final e entrega
