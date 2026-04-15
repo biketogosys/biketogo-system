@@ -14,6 +14,7 @@ import Accessories from "./pages/Accessories";
 import Financial from "./pages/Financial";
 import UserManagement from "./pages/UserManagement";
 import Settings from "./pages/Settings";
+import PublicReservation from "./pages/PublicReservation";
 import { useAuth } from "./_core/hooks/useAuth";
 import { Loader2 } from "lucide-react";
 import DashboardLayout from "./components/DashboardLayout";
@@ -52,6 +53,7 @@ function Router() {
       <Route path="/financeiro" component={() => <ProtectedRoute component={Financial} />} />
       <Route path="/usuarios" component={() => <ProtectedRoute component={UserManagement} />} />
       <Route path="/configuracoes" component={() => <ProtectedRoute component={Settings} />} />
+      <Route path="/reservar" component={PublicReservation} />
       <Route path="/login" component={Login} />
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />

@@ -201,3 +201,112 @@ describe("publicApi.availableBikes", () => {
     expect(Array.isArray(result)).toBe(true);
   });
 });
+
+// ─── Public API: additional endpoints ────────────────────────────────────────
+describe("publicApi.availableAccessories", () => {
+  it("returns an array without authentication", async () => {
+    const { ctx } = createUnauthContext();
+    const caller = appRouter.createCaller(ctx);
+
+    const result = await caller.publicApi.availableAccessories();
+    expect(Array.isArray(result)).toBe(true);
+  });
+});
+
+describe("publicApi.deliveryFee", () => {
+  it("returns a string without authentication", async () => {
+    const { ctx } = createUnauthContext();
+    const caller = appRouter.createCaller(ctx);
+
+    const result = await caller.publicApi.deliveryFee();
+    expect(typeof result).toBe("string");
+  });
+});
+
+describe("publicApi.checkAvailability", () => {
+  it("returns a boolean without authentication", async () => {
+    const { ctx } = createUnauthContext();
+    const caller = appRouter.createCaller(ctx);
+
+    // Use a non-existent bike ID so it returns true (no conflicts)
+    const result = await caller.publicApi.checkAvailability({
+      bikeId: 99999,
+      startDate: "2026-06-01",
+      endDate: "2026-06-05",
+    });
+    expect(typeof result).toBe("boolean");
+  });
+});
+
+describe("publicApi.bikeDiscountRules", () => {
+  it("returns an array without authentication", async () => {
+    const { ctx } = createUnauthContext();
+    const caller = appRouter.createCaller(ctx);
+
+    const result = await caller.publicApi.bikeDiscountRules({ bikeId: 99999 });
+    expect(Array.isArray(result)).toBe(true);
+  });
+});
+
+// ─── Email helper tests ──────────────────────────────────────────────────────
+describe("email helper", () => {
+  it("buildReservationEmailHtml returns valid HTML", async () => {
+    const { buildReservationEmailHtml } = await import("./email");
+    const html = buildReservationEmailHtml({
+      clientName: "João Silva",
+      bikeModel: "Mountain Pro 29",
+      startDate: "2026-06-01",
+      endDate: "2026-06-05",
+      deliveryTime: "10:00",
+      totalAmount: "450.00",
+      accessories: ["Capacete", "Cadeado"],
+    });
+
+    expect(html).toContain("João Silva");
+    expect(html).toContain("Mountain Pro 29");
+    expect(html).toContain("450.00");
+    expect(html).toContain("Capacete");
+    expect(html).toContain("Cadeado");
+    expect(html).toContain("<!DOCTYPE html>");
+  });
+
+  it("sendEmail returns false when no API key is configured", async () => {
+    const { sendEmail } = await import("./email");
+    const result = await sendEmail({
+      to: "test@example.com",
+      subject: "Test",
+      html: "<p>Test</p>",
+    });
+    expect(result).toBe(false);
+  });
+});
+
+// ─── WhatsApp helper tests ───────────────────────────────────────────────────
+describe("whatsapp helper", () => {
+  it("buildOwnerReservationMessage returns formatted text", async () => {
+    const { buildOwnerReservationMessage } = await import("./whatsapp");
+    const msg = buildOwnerReservationMessage({
+      clientName: "Maria Santos",
+      clientPhone: "+5548999999999",
+      bikeModel: "City Comfort",
+      startDate: "2026-07-01",
+      endDate: "2026-07-03",
+      deliveryTime: "14:00",
+      totalAmount: "200.00",
+    });
+
+    expect(msg).toContain("Maria Santos");
+    expect(msg).toContain("City Comfort");
+    expect(msg).toContain("200.00");
+    expect(msg).toContain("+5548999999999");
+  });
+
+  it("sendWhatsApp returns false when no provider is configured", async () => {
+    const { sendWhatsApp } = await import("./whatsapp");
+    const result = await sendWhatsApp({
+      to: "+5548999999999",
+      text: "Test message",
+    });
+    expect(result).toBe(false);
+  });
+});

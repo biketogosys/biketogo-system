@@ -75,6 +75,8 @@ import {
   getAllSettings,
 } from "./db";
 import { notifyOwner } from "./_core/notification";
+import { sendEmail, buildReservationEmailHtml } from "./email";
+import { sendWhatsApp, buildOwnerReservationMessage } from "./whatsapp";
 import { COOKIE_NAME } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
@@ -987,14 +989,48 @@ const publicApiRouter = router({
         }
       }
 
-      // Notify owner
+      // Notify owner via all channels
       try {
         const bike = await getBikeById(input.bikeId);
+        const bikeModel = bike?.model || "N/A";
+
+        // 1. Manus built-in notification
         await notifyOwner({
           title: "Nova Reserva pelo Site!",
-          content: `Cliente: ${input.name}\nBike: ${bike?.model || "N/A"}\nPeríodo: ${input.startDate} a ${input.endDate}\nValor: R$ ${input.totalAmount || "N/A"}\nPagamento: ${input.paymentMethod || "N/A"}`,
+          content: `Cliente: ${input.name}\nBike: ${bikeModel}\nPeríodo: ${input.startDate} a ${input.endDate}\nValor: R$ ${input.totalAmount || "N/A"}\nPagamento: ${input.paymentMethod || "N/A"}`,
         });
-      } catch {}
+
+        // 2. WhatsApp notification to owner
+        const waMessage = buildOwnerReservationMessage({
+          clientName: input.name,
+          clientPhone: input.phone,
+          bikeModel,
+          startDate: input.startDate,
+          endDate: input.endDate,
+          deliveryTime: input.deliveryTime,
+          totalAmount: input.totalAmount,
+        });
+        await sendWhatsApp({ text: waMessage });
+
+        // 3. Email confirmation to client
+        if (input.email) {
+          const emailHtml = buildReservationEmailHtml({
+            clientName: input.name,
+            bikeModel,
+            startDate: input.startDate,
+            endDate: input.endDate,
+            deliveryTime: input.deliveryTime,
+            totalAmount: input.totalAmount,
+          });
+          await sendEmail({
+            to: input.email,
+            subject: `Reserva Confirmada — ${bikeModel} | Bike To Go`,
+            html: emailHtml,
+          });
+        }
+      } catch (err) {
+        console.warn("[Notification] Error sending notifications:", err);
+      }
 
       return { clientId, rentalId, success: true };
     }),

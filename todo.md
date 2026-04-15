@@ -116,9 +116,9 @@
 - [ ] CORS restrito ao domínio Shopify
 
 ### Notificações
-- [ ] Email automático para cliente ao confirmar reserva (remetente: biketogo.floripa@gmail.com)
-- [ ] Notificação WhatsApp para dono ao receber nova reserva
-- [ ] Campo no sistema para configurar telefone que recebe notificações
+- [x] Email automático para cliente ao confirmar reserva (remetente: biketogo.floripa@gmail.com)
+- [x] Notificação WhatsApp para dono ao receber nova reserva
+- [x] Campo no sistema para configurar telefone que recebe notificações
 
 ### Segurança
 - [ ] Rate limiting nas rotas de login e API pública
@@ -139,4 +139,30 @@
 ### Testes & Entrega v2.0
 - [x] Testes Vitest para novos routers e funcionalidades
 - [x] Verificação TypeScript sem erros
+- [x] Checkpoint final e entrega
+
+## v2.1 — Formulário Público + Comunicação
+
+### Formulário Público (embeddable no Shopify)
+- [x] Página pública /reservar com formulário completo de reserva
+- [x] Dados pessoais: nome, email, telefone, CPF
+- [x] Seleção de bike com fotos, preço/dia e disponibilidade em tempo real
+- [x] Seleção de período (data início e fim) com calendário
+- [x] Seleção de horário de entrega (09h-19h, intervalos 30min)
+- [x] Seleção de acessórios opcionais
+- [x] Cálculo automático do valor total (desconto progressivo + taxa entrega + acessórios)
+- [x] Resumo da reserva antes de confirmar
+- [x] Design responsivo mobile-first com identidade Bike To Go
+- [x] Endpoint público para processar a reserva (cria cliente lead + rental)
+
+### Sistema de Notificações
+- [x] Helper de envio de email via Resend API (preparado para API key futura)
+- [x] Email automático para cliente ao confirmar reserva
+- [x] Notificação para o dono (via notifyOwner) ao receber nova reserva
+- [x] Notificação WhatsApp para dono ao receber nova reserva (Z-API ou Cloud API)
+- [x] Template de email HTML com identidade visual Bike To Go
+- [x] Configuração de email/telefone/API keys na tela de Configurações
+
+### Testes & Entrega v2.1
+- [x] Testes Vitest para endpoints de reserva e notificação (37 testes passando)
 - [x] Checkpoint final e entrega
