@@ -166,3 +166,7 @@
 ### Testes & Entrega v2.1
 - [x] Testes Vitest para endpoints de reserva e notificação (37 testes passando)
 - [x] Checkpoint final e entrega
+
+## Correções v2.2
+
+- [x] Bug crítico: cookie-parser ausente no Express — sessão de login não é lida após autenticação
