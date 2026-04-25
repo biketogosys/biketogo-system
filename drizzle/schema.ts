@@ -71,6 +71,13 @@ export const clients = mysqlTable("clients", {
   city: varchar("city", { length: 100 }),
   state: varchar("state", { length: 50 }),
   country: varchar("country", { length: 50 }).default("Brasil"),
+  complement: varchar("complement", { length: 100 }),
+  // Documents
+  docFrontUrl: text("docFrontUrl"),
+  docBackUrl: text("docBackUrl"),
+  // LGPD
+  lgpdConsent: boolean("lgpdConsent").default(false).notNull(),
+  lgpdConsentAt: timestamp("lgpdConsentAt"),
 
   // Status & control
   status: mysqlEnum("status", ["lead", "verified", "blocked"]).default("lead").notNull(),

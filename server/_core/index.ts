@@ -8,8 +8,9 @@ import { registerOAuthRoutes } from "./oauth";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
-import { createClient } from "../db";
+import { createClient, updateRental } from "../db";
 import { notifyOwner } from "./notification";
+import { constructStripeEvent } from "../stripe";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -33,6 +34,32 @@ async function findAvailablePort(startPort: number = 3000): Promise<number> {
 async function startServer() {
   const app = express();
   const server = createServer(app);
+
+  // ─── Stripe webhook MUST be registered BEFORE express.json() ──────────────
+  app.post("/api/stripe/webhook", express.raw({ type: "application/json" }), async (req, res) => {
+    const sig = req.headers["stripe-signature"] as string;
+    try {
+      const event = constructStripeEvent(req.body as Buffer, sig);
+      // Test events — return verification response
+      if (event.id.startsWith("evt_test_")) {
+        console.log("[Webhook] Test event detected");
+        return res.json({ verified: true });
+      }
+      if (event.type === "checkout.session.completed") {
+        const session = event.data.object as any;
+        const rentalId = parseInt(session.metadata?.rental_id || "0");
+        if (rentalId) {
+          await updateRental(rentalId, { paymentStatus: "paid", stripeSessionId: session.id } as any);
+          console.log(`[Stripe] Payment confirmed for rental #${rentalId}`);
+        }
+      }
+      res.json({ received: true });
+    } catch (err: any) {
+      console.error("[Stripe Webhook]", err.message);
+      res.status(400).send(`Webhook Error: ${err.message}`);
+    }
+  });
+
   // Configure body parser with larger size limit for file uploads
   app.use(express.json({ limit: "50mb" }));
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
