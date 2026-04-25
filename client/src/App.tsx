@@ -3,7 +3,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/NotFound";
 import { Route, Switch } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
-import { ThemeProvider } from "./contexts/ThemeContext";
+import { ThemeProvider, useTheme } from "./contexts/ThemeContext";
 import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
 import Clients from "./pages/Clients";
@@ -61,14 +61,21 @@ function Router() {
   );
 }
 
+function AppInner() {
+  const { theme } = useTheme();
+  return (
+    <TooltipProvider>
+      <Toaster richColors theme={theme as "light" | "dark"} />
+      <Router />
+    </TooltipProvider>
+  );
+}
+
 function App() {
   return (
     <ErrorBoundary>
-      <ThemeProvider defaultTheme="dark">
-        <TooltipProvider>
-          <Toaster richColors theme="dark" />
-          <Router />
-        </TooltipProvider>
+      <ThemeProvider defaultTheme="light" switchable={true}>
+        <AppInner />
       </ThemeProvider>
     </ErrorBoundary>
   );

@@ -195,3 +195,14 @@
 ### Testes & Entrega v2.3
 - [x] Testes Vitest (37 testes passando, TypeScript sem erros)
 - [x] Checkpoint final e entrega
+
+## v2.4 — Idiomas e Tema
+
+- [x] Arquivo de traduções i18n com PT-BR, EN e ES para o formulário público
+- [x] Seletor de idioma no formulário /reservar (bandeiras PT/EN/ES)
+- [x] Todos os textos do formulário traduzidos nos 3 idiomas
+- [x] Tema padrão do sistema: light mode
+- [x] Botão toggle dark/light no DashboardLayout (painel interno)
+- [x] Botão toggle dark/light no formulário público /reservar
+- [x] Persistência da preferência de tema no localStorage
+- [x] Checkpoint final e entrega
