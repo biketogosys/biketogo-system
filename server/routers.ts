@@ -1,5 +1,6 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
+import { sanitize, sanitizeDate, sanitizeDateString, sanitizeNumeric } from "./_core/utils";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import {
@@ -77,6 +78,7 @@ import {
 import { notifyOwner } from "./_core/notification";
 import { sendEmail, buildReservationEmailHtml } from "./email";
 import { sendWhatsApp, buildOwnerReservationMessage } from "./whatsapp";
+import { createStripeCheckout } from "./stripe";
 import { COOKIE_NAME } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
@@ -276,7 +278,29 @@ const clientsRouter = router({
       status: z.enum(["lead", "verified", "blocked"]).default("lead"),
     }))
     .mutation(async ({ input }) => {
-      const id = await createClient({ ...input, source: "manual" });
+      const id = await createClient({
+        ...input,
+        source: "manual",
+        cpf: sanitize(input.cpf) as string | null,
+        rg: sanitize(input.rg) as string | null,
+        birthDate: sanitize(input.birthDate) as string | null,
+        gender: sanitize(input.gender) as string | null,
+        height: sanitize(input.height) as string | null,
+        pedalFrequency: sanitize(input.pedalFrequency) as string | null,
+        origin: sanitize(input.origin) as string | null,
+        phone: sanitize(input.phone) as string | null,
+        email: sanitize(input.email) as string | null,
+        instagram: sanitize(input.instagram) as string | null,
+        accommodation: sanitize(input.accommodation) as string | null,
+        zipCode: sanitize(input.zipCode) as string | null,
+        street: sanitize(input.street) as string | null,
+        number: sanitize(input.number) as string | null,
+        neighborhood: sanitize(input.neighborhood) as string | null,
+        city: sanitize(input.city) as string | null,
+        state: sanitize(input.state) as string | null,
+        country: sanitize(input.country) as string | null || "Brasil",
+        notes: sanitize(input.notes) as string | null,
+      });
       return { id };
     }),
 
@@ -309,7 +333,29 @@ const clientsRouter = router({
     }))
     .mutation(async ({ input }) => {
       const { id, ...data } = input;
-      await updateClient(id, data as any);
+      const sanitized: any = {
+        ...data,
+        cpf: sanitize(data.cpf),
+        rg: sanitize(data.rg),
+        birthDate: sanitize(data.birthDate),
+        gender: sanitize(data.gender),
+        height: sanitize(data.height),
+        pedalFrequency: sanitize(data.pedalFrequency),
+        origin: sanitize(data.origin),
+        phone: sanitize(data.phone),
+        email: sanitize(data.email),
+        instagram: sanitize(data.instagram),
+        accommodation: sanitize(data.accommodation),
+        zipCode: sanitize(data.zipCode),
+        street: sanitize(data.street),
+        number: sanitize(data.number),
+        neighborhood: sanitize(data.neighborhood),
+        city: sanitize(data.city),
+        state: sanitize(data.state),
+        country: sanitize(data.country),
+        notes: sanitize(data.notes),
+      };
+      await updateClient(id, sanitized);
       return { success: true };
     }),
 
@@ -520,8 +566,15 @@ const rentalsRouter = router({
 
       const data: any = {
         ...rentalData,
-        startDate: new Date(rentalData.startDate),
-        endDate: rentalData.endDate ? new Date(rentalData.endDate) : null,
+        startDate: sanitizeDateString(rentalData.startDate) as string,
+        endDate: sanitizeDateString(rentalData.endDate),
+        deliveryTime: sanitize(rentalData.deliveryTime),
+        dailyRate: sanitizeNumeric(rentalData.dailyRate),
+        totalAmount: sanitizeNumeric(rentalData.totalAmount),
+        discountPercent: sanitizeNumeric(rentalData.discountPercent),
+        deliveryFee: sanitizeNumeric(rentalData.deliveryFee),
+        depositAmount: sanitizeNumeric(rentalData.depositAmount),
+        notes: sanitize(rentalData.notes),
         status: "active",
         source: "manual",
       };
@@ -562,8 +615,16 @@ const rentalsRouter = router({
       const rental = await getRentalById(id);
       if (!rental) throw new TRPCError({ code: "NOT_FOUND" });
 
-      const updateData: any = { ...data };
-      if (data.endDate) updateData.endDate = new Date(data.endDate);
+      const updateData: any = {
+        ...data,
+        endDate: data.endDate ? sanitizeDateString(data.endDate) : undefined,
+        totalAmount: data.totalAmount !== undefined ? sanitizeNumeric(data.totalAmount) : undefined,
+        depositAmount: data.depositAmount !== undefined ? sanitizeNumeric(data.depositAmount) : undefined,
+        deliveryFee: data.deliveryFee !== undefined ? sanitizeNumeric(data.deliveryFee) : undefined,
+        discountPercent: data.discountPercent !== undefined ? sanitizeNumeric(data.discountPercent) : undefined,
+        returnCondition: data.bikeCondition !== undefined ? data.bikeCondition : undefined,
+        notes: data.notes !== undefined ? sanitize(data.notes) : (data.returnNotes !== undefined ? sanitize(data.returnNotes) : undefined),
+      };
 
       await updateRental(id, updateData);
 
@@ -588,8 +649,8 @@ const rentalsRouter = router({
       await updateRental(input.id, {
         status: "returned",
         returnedAt: new Date(),
-        bikeCondition: input.bikeCondition,
-        returnNotes: input.returnNotes || null,
+        returnCondition: input.bikeCondition,
+        notes: input.returnNotes || null,
       } as any);
 
       await updateBike(rental.bikeId, { status: "available" });
@@ -646,7 +707,16 @@ const accessoriesRouter = router({
       notes: z.string().optional(),
     }))
     .mutation(async ({ input }) => {
-      const id = await createAccessory(input as any);
+      const sanitizedAcc: any = {
+        ...input,
+        description: sanitize(input.description),
+        category: sanitize(input.category),
+        serialNumber: sanitize(input.serialNumber),
+        dailyRate: sanitizeNumeric(input.dailyRate),
+        purchasePrice: sanitizeNumeric(input.purchasePrice),
+        notes: sanitize(input.notes),
+      };
+      const id = await createAccessory(sanitizedAcc);
       return { id };
     }),
 
@@ -665,7 +735,16 @@ const accessoriesRouter = router({
     }))
     .mutation(async ({ input }) => {
       const { id, ...data } = input;
-      await updateAccessory(id, data as any);
+      const sanitizedAcc: any = {
+        ...data,
+        description: data.description !== undefined ? sanitize(data.description) : undefined,
+        category: data.category !== undefined ? sanitize(data.category) : undefined,
+        serialNumber: data.serialNumber !== undefined ? sanitize(data.serialNumber) : undefined,
+        dailyRate: data.dailyRate !== undefined ? sanitizeNumeric(data.dailyRate) : undefined,
+        purchasePrice: data.purchasePrice !== undefined ? sanitizeNumeric(data.purchasePrice) : undefined,
+        notes: data.notes !== undefined ? sanitize(data.notes) : undefined,
+      };
+      await updateAccessory(id, sanitizedAcc);
       return { success: true };
     }),
 
@@ -741,7 +820,14 @@ const financialRouter = router({
       notes: z.string().optional(),
     }))
     .mutation(async ({ input }) => {
-      const id = await createExpense({ ...input, date: new Date(input.date) } as any);
+      const dateVal = sanitizeDateString(input.date);
+      if (!dateVal) throw new TRPCError({ code: "BAD_REQUEST", message: "Data inválida." });
+      const id = await createExpense({
+        categoryId: input.categoryId,
+        description: input.description,
+        amount: sanitizeNumeric(input.amount) as string,
+        date: dateVal,
+      } as any);
       return { id };
     }),
 
@@ -757,7 +843,8 @@ const financialRouter = router({
     .mutation(async ({ input }) => {
       const { id, ...data } = input;
       const updateData: any = { ...data };
-      if (data.date) updateData.date = new Date(data.date);
+      if (data.date) updateData.date = sanitizeDateString(data.date);
+      if (data.amount !== undefined) updateData.amount = sanitizeNumeric(data.amount);
       await updateExpense(id, updateData);
       return { success: true };
     }),
@@ -789,7 +876,14 @@ const financialRouter = router({
       notes: z.string().optional(),
     }))
     .mutation(async ({ input }) => {
-      const id = await createRevenue({ ...input, date: new Date(input.date) } as any);
+      const dateVal = sanitizeDateString(input.date);
+      if (!dateVal) throw new TRPCError({ code: "BAD_REQUEST", message: "Data inválida." });
+      const id = await createRevenue({
+        categoryId: input.categoryId,
+        description: input.description,
+        amount: sanitizeNumeric(input.amount) as string,
+        date: dateVal,
+      } as any);
       return { id };
     }),
 
@@ -805,7 +899,8 @@ const financialRouter = router({
     .mutation(async ({ input }) => {
       const { id, ...data } = input;
       const updateData: any = { ...data };
-      if (data.date) updateData.date = new Date(data.date);
+      if (data.date) updateData.date = sanitizeDateString(data.date);
+      if (data.amount !== undefined) updateData.amount = sanitizeNumeric(data.amount);
       await updateRevenue(id, updateData);
       return { success: true };
     }),
@@ -909,6 +1004,20 @@ const publicApiRouter = router({
       email: z.string().email().optional().or(z.literal("")),
       instagram: z.string().optional(),
       accommodation: z.string().optional(),
+      // Address
+      zipCode: z.string().optional(),
+      street: z.string().optional(),
+      number: z.string().optional(),
+      complement: z.string().optional(),
+      neighborhood: z.string().optional(),
+      city: z.string().optional(),
+      state: z.string().optional(),
+      country: z.string().optional(),
+      // Profile
+      docOrigin: z.string().optional(),
+      pedalFreq: z.string().optional(),
+      howFound: z.string().optional(),
+      lgpdConsent: z.boolean().optional(),
       // Rental data
       bikeId: z.number(),
       startDate: z.string(),
@@ -943,15 +1052,25 @@ const publicApiRouter = router({
       // Create client
       const clientId = await createClient({
         name: input.name,
-        cpf: input.cpf,
-        rg: input.rg,
-        birthDate: input.birthDate,
-        gender: input.gender,
-        height: input.height,
-        phone: input.phone,
-        email: input.email || null,
-        instagram: input.instagram,
-        accommodation: input.accommodation,
+        cpf: sanitize(input.cpf) as string | null,
+        rg: sanitize(input.rg) as string | null,
+        birthDate: sanitize(input.birthDate) as string | null,
+        gender: sanitize(input.gender) as string | null,
+        height: sanitize(input.height) as string | null,
+        phone: sanitize(input.phone) as string | null,
+        email: sanitize(input.email) as string | null,
+        instagram: sanitize(input.instagram) as string | null,
+        accommodation: sanitize(input.accommodation) as string | null,
+        zipCode: sanitize(input.zipCode) as string | null,
+        street: sanitize(input.street) as string | null,
+        number: sanitize(input.number) as string | null,
+        complement: sanitize(input.complement) as string | null,
+        neighborhood: sanitize(input.neighborhood) as string | null,
+        city: sanitize(input.city) as string | null,
+        state: sanitize(input.state) as string | null,
+        country: sanitize(input.country) as string | null || "Brasil",
+        pedalFrequency: sanitize(input.pedalFreq) as string | null,
+        origin: sanitize(input.howFound) as string | null,
         source: "shopify",
         status: "lead",
       } as any);
@@ -960,17 +1079,17 @@ const publicApiRouter = router({
       const rentalId = await createRental({
         clientId,
         bikeId: input.bikeId,
-        startDate: new Date(input.startDate),
-        endDate: new Date(input.endDate),
-        deliveryTime: input.deliveryTime,
-        totalAmount: input.totalAmount,
-        discountPercent: input.discountPercent,
-        deliveryFee: input.deliveryFee,
-        paymentMethod: input.paymentMethod,
-        paymentStatus: input.paymentMethod === "stripe" ? "pending" : "pending",
+        startDate: sanitizeDateString(input.startDate) as string,
+        endDate: sanitizeDateString(input.endDate),
+        deliveryTime: sanitize(input.deliveryTime) as string | null,
+        totalAmount: sanitizeNumeric(input.totalAmount),
+        discountPercent: sanitizeNumeric(input.discountPercent),
+        deliveryFee: sanitizeNumeric(input.deliveryFee),
+        paymentMethod: input.paymentMethod || null,
+        paymentStatus: "pending",
         status: "active",
         source: "shopify",
-        notes: input.notes,
+        notes: sanitize(input.notes) as string | null,
       } as any);
 
       // Mark bike as rented
@@ -1033,6 +1152,56 @@ const publicApiRouter = router({
       }
 
       return { clientId, rentalId, success: true };
+    }),
+
+  // ─── Create Stripe Checkout Session ────────────────────────────────────────
+  createCheckout: publicProcedure
+    .input(z.object({
+      rentalId: z.number(),
+      clientId: z.number(),
+      clientName: z.string(),
+      clientEmail: z.string().optional(),
+      bikeModel: z.string(),
+      startDate: z.string(),
+      endDate: z.string(),
+      totalAmountBRL: z.number(),
+      paymentType: z.enum(["card", "pix"]),
+      origin: z.string(),
+    }))
+    .mutation(async ({ input }) => {
+      const result = await createStripeCheckout({
+        rentalId: input.rentalId,
+        clientId: input.clientId,
+        clientName: input.clientName,
+        clientEmail: input.clientEmail,
+        bikeModel: input.bikeModel,
+        startDate: input.startDate,
+        endDate: input.endDate,
+        totalAmountBRL: input.totalAmountBRL,
+        paymentType: input.paymentType,
+        origin: input.origin,
+      });
+      return result;
+    }),
+
+  // ─── Upload document photo (base64) ────────────────────────────────────────
+  uploadDocument: publicProcedure
+    .input(z.object({
+      clientId: z.number(),
+      side: z.enum(["front", "back"]),
+      base64: z.string(),
+      mimeType: z.string().default("image/jpeg"),
+    }))
+    .mutation(async ({ input }) => {
+      const { storagePut } = await import("./storage");
+      const base64Data = input.base64.replace(/^data:[^;]+;base64,/, "");
+      const buffer = Buffer.from(base64Data, "base64");
+      const ext = input.mimeType.split("/")[1] || "jpg";
+      const key = `clients/${input.clientId}/doc-${input.side}-${Date.now()}.${ext}`;
+      const { url } = await storagePut(key, buffer, input.mimeType);
+      const field = input.side === "front" ? "docFrontUrl" : "docBackUrl";
+      await updateClient(input.clientId, { [field]: url } as any);
+      return { url };
     }),
 });
 
