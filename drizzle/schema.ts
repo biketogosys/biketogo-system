@@ -10,6 +10,7 @@ import {
   date,
   integer,
   json,
+  jsonb,
 } from "drizzle-orm/pg-core";
 
 // ─── Enums ───────────────────────────────────────────────────────────────────
@@ -28,6 +29,7 @@ export const rentalStatusEnum = pgEnum("rental_status", ["active", "returned", "
 export const accessoryStatusEnum = pgEnum("accessory_status", ["available", "rented", "maintenance", "lost"]);
 export const contractStatusEnum = pgEnum("contract_status", ["ativo", "parcialmente_devolvido", "encerrado"]);
 export const accessoryReturnStatusEnum = pgEnum("accessory_return_status", ["ok", "danificado", "perdido", "roubado"]);
+export const maintenanceStatusEnum = pgEnum("maintenance_status", ["em_andamento", "concluida"]);
 export const nacionalidadeEnum = pgEnum("nacionalidade", ["brasileiro", "estrangeiro"]);
 export const tipoDocumentoEnum = pgEnum("tipo_documento", ["cpf", "passaporte"]);
 
@@ -296,6 +298,35 @@ export const contractAccessories = pgTable("contract_accessories", {
 });
 export type ContractAccessory = typeof contractAccessories.$inferSelect;
 export type InsertContractAccessory = typeof contractAccessories.$inferInsert;
+
+// ─── Bike Sizes (tamanhos múltiplos por bike) ────────────────────────────────
+export const bikeSizes = pgTable("bike_sizes", {
+  id: serial("id").primaryKey(),
+  bikeId: integer("bikeId").notNull(),
+  tamanho: varchar("tamanho", { length: 20 }).notNull(),
+  quantidadeTotal: integer("quantidadeTotal").default(1).notNull(),
+  quantidadeDisponivel: integer("quantidadeDisponivel").default(1).notNull(),
+  observacao: text("observacao"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type BikeSize = typeof bikeSizes.$inferSelect;
+export type InsertBikeSize = typeof bikeSizes.$inferInsert;
+
+// ─── Bike Maintenance Logs (histórico de manutenção) ─────────────────────────
+export const bikeMaintenanceLogs = pgTable("bike_maintenance_logs", {
+  id: serial("id").primaryKey(),
+  bikeId: integer("bikeId").notNull(),
+  descricao: text("descricao").notNull(),
+  custo: numeric("custo", { precision: 10, scale: 2 }),
+  dataEntrada: timestamp("dataEntrada").defaultNow().notNull(),
+  dataPrevistaRetorno: timestamp("dataPrevistaRetorno"),
+  status: maintenanceStatusEnum("status").default("em_andamento").notNull(),
+  fotos: jsonb("fotos").$type<string[]>(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+});
+export type BikeMaintenanceLog = typeof bikeMaintenanceLogs.$inferSelect;
+export type InsertBikeMaintenanceLog = typeof bikeMaintenanceLogs.$inferInsert;
 
 // ─── System Settings (configurações globais) ─────────────────────────────────
 export const systemSettings = pgTable("system_settings", {

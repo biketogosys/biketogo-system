@@ -1,21 +1,40 @@
 import { trpc } from "@/lib/trpc";
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { toast } from "sonner";
 import {
-  Plus, Loader2, Bike as BikeIcon, Search, Pencil, Trash2, X,
-  ChevronDown, ChevronUp, Percent, DollarSign,
+  Bike as BikeIcon,
+  Plus,
+  Pencil,
+  Trash2,
+  Percent,
+  DollarSign,
+  Camera,
+  X,
+  Upload,
+  CheckCircle,
+  Clock,
+  ChevronDown,
+  ChevronUp,
+  Loader2,
+  Search,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
+import { Badge } from "@/components/ui/badge";
+import { Separator } from "@/components/ui/separator";
 
 type BikeStatus = "available" | "rented" | "maintenance";
 type BikeCategory = "mtb" | "speed" | "gravel";
 
 const statusConfig: Record<BikeStatus, { cls: string; label: string }> = {
-  available: { cls: "badge-available", label: "Disponível" },
-  rented: { cls: "badge-rented", label: "Alugada" },
-  maintenance: { cls: "badge-maintenance", label: "Manutenção" },
+  available: { cls: "bg-emerald-100 text-emerald-700 border border-emerald-200", label: "Disponível" },
+  rented: { cls: "bg-blue-100 text-blue-700 border border-blue-200", label: "Alugada" },
+  maintenance: { cls: "bg-amber-100 text-amber-700 border border-amber-200", label: "Manutenção" },
 };
 
 const categoryLabels: Record<BikeCategory, string> = {
@@ -24,36 +43,22 @@ const categoryLabels: Record<BikeCategory, string> = {
   gravel: "Gravel",
 };
 
-// ─── Discount Rules Editor ──────────────────────────────────────────────────
-function DiscountRulesEditor({
-  bikeId,
-  onClose,
-}: {
-  bikeId: number;
-  onClose: () => void;
-}) {
-  const { data: rules, isLoading } = trpc.bikes.discountRules.useQuery({ bikeId });
+// ─── Discount Rules Editor ────────────────────────────────────────────────────
+function DiscountRulesEditor({ bikeId, onClose }: { bikeId: number; onClose: () => void }) {
   const utils = trpc.useUtils();
-  const setRulesMutation = trpc.bikes.setDiscountRules.useMutation({
-    onSuccess: () => {
-      toast.success("Regras de desconto salvas!");
-      utils.bikes.discountRules.invalidate({ bikeId });
-    },
-    onError: (e) => toast.error(e.message),
-  });
-
+  const { data: rules = [], isLoading } = trpc.bikes.discountRules.useQuery({ bikeId });
   const [localRules, setLocalRules] = useState<{ minDays: string; discountPercent: string }[]>([]);
   const [initialized, setInitialized] = useState(false);
 
-  if (!initialized && rules) {
-    setLocalRules(
-      rules.map((r: any) => ({
-        minDays: String(r.minDays),
-        discountPercent: String(r.discountPercent),
-      }))
-    );
+  if (!initialized && (rules as any[]).length >= 0 && !isLoading) {
+    setLocalRules((rules as any[]).map((r: any) => ({ minDays: String(r.minDays), discountPercent: String(r.discountPercent) })));
     setInitialized(true);
   }
+
+  const setRules = trpc.bikes.setDiscountRules.useMutation({
+    onSuccess: () => { utils.bikes.discountRules.invalidate(); toast.success("Regras salvas!"); },
+    onError: (e) => toast.error(e.message),
+  });
 
   const addRule = () => setLocalRules([...localRules, { minDays: "", discountPercent: "" }]);
   const removeRule = (idx: number) => setLocalRules(localRules.filter((_, i) => i !== idx));
@@ -64,114 +69,252 @@ function DiscountRulesEditor({
   };
 
   const handleSave = () => {
-    const parsed = localRules
-      .filter((r) => r.minDays && r.discountPercent)
-      .map((r) => ({
-        minDays: parseInt(r.minDays),
-        discountPercent: r.discountPercent,
-      }));
-    setRulesMutation.mutate({ bikeId, rules: parsed });
+    const parsed = localRules.filter(r => r.minDays && r.discountPercent).map(r => ({ minDays: parseInt(r.minDays), discountPercent: r.discountPercent }));
+    setRules.mutate({ bikeId, rules: parsed });
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative bg-card border border-border rounded-xl w-full max-w-md shadow-2xl">
-        <div className="flex items-center justify-between p-5 border-b border-border">
-          <h2 className="text-base font-semibold text-foreground flex items-center gap-2">
-            <Percent className="w-4 h-4 text-primary" />
-            Desconto Progressivo
-          </h2>
-          <button onClick={onClose} className="text-muted-foreground hover:text-foreground">
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-        <div className="p-5 space-y-3">
-          {isLoading ? (
-            <div className="flex justify-center py-4">
-              <Loader2 className="w-5 h-5 animate-spin text-primary" />
+    <Dialog open onOpenChange={onClose}>
+      <DialogContent className="max-w-md">
+        <DialogHeader><DialogTitle className="flex items-center gap-2"><Percent className="w-4 h-4 text-primary" />Desconto Progressivo</DialogTitle></DialogHeader>
+        {isLoading ? <div className="flex justify-center py-4"><Loader2 className="w-5 h-5 animate-spin text-primary" /></div> : (
+          <div className="space-y-3">
+            <p className="text-xs text-muted-foreground">Configure descontos automáticos por número de dias de aluguel.</p>
+            {localRules.map((rule, idx) => (
+              <div key={idx} className="flex items-center gap-2">
+                <Input type="number" min="1" placeholder="Dias" value={rule.minDays} onChange={e => updateRule(idx, "minDays", e.target.value)} className="h-8 text-sm" />
+                <span className="text-xs text-muted-foreground whitespace-nowrap">dias =</span>
+                <Input type="number" min="0" max="100" step="0.5" placeholder="%" value={rule.discountPercent} onChange={e => updateRule(idx, "discountPercent", e.target.value)} className="h-8 text-sm" />
+                <span className="text-xs text-muted-foreground">%</span>
+                <button onClick={() => removeRule(idx)} className="text-muted-foreground hover:text-destructive"><Trash2 className="w-3.5 h-3.5" /></button>
+              </div>
+            ))}
+            <button onClick={addRule} className="text-xs text-primary hover:underline flex items-center gap-1"><Plus className="w-3 h-3" />Adicionar faixa</button>
+            <div className="flex gap-3 pt-3 border-t border-border">
+              <Button variant="outline" onClick={onClose} className="flex-1">Cancelar</Button>
+              <Button onClick={handleSave} disabled={setRules.isPending} className="flex-1">{setRules.isPending ? "Salvando..." : "Salvar regras"}</Button>
             </div>
-          ) : (
-            <>
-              <p className="text-xs text-muted-foreground mb-3">
-                Configure descontos automáticos por número de dias de aluguel.
-              </p>
-              {localRules.map((rule, idx) => (
-                <div key={idx} className="flex items-center gap-2">
-                  <div className="flex-1">
-                    <Input
-                      type="number"
-                      min="1"
-                      placeholder="Dias"
-                      value={rule.minDays}
-                      onChange={(e) => updateRule(idx, "minDays", e.target.value)}
-                      className="bg-secondary border-border text-sm"
-                    />
-                  </div>
-                  <span className="text-xs text-muted-foreground whitespace-nowrap">dias =</span>
-                  <div className="flex-1">
-                    <Input
-                      type="number"
-                      min="0"
-                      max="100"
-                      step="0.5"
-                      placeholder="%"
-                      value={rule.discountPercent}
-                      onChange={(e) => updateRule(idx, "discountPercent", e.target.value)}
-                      className="bg-secondary border-border text-sm"
-                    />
-                  </div>
-                  <span className="text-xs text-muted-foreground">%</span>
-                  <button
-                    onClick={() => removeRule(idx)}
-                    className="text-muted-foreground hover:text-destructive"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              ))}
-              <button
-                onClick={addRule}
-                className="text-xs text-primary hover:underline flex items-center gap-1"
-              >
-                <Plus className="w-3 h-3" /> Adicionar faixa
-              </button>
-            </>
-          )}
-          <div className="flex gap-3 pt-3 border-t border-border">
-            <Button type="button" variant="outline" onClick={onClose} className="flex-1">
-              Cancelar
-            </Button>
-            <Button
-              onClick={handleSave}
-              disabled={setRulesMutation.isPending}
-              className="flex-1"
-              style={{ background: "oklch(0.68 0.12 65)", color: "oklch(0.10 0.005 240)" }}
-            >
-              {setRulesMutation.isPending ? "Salvando..." : "Salvar regras"}
-            </Button>
           </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─── Bike Sizes Tab ───────────────────────────────────────────────────────────
+function BikeSizesTab({ bikeId }: { bikeId: number }) {
+  const utils = trpc.useUtils();
+  const { data: sizes = [], isLoading } = trpc.bikes.listSizes.useQuery({ bikeId });
+  const [tamanho, setTamanho] = useState("");
+  const [qtTotal, setQtTotal] = useState("1");
+  const [qtDisp, setQtDisp] = useState("1");
+  const [obs, setObs] = useState("");
+  const [editId, setEditId] = useState<number | null>(null);
+  const [editData, setEditData] = useState<{ tamanho: string; quantidadeTotal: string; quantidadeDisponivel: string }>({ tamanho: "", quantidadeTotal: "", quantidadeDisponivel: "" });
+
+  const addMut = trpc.bikes.addSize.useMutation({
+    onSuccess: () => { utils.bikes.listSizes.invalidate(); setTamanho(""); setQtTotal("1"); setQtDisp("1"); setObs(""); toast.success("Tamanho adicionado!"); },
+    onError: (e) => toast.error(e.message),
+  });
+  const updateMut = trpc.bikes.updateSize.useMutation({
+    onSuccess: () => { utils.bikes.listSizes.invalidate(); setEditId(null); toast.success("Tamanho atualizado!"); },
+    onError: (e) => toast.error(e.message),
+  });
+  const deleteMut = trpc.bikes.deleteSize.useMutation({
+    onSuccess: () => { utils.bikes.listSizes.invalidate(); toast.success("Tamanho removido!"); },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const startEdit = (s: any) => { setEditId(s.id); setEditData({ tamanho: s.tamanho, quantidadeTotal: String(s.quantidadeTotal), quantidadeDisponivel: String(s.quantidadeDisponivel) }); };
+
+  return (
+    <div className="space-y-4">
+      {isLoading ? <p className="text-sm text-muted-foreground">Carregando...</p> : (
+        <div className="space-y-2">
+          {(sizes as any[]).length === 0 && <p className="text-sm text-muted-foreground">Nenhum tamanho cadastrado.</p>}
+          {(sizes as any[]).map((s: any) => (
+            <div key={s.id} className="flex items-center justify-between p-3 bg-secondary rounded-lg">
+              {editId === s.id ? (
+                <div className="flex-1 grid grid-cols-3 gap-2 mr-2">
+                  <Input value={editData.tamanho} onChange={e => setEditData(d => ({ ...d, tamanho: e.target.value }))} className="h-8 text-sm" placeholder="Tamanho" />
+                  <Input type="number" value={editData.quantidadeTotal} onChange={e => setEditData(d => ({ ...d, quantidadeTotal: e.target.value }))} className="h-8 text-sm" placeholder="Total" />
+                  <Input type="number" value={editData.quantidadeDisponivel} onChange={e => setEditData(d => ({ ...d, quantidadeDisponivel: e.target.value }))} className="h-8 text-sm" placeholder="Disponível" />
+                </div>
+              ) : (
+                <div className="flex-1">
+                  <span className="font-medium text-sm">{s.tamanho}</span>
+                  <span className="text-xs text-muted-foreground ml-2">Total: {s.quantidadeTotal} | Disponível: {s.quantidadeDisponivel}</span>
+                  {s.observacao && <p className="text-xs text-muted-foreground mt-0.5">{s.observacao}</p>}
+                </div>
+              )}
+              <div className="flex gap-1">
+                {editId === s.id ? (
+                  <>
+                    <Button size="sm" className="h-7 text-xs" onClick={() => updateMut.mutate({ id: s.id, tamanho: editData.tamanho, quantidadeTotal: parseInt(editData.quantidadeTotal), quantidadeDisponivel: parseInt(editData.quantidadeDisponivel) })}>Salvar</Button>
+                    <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setEditId(null)}>Cancelar</Button>
+                  </>
+                ) : (
+                  <>
+                    <button onClick={() => startEdit(s)} className="text-muted-foreground hover:text-primary p-1"><Pencil className="w-3.5 h-3.5" /></button>
+                    <button onClick={() => { if (confirm("Remover tamanho?")) deleteMut.mutate({ id: s.id }); }} className="text-muted-foreground hover:text-destructive p-1"><Trash2 className="w-3.5 h-3.5" /></button>
+                  </>
+                )}
+              </div>
+            </div>
+          ))}
         </div>
+      )}
+      <Separator />
+      <div className="grid grid-cols-3 gap-2">
+        <div><Label className="text-xs">Tamanho *</Label><Input value={tamanho} onChange={e => setTamanho(e.target.value)} placeholder="P / M / G / 29" className="h-8 text-sm" /></div>
+        <div><Label className="text-xs">Qtd. Total</Label><Input type="number" value={qtTotal} onChange={e => setQtTotal(e.target.value)} className="h-8 text-sm" /></div>
+        <div><Label className="text-xs">Qtd. Disponível</Label><Input type="number" value={qtDisp} onChange={e => setQtDisp(e.target.value)} className="h-8 text-sm" /></div>
       </div>
+      <Input value={obs} onChange={e => setObs(e.target.value)} placeholder="Observação (opcional)" className="h-8 text-sm" />
+      <Button size="sm" onClick={() => { if (!tamanho) return toast.error("Informe o tamanho."); addMut.mutate({ bikeId, tamanho, quantidadeTotal: parseInt(qtTotal), quantidadeDisponivel: parseInt(qtDisp), observacao: obs || undefined }); }} disabled={addMut.isPending} className="w-full">
+        <Plus className="w-3.5 h-3.5 mr-1" />Adicionar Tamanho
+      </Button>
     </div>
   );
 }
 
-// ─── Bike Form Dialog ────────────────────────────────────────────────────────
-function BikeFormDialog({
-  bike,
-  onClose,
-  onSuccess,
-}: {
-  bike?: any;
-  onClose: () => void;
-  onSuccess: () => void;
-}) {
+// ─── Maintenance Tab ──────────────────────────────────────────────────────────
+function MaintenanceTab({ bikeId }: { bikeId: number }) {
+  const utils = trpc.useUtils();
+  const { data: logs = [], isLoading } = trpc.bikes.listMaintenance.useQuery({ bikeId });
+  const [showForm, setShowForm] = useState(false);
+  const [desc, setDesc] = useState("");
+  const [custo, setCusto] = useState("");
+  const [dataPrevista, setDataPrevista] = useState("");
+  const [status, setStatus] = useState<"em_andamento" | "concluida">("em_andamento");
+  const [expandedId, setExpandedId] = useState<number | null>(null);
+
+  const addMut = trpc.bikes.addMaintenance.useMutation({
+    onSuccess: () => {
+      utils.bikes.listMaintenance.invalidate();
+      utils.bikes.list.invalidate();
+      setShowForm(false); setDesc(""); setCusto(""); setDataPrevista(""); setStatus("em_andamento");
+      toast.success("Manutenção registrada!");
+    },
+    onError: (e) => toast.error(e.message),
+  });
+  const updateMut = trpc.bikes.updateMaintenance.useMutation({
+    onSuccess: () => { utils.bikes.listMaintenance.invalidate(); utils.bikes.list.invalidate(); toast.success("Manutenção atualizada!"); },
+    onError: (e) => toast.error(e.message),
+  });
+
+  return (
+    <div className="space-y-3">
+      {isLoading ? <p className="text-sm text-muted-foreground">Carregando...</p> : (
+        <div className="space-y-2">
+          {(logs as any[]).length === 0 && <p className="text-sm text-muted-foreground">Nenhum registro de manutenção.</p>}
+          {(logs as any[]).map((log: any) => (
+            <div key={log.id} className="border border-border rounded-lg overflow-hidden">
+              <div className="flex items-center justify-between p-3 cursor-pointer hover:bg-secondary/50" onClick={() => setExpandedId(expandedId === log.id ? null : log.id)}>
+                <div className="flex items-center gap-2">
+                  {log.status === "concluida" ? <CheckCircle className="w-4 h-4 text-emerald-500" /> : <Clock className="w-4 h-4 text-amber-500" />}
+                  <span className="text-sm font-medium line-clamp-1">{log.descricao}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Badge variant={log.status === "concluida" ? "default" : "secondary"} className="text-xs">{log.status === "concluida" ? "Concluída" : "Em andamento"}</Badge>
+                  {expandedId === log.id ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
+                </div>
+              </div>
+              {expandedId === log.id && (
+                <div className="p-3 pt-0 border-t border-border bg-secondary/20 space-y-2">
+                  <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
+                    <span>Entrada: {new Date(log.dataEntrada).toLocaleDateString("pt-BR")}</span>
+                    {log.dataPrevistaRetorno && <span>Prev. retorno: {new Date(log.dataPrevistaRetorno).toLocaleDateString("pt-BR")}</span>}
+                    {log.custo && <span>Custo: R$ {parseFloat(log.custo).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</span>}
+                  </div>
+                  {log.status === "em_andamento" && (
+                    <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => updateMut.mutate({ id: log.id, bikeId, status: "concluida" })} disabled={updateMut.isPending}>
+                      <CheckCircle className="w-3 h-3 mr-1" />Marcar como concluída
+                    </Button>
+                  )}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+      {showForm ? (
+        <div className="border border-border rounded-lg p-3 space-y-3 bg-secondary/20">
+          <Label className="text-sm font-medium">Novo registro de manutenção</Label>
+          <div><Label className="text-xs">Descrição *</Label><Textarea value={desc} onChange={e => setDesc(e.target.value)} placeholder="Descreva o problema ou serviço..." className="text-sm min-h-[60px]" /></div>
+          <div className="grid grid-cols-2 gap-2">
+            <div><Label className="text-xs">Custo (R$)</Label><Input value={custo} onChange={e => setCusto(e.target.value)} placeholder="0,00" className="h-8 text-sm" /></div>
+            <div><Label className="text-xs">Prev. retorno</Label><Input type="date" value={dataPrevista} onChange={e => setDataPrevista(e.target.value)} className="h-8 text-sm" /></div>
+          </div>
+          <div>
+            <Label className="text-xs">Status</Label>
+            <Select value={status} onValueChange={(v) => setStatus(v as any)}>
+              <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="em_andamento">Em andamento</SelectItem>
+                <SelectItem value="concluida">Concluída</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex gap-2">
+            <Button size="sm" onClick={() => { if (!desc) return toast.error("Informe a descrição."); addMut.mutate({ bikeId, descricao: desc, custo: custo || undefined, dataPrevistaRetorno: dataPrevista || undefined, status }); }} disabled={addMut.isPending} className="flex-1">Salvar</Button>
+            <Button size="sm" variant="ghost" onClick={() => setShowForm(false)}>Cancelar</Button>
+          </div>
+        </div>
+      ) : (
+        <Button size="sm" variant="outline" onClick={() => setShowForm(true)} className="w-full"><Plus className="w-3.5 h-3.5 mr-1" />Registrar Manutenção</Button>
+      )}
+    </div>
+  );
+}
+
+// ─── Bike Photo Upload ────────────────────────────────────────────────────────
+function BikePhotoUpload({ bikeId, currentUrl, onUploaded }: { bikeId: number; currentUrl?: string | null; onUploaded: (url: string) => void }) {
+  const fileRef = useRef<HTMLInputElement>(null);
+  const uploadMut = trpc.bikes.uploadBikePhoto.useMutation({
+    onSuccess: (data) => { onUploaded(data.url); toast.success("Foto atualizada!"); },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) return toast.error("Foto deve ter no máximo 5MB.");
+    const reader = new FileReader();
+    reader.onload = () => uploadMut.mutate({ bikeId, base64: reader.result as string, mimeType: file.type });
+    reader.readAsDataURL(file);
+  };
+
+  return (
+    <div className="space-y-3">
+      {currentUrl ? (
+        <div className="relative w-full aspect-video rounded-lg overflow-hidden bg-secondary border border-border">
+          <img src={currentUrl} alt="Foto da bicicleta" className="w-full h-full object-cover" />
+          <button onClick={() => fileRef.current?.click()} className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 hover:opacity-100 transition-opacity text-white text-sm font-medium">
+            <Camera className="w-5 h-5 mr-1" />Trocar foto
+          </button>
+        </div>
+      ) : (
+        <button onClick={() => fileRef.current?.click()} className="w-full aspect-video rounded-lg border-2 border-dashed border-border flex flex-col items-center justify-center gap-2 text-muted-foreground hover:border-primary/50 hover:text-primary transition-colors">
+          <Upload className="w-8 h-8" />
+          <span className="text-sm">Clique para adicionar foto</span>
+          <span className="text-xs">JPG, PNG ou WEBP — máx. 5MB</span>
+        </button>
+      )}
+      <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleFile} />
+      {uploadMut.isPending && <p className="text-xs text-muted-foreground text-center animate-pulse">Enviando foto...</p>}
+    </div>
+  );
+}
+
+// ─── Bike Form Dialog ─────────────────────────────────────────────────────────
+function BikeFormDialog({ bike, onClose, onSuccess }: { bike: any | null; onClose: () => void; onSuccess: () => void }) {
+  const isEdit = !!bike;
   const [form, setForm] = useState({
     serialNumber: bike?.serialNumber ?? "",
     model: bike?.model ?? "",
     brand: bike?.brand ?? "",
-    category: (bike?.category ?? "") as string,
+    category: bike?.category ?? "",
     size: bike?.size ?? "",
     color: bike?.color ?? "",
     description: bike?.description ?? "",
@@ -180,327 +323,218 @@ function BikeFormDialog({
     dailyRate: bike?.dailyRate ?? "",
     quantity: bike?.quantity ?? 1,
     notes: bike?.notes ?? "",
-    status: (bike?.status ?? "available") as BikeStatus,
+    status: bike?.status ?? "available",
   });
+  const [photoUrl, setPhotoUrl] = useState<string | null>(bike?.photoUrl ?? null);
+  const [savedId, setSavedId] = useState<number | null>(bike?.id ?? null);
+  const set = (k: string, v: any) => setForm(f => ({ ...f, [k]: v }));
 
-  const [showAdvanced, setShowAdvanced] = useState(false);
-
-  const createMutation = trpc.bikes.create.useMutation({
-    onSuccess: () => { toast.success("Bicicleta criada!"); onSuccess(); },
+  const createMut = trpc.bikes.create.useMutation({
+    onSuccess: (data) => { setSavedId(data.id); toast.success("Bicicleta criada! Use as abas para adicionar foto e tamanhos."); },
     onError: (e) => toast.error(e.message),
   });
-  const updateMutation = trpc.bikes.update.useMutation({
+  const updateMut = trpc.bikes.update.useMutation({
     onSuccess: () => { toast.success("Bicicleta atualizada!"); onSuccess(); },
     onError: (e) => toast.error(e.message),
   });
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = () => {
     if (!form.serialNumber.trim()) return toast.error("Número de série é obrigatório.");
     if (!form.model.trim()) return toast.error("Modelo é obrigatório.");
-
-    const payload: any = {
-      ...form,
-      quantity: Number(form.quantity) || 1,
-      dailyRate: form.dailyRate || undefined,
-      category: form.category || undefined,
-      brand: form.brand || undefined,
-    };
-
-    if (bike) {
-      updateMutation.mutate({ id: bike.id, ...payload });
-    } else {
-      createMutation.mutate(payload);
-    }
+    const payload: any = { ...form, quantity: Number(form.quantity) || 1, photoUrl: photoUrl ?? undefined };
+    if (savedId) updateMut.mutate({ id: savedId, ...payload });
+    else createMut.mutate(payload);
   };
 
-  const isPending = createMutation.isPending || updateMutation.isPending;
+  const currentId = savedId ?? bike?.id;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative bg-card border border-border rounded-xl w-full max-w-lg shadow-2xl max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between p-5 border-b border-border sticky top-0 bg-card z-10">
-          <h2 className="text-base font-semibold text-foreground" style={{ fontFamily: "'Montserrat', sans-serif" }}>
-            {bike ? "Editar Bicicleta" : "Nova Bicicleta"}
-          </h2>
-          <button onClick={onClose} className="text-muted-foreground hover:text-foreground">
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-        <form onSubmit={handleSubmit} className="p-5 space-y-4">
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <Label className="text-xs text-muted-foreground mb-1.5 block">Marca</Label>
-              <select
-                value={form.brand}
-                onChange={(e) => setForm({ ...form, brand: e.target.value })}
-                className="w-full px-3 py-2 rounded-md bg-secondary border border-border text-sm text-foreground"
-              >
-                <option value="">Selecionar...</option>
-                <option value="Trek">Trek</option>
-                <option value="Sense">Sense</option>
-                <option value="Oggi">Oggi</option>
-                <option value="Cannondale">Cannondale</option>
-                <option value="Specialized">Specialized</option>
-                <option value="Outro">Outro</option>
-              </select>
-            </div>
-            <div>
-              <Label className="text-xs text-muted-foreground mb-1.5 block">Categoria</Label>
-              <select
-                value={form.category}
-                onChange={(e) => setForm({ ...form, category: e.target.value })}
-                className="w-full px-3 py-2 rounded-md bg-secondary border border-border text-sm text-foreground"
-              >
-                <option value="">Selecionar...</option>
-                <option value="mtb">MTB</option>
-                <option value="speed">Speed</option>
-                <option value="gravel">Gravel</option>
-              </select>
-            </div>
-          </div>
+    <Dialog open onOpenChange={onClose}>
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogHeader><DialogTitle>{isEdit ? "Editar Bicicleta" : "Nova Bicicleta"}</DialogTitle></DialogHeader>
+        <Tabs defaultValue="dados">
+          <TabsList className="grid w-full grid-cols-4">
+            <TabsTrigger value="dados">Dados</TabsTrigger>
+            <TabsTrigger value="foto" disabled={!currentId}>Foto</TabsTrigger>
+            <TabsTrigger value="tamanhos" disabled={!currentId}>Tamanhos</TabsTrigger>
+            <TabsTrigger value="manutencao" disabled={!currentId}>Manutenção</TabsTrigger>
+          </TabsList>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <Label className="text-xs text-muted-foreground mb-1.5 block">Modelo *</Label>
-              <Input value={form.model} onChange={(e) => setForm({ ...form, model: e.target.value })} className="bg-secondary border-border" placeholder="Ex: Marlin 5" />
-            </div>
-            <div>
-              <Label className="text-xs text-muted-foreground mb-1.5 block">Nº de série *</Label>
-              <Input value={form.serialNumber} onChange={(e) => setForm({ ...form, serialNumber: e.target.value })} className="bg-secondary border-border" />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-3 gap-3">
-            <div>
-              <Label className="text-xs text-muted-foreground mb-1.5 block">Tamanho</Label>
-              <Input value={form.size} onChange={(e) => setForm({ ...form, size: e.target.value })} placeholder="P / M / G / XL" className="bg-secondary border-border" />
-            </div>
-            <div>
-              <Label className="text-xs text-muted-foreground mb-1.5 block">Cor</Label>
-              <Input value={form.color} onChange={(e) => setForm({ ...form, color: e.target.value })} className="bg-secondary border-border" />
-            </div>
-            <div>
-              <Label className="text-xs text-muted-foreground mb-1.5 block">Quantidade</Label>
-              <Input type="number" min="1" value={form.quantity} onChange={(e) => setForm({ ...form, quantity: parseInt(e.target.value) || 1 })} className="bg-secondary border-border" />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <Label className="text-xs text-muted-foreground mb-1.5 block flex items-center gap-1">
-                <DollarSign className="w-3 h-3" /> Preço/dia (R$)
-              </Label>
-              <Input type="number" step="0.01" value={form.dailyRate} onChange={(e) => setForm({ ...form, dailyRate: e.target.value })} placeholder="150.00" className="bg-secondary border-border" />
-            </div>
-            <div>
-              <Label className="text-xs text-muted-foreground mb-1.5 block">Status</Label>
-              <select
-                value={form.status}
-                onChange={(e) => setForm({ ...form, status: e.target.value as BikeStatus })}
-                className="w-full px-3 py-2 rounded-md bg-secondary border border-border text-sm text-foreground"
-              >
-                <option value="available">Disponível</option>
-                <option value="rented">Alugada</option>
-                <option value="maintenance">Manutenção</option>
-              </select>
-            </div>
-          </div>
-
-          <button
-            type="button"
-            onClick={() => setShowAdvanced(!showAdvanced)}
-            className="flex items-center gap-1 text-xs text-primary hover:underline"
-          >
-            {showAdvanced ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-            {showAdvanced ? "Ocultar detalhes" : "Mais detalhes"}
-          </button>
-
-          {showAdvanced && (
-            <div className="space-y-3 pt-1">
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <Label className="text-xs text-muted-foreground mb-1.5 block">Peso (kg)</Label>
-                  <Input value={form.weight} onChange={(e) => setForm({ ...form, weight: e.target.value })} placeholder="12.5" className="bg-secondary border-border" />
-                </div>
-                <div>
-                  <Label className="text-xs text-muted-foreground mb-1.5 block">Limite peso ciclista (kg)</Label>
-                  <Input value={form.weightLimit} onChange={(e) => setForm({ ...form, weightLimit: e.target.value })} placeholder="120" className="bg-secondary border-border" />
-                </div>
+          {/* Aba Dados */}
+          <TabsContent value="dados" className="space-y-4 pt-2">
+            <div className="grid grid-cols-2 gap-3">
+              <div><Label className="text-xs">Nº de Série *</Label><Input value={form.serialNumber} onChange={e => set("serialNumber", e.target.value)} className="h-8 text-sm" /></div>
+              <div><Label className="text-xs">Modelo *</Label><Input value={form.model} onChange={e => set("model", e.target.value)} className="h-8 text-sm" /></div>
+              <div>
+                <Label className="text-xs">Marca</Label>
+                <Select value={form.brand || "_none"} onValueChange={v => set("brand", v === "_none" ? "" : v)}>
+                  <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Selecionar..." /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="_none">Selecionar...</SelectItem>
+                    <SelectItem value="Trek">Trek</SelectItem>
+                    <SelectItem value="Sense">Sense</SelectItem>
+                    <SelectItem value="Oggi">Oggi</SelectItem>
+                    <SelectItem value="Cannondale">Cannondale</SelectItem>
+                    <SelectItem value="Specialized">Specialized</SelectItem>
+                    <SelectItem value="Outro">Outro</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
               <div>
-                <Label className="text-xs text-muted-foreground mb-1.5 block">Descrição</Label>
-                <textarea
-                  value={form.description}
-                  onChange={(e) => setForm({ ...form, description: e.target.value })}
-                  rows={2}
-                  className="w-full px-3 py-2 rounded-md bg-secondary border border-border text-sm text-foreground resize-none"
-                  placeholder="Descrição técnica da bicicleta..."
-                />
+                <Label className="text-xs">Categoria</Label>
+                <Select value={form.category || "_none"} onValueChange={v => set("category", v === "_none" ? "" : v)}>
+                  <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Selecionar..." /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="_none">Selecionar...</SelectItem>
+                    <SelectItem value="mtb">MTB</SelectItem>
+                    <SelectItem value="speed">Speed</SelectItem>
+                    <SelectItem value="gravel">Gravel</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
+              <div><Label className="text-xs">Cor</Label><Input value={form.color} onChange={e => set("color", e.target.value)} className="h-8 text-sm" /></div>
+              <div><Label className="text-xs">Diária (R$)</Label><Input type="number" value={form.dailyRate} onChange={e => set("dailyRate", e.target.value)} className="h-8 text-sm" /></div>
+              <div><Label className="text-xs">Peso (kg)</Label><Input value={form.weight} onChange={e => set("weight", e.target.value)} className="h-8 text-sm" /></div>
+              <div><Label className="text-xs">Limite de peso (kg)</Label><Input value={form.weightLimit} onChange={e => set("weightLimit", e.target.value)} className="h-8 text-sm" /></div>
+              <div><Label className="text-xs">Quantidade</Label><Input type="number" min={1} value={form.quantity} onChange={e => set("quantity", e.target.value)} className="h-8 text-sm" /></div>
               <div>
-                <Label className="text-xs text-muted-foreground mb-1.5 block">Observações</Label>
-                <Input value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} className="bg-secondary border-border" />
+                <Label className="text-xs">Status</Label>
+                <Select value={form.status} onValueChange={v => set("status", v)}>
+                  <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="available">Disponível</SelectItem>
+                    <SelectItem value="rented">Alugada</SelectItem>
+                    <SelectItem value="maintenance">Manutenção</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
             </div>
-          )}
-
-          <div className="flex gap-3 pt-2">
-            <Button type="button" variant="outline" onClick={onClose} className="flex-1">Cancelar</Button>
-            <Button type="submit" disabled={isPending} className="flex-1" style={{ background: "oklch(0.68 0.12 65)", color: "oklch(0.10 0.005 240)" }}>
-              {isPending ? "Salvando..." : bike ? "Salvar" : "Criar"}
+            <div><Label className="text-xs">Descrição</Label><Textarea value={form.description} onChange={e => set("description", e.target.value)} className="text-sm min-h-[60px]" /></div>
+            <div><Label className="text-xs">Observações internas</Label><Textarea value={form.notes} onChange={e => set("notes", e.target.value)} className="text-sm min-h-[60px]" /></div>
+            <Button onClick={handleSubmit} disabled={createMut.isPending || updateMut.isPending} className="w-full">
+              {createMut.isPending || updateMut.isPending ? "Salvando..." : (savedId && !isEdit ? "Salvo ✓ — Atualizar" : isEdit ? "Salvar alterações" : "Criar bicicleta")}
             </Button>
-          </div>
-        </form>
-      </div>
-    </div>
+          </TabsContent>
+
+          {/* Aba Foto */}
+          <TabsContent value="foto" className="pt-2">
+            {currentId ? <BikePhotoUpload bikeId={currentId} currentUrl={photoUrl} onUploaded={url => setPhotoUrl(url)} /> : <p className="text-sm text-muted-foreground text-center py-8">Salve a bicicleta primeiro.</p>}
+          </TabsContent>
+
+          {/* Aba Tamanhos */}
+          <TabsContent value="tamanhos" className="pt-2">
+            {currentId ? <BikeSizesTab bikeId={currentId} /> : <p className="text-sm text-muted-foreground text-center py-8">Salve a bicicleta primeiro.</p>}
+          </TabsContent>
+
+          {/* Aba Manutenção */}
+          <TabsContent value="manutencao" className="pt-2">
+            {currentId ? <MaintenanceTab bikeId={currentId} /> : <p className="text-sm text-muted-foreground text-center py-8">Salve a bicicleta primeiro.</p>}
+          </TabsContent>
+        </Tabs>
+      </DialogContent>
+    </Dialog>
   );
 }
 
-// ─── Main Page ───────────────────────────────────────────────────────────────
+// ─── Main Bikes Page ──────────────────────────────────────────────────────────
 export default function Bikes() {
-  const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<BikeStatus | undefined>(undefined);
-  const [categoryFilter, setCategoryFilter] = useState<string | undefined>(undefined);
-  const [showForm, setShowForm] = useState(false);
-  const [editBike, setEditBike] = useState<any>(null);
-  const [discountBikeId, setDiscountBikeId] = useState<number | null>(null);
   const utils = trpc.useUtils();
+  const [statusFilter, setStatusFilter] = useState<BikeStatus | undefined>();
+  const [categoryFilter, setCategoryFilter] = useState<string | undefined>();
+  const [search, setSearch] = useState("");
+  const [showForm, setShowForm] = useState(false);
+  const [editBike, setEditBike] = useState<any | null>(null);
+  const [discountBikeId, setDiscountBikeId] = useState<number | null>(null);
 
-  const { data, isLoading } = trpc.bikes.list.useQuery({
-    search: search || undefined,
-    status: statusFilter,
-    category: categoryFilter,
-  });
+  const { data: bikes = [], isLoading } = trpc.bikes.list.useQuery({ status: statusFilter, category: categoryFilter, search: search || undefined });
+
   const deleteMutation = trpc.bikes.delete.useMutation({
-    onSuccess: () => { toast.success("Bicicleta removida."); utils.bikes.list.invalidate(); },
+    onSuccess: () => { utils.bikes.list.invalidate(); toast.success("Bicicleta removida!"); },
     onError: (e) => toast.error(e.message),
   });
 
-  const bikes = data ?? [];
-
   return (
-    <div className="p-6 max-w-6xl mx-auto">
-      <div className="flex items-center justify-between mb-6">
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-foreground" style={{ fontFamily: "'Montserrat', sans-serif" }}>Bicicletas</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">{bikes.length} bicicleta{bikes.length !== 1 ? "s" : ""} cadastrada{bikes.length !== 1 ? "s" : ""}</p>
+          <h1 className="text-2xl font-bold text-foreground">Bicicletas</h1>
+          <p className="text-sm text-muted-foreground mt-0.5">Gerencie a frota, tamanhos e manutenções</p>
         </div>
-        <Button onClick={() => { setEditBike(null); setShowForm(true); }} className="gap-2" style={{ background: "oklch(0.68 0.12 65)", color: "oklch(0.10 0.005 240)" }}>
-          <Plus className="w-4 h-4" />Nova bicicleta
-        </Button>
+        <Button onClick={() => { setEditBike(null); setShowForm(true); }} className="gap-1.5"><Plus className="w-4 h-4" />Nova Bicicleta</Button>
       </div>
 
       {/* Filters */}
-      <div className="flex flex-col sm:flex-row gap-3 mb-4">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <Input placeholder="Buscar por modelo, marca ou série..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9 bg-card border-border" />
+      <div className="flex flex-wrap gap-2 items-center">
+        <div className="relative">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+          <Input placeholder="Buscar por modelo, série..." value={search} onChange={e => setSearch(e.target.value)} className="h-8 text-sm pl-8 max-w-xs" />
         </div>
-        <div className="flex gap-2 flex-wrap">
-          {([undefined, "available", "rented", "maintenance"] as (BikeStatus | undefined)[]).map((s) => (
-            <button key={String(s)} onClick={() => setStatusFilter(s)}
-              className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all border ${statusFilter === s ? "bg-primary/15 border-primary/40 text-primary" : "bg-card border-border text-muted-foreground hover:text-foreground"}`}>
-              {s === undefined ? "Todas" : statusConfig[s].label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Category filter */}
-      <div className="flex gap-2 mb-6">
-        {([undefined, "mtb", "speed", "gravel"] as (string | undefined)[]).map((c) => (
-          <button key={String(c)} onClick={() => setCategoryFilter(c)}
-            className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all border ${categoryFilter === c ? "bg-primary/15 border-primary/40 text-primary" : "bg-card border-border text-muted-foreground hover:text-foreground"}`}>
-            {c === undefined ? "Todas categorias" : categoryLabels[c as BikeCategory]}
+        {([undefined, "available", "rented", "maintenance"] as (BikeStatus | undefined)[]).map(s => (
+          <button key={String(s)} onClick={() => setStatusFilter(s)} className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all border ${statusFilter === s ? "bg-primary/15 border-primary/40 text-primary" : "bg-card border-border text-muted-foreground hover:text-foreground"}`}>
+            {s === undefined ? "Todos" : statusConfig[s]?.label}
+          </button>
+        ))}
+        {([undefined, "mtb", "speed", "gravel"] as (string | undefined)[]).map(c => (
+          <button key={String(c)} onClick={() => setCategoryFilter(c)} className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all border ${categoryFilter === c ? "bg-primary/15 border-primary/40 text-primary" : "bg-card border-border text-muted-foreground hover:text-foreground"}`}>
+            {c === undefined ? "Todas categorias" : categoryLabels[c as BikeCategory] || c}
           </button>
         ))}
       </div>
 
+      {/* Grid */}
       {isLoading ? (
         <div className="flex items-center justify-center h-48"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div>
-      ) : bikes.length === 0 ? (
+      ) : (bikes as any[]).length === 0 ? (
         <div className="flex flex-col items-center justify-center h-48 text-muted-foreground">
           <BikeIcon className="w-10 h-10 mb-3 opacity-30" />
           <p className="text-sm">Nenhuma bicicleta encontrada</p>
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {bikes.map((bike: any) => (
-            <div key={bike.id} className="bg-card border border-border rounded-xl p-4 hover:border-primary/30 transition-colors">
-              <div className="flex items-start justify-between mb-3">
-                <div className="flex items-center gap-2">
-                  <div className="w-10 h-10 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center">
-                    <BikeIcon className="w-5 h-5 text-primary" />
-                  </div>
-                  <div>
-                    {bike.brand && (
-                      <span className="text-[10px] text-muted-foreground uppercase tracking-wider">{bike.brand}</span>
-                    )}
-                    {bike.category && (
-                      <span className="ml-1 text-[10px] px-1.5 py-0.5 rounded bg-primary/10 text-primary uppercase">
-                        {categoryLabels[bike.category as BikeCategory] || bike.category}
-                      </span>
-                    )}
-                  </div>
-                </div>
-                <span className={statusConfig[bike.status as BikeStatus]?.cls ?? "badge-available"}>
-                  {statusConfig[bike.status as BikeStatus]?.label ?? bike.status}
-                </span>
-              </div>
-
-              <h3 className="font-semibold text-foreground text-sm mb-1">{bike.model}</h3>
-              <p className="text-xs text-muted-foreground font-mono mb-2">#{bike.serialNumber}</p>
-
-              <div className="flex flex-wrap gap-2 text-xs text-muted-foreground mb-2">
-                {bike.size && <span className="px-1.5 py-0.5 bg-secondary rounded">Tam: {bike.size}</span>}
-                {bike.color && <span className="px-1.5 py-0.5 bg-secondary rounded">Cor: {bike.color}</span>}
-                {bike.quantity > 1 && <span className="px-1.5 py-0.5 bg-secondary rounded">Qtd: {bike.quantity}</span>}
-              </div>
-
-              {bike.dailyRate && (
-                <div className="flex items-center gap-1 mb-2">
-                  <DollarSign className="w-3 h-3 text-primary" />
-                  <span className="text-sm font-semibold text-primary">
-                    R$ {parseFloat(bike.dailyRate).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
-                  </span>
-                  <span className="text-xs text-muted-foreground">/dia</span>
-                </div>
+          {(bikes as any[]).map((bike: any) => (
+            <div key={bike.id} className="bg-card border border-border rounded-xl overflow-hidden hover:border-primary/30 transition-colors">
+              {bike.photoUrl ? (
+                <div className="w-full h-36 overflow-hidden bg-secondary"><img src={bike.photoUrl} alt={bike.model} className="w-full h-full object-cover" /></div>
+              ) : (
+                <div className="w-full h-36 bg-secondary flex items-center justify-center"><BikeIcon className="w-10 h-10 text-muted-foreground/30" /></div>
               )}
-
-              {bike.notes && <p className="text-xs text-muted-foreground/70 mb-3 line-clamp-2">{bike.notes}</p>}
-
-              <div className="flex gap-2 pt-2 border-t border-border">
-                <button onClick={() => { setEditBike(bike); setShowForm(true); }} className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary transition-colors">
-                  <Pencil className="w-3 h-3" />Editar
-                </button>
-                <button onClick={() => setDiscountBikeId(bike.id)} className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary transition-colors">
-                  <Percent className="w-3 h-3" />Descontos
-                </button>
-                <button onClick={() => { if (confirm("Remover esta bicicleta?")) deleteMutation.mutate({ id: bike.id }); }} className="flex items-center gap-1 text-xs text-muted-foreground hover:text-destructive transition-colors ml-auto">
-                  <Trash2 className="w-3 h-3" />Remover
-                </button>
+              <div className="p-4">
+                <div className="flex items-start justify-between mb-2">
+                  <div>
+                    {bike.brand && <span className="text-[10px] text-muted-foreground uppercase tracking-wider block">{bike.brand}</span>}
+                    <h3 className="font-semibold text-foreground text-sm">{bike.model}</h3>
+                    <p className="text-xs text-muted-foreground font-mono">#{bike.serialNumber}</p>
+                  </div>
+                  <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${statusConfig[bike.status as BikeStatus]?.cls ?? "bg-secondary text-secondary-foreground"}`}>
+                    {statusConfig[bike.status as BikeStatus]?.label ?? bike.status}
+                  </span>
+                </div>
+                <div className="flex flex-wrap gap-1.5 text-xs text-muted-foreground mb-2">
+                  {bike.category && <span className="px-1.5 py-0.5 bg-primary/10 text-primary rounded text-[10px] uppercase">{categoryLabels[bike.category as BikeCategory] || bike.category}</span>}
+                  {bike.color && <span className="px-1.5 py-0.5 bg-secondary rounded">{bike.color}</span>}
+                  {bike.quantity > 1 && <span className="px-1.5 py-0.5 bg-secondary rounded">Qtd: {bike.quantity}</span>}
+                </div>
+                {bike.dailyRate && (
+                  <div className="flex items-center gap-1 mb-3">
+                    <DollarSign className="w-3 h-3 text-primary" />
+                    <span className="text-sm font-semibold text-primary">R$ {parseFloat(bike.dailyRate).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</span>
+                    <span className="text-xs text-muted-foreground">/dia</span>
+                  </div>
+                )}
+                <div className="flex gap-2 pt-2 border-t border-border">
+                  <button onClick={() => { setEditBike(bike); setShowForm(true); }} className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary transition-colors"><Pencil className="w-3 h-3" />Editar</button>
+                  <button onClick={() => setDiscountBikeId(bike.id)} className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary transition-colors"><Percent className="w-3 h-3" />Descontos</button>
+                  <button onClick={() => { if (confirm("Remover esta bicicleta?")) deleteMutation.mutate({ id: bike.id }); }} className="flex items-center gap-1 text-xs text-muted-foreground hover:text-destructive transition-colors ml-auto"><Trash2 className="w-3 h-3" />Remover</button>
+                </div>
               </div>
             </div>
           ))}
         </div>
       )}
 
-      {showForm && (
-        <BikeFormDialog
-          bike={editBike}
-          onClose={() => { setShowForm(false); setEditBike(null); }}
-          onSuccess={() => { setShowForm(false); setEditBike(null); utils.bikes.list.invalidate(); }}
-        />
-      )}
-
-      {discountBikeId !== null && (
-        <DiscountRulesEditor
-          bikeId={discountBikeId}
-          onClose={() => setDiscountBikeId(null)}
-        />
-      )}
+      {showForm && <BikeFormDialog bike={editBike} onClose={() => { setShowForm(false); setEditBike(null); }} onSuccess={() => { setShowForm(false); setEditBike(null); utils.bikes.list.invalidate(); }} />}
+      {discountBikeId !== null && <DiscountRulesEditor bikeId={discountBikeId} onClose={() => setDiscountBikeId(null)} />}
     </div>
   );
 }

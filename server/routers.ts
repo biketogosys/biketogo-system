@@ -614,6 +614,178 @@ const bikesRouter = router({
       endDate: z.string(),
     }))
     .query(({ input }) => checkBikeAvailability(input.bikeId, input.startDate, input.endDate)),
+  // ─── Bike Sizes ──────────────────────────────────────────────────────────
+  listSizes: adminAuthProcedure
+    .input(z.object({ bikeId: z.number() }))
+    .query(async ({ input }) => {
+      const { bikeSizes } = await import("../drizzle/schema");
+      const { eq } = await import("drizzle-orm");
+      const db = await (await import("./db")).getDb();
+      if (!db) return [];
+      return db.select().from(bikeSizes).where(eq(bikeSizes.bikeId, input.bikeId));
+    }),
+  addSize: adminAuthProcedure
+    .input(z.object({
+      bikeId: z.number(),
+      tamanho: z.string().min(1),
+      quantidadeTotal: z.number().min(1).default(1),
+      quantidadeDisponivel: z.number().min(0).default(1),
+      observacao: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const { bikeSizes } = await import("../drizzle/schema");
+      const db = await (await import("./db")).getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      const [row] = await db.insert(bikeSizes).values({
+        bikeId: input.bikeId,
+        tamanho: input.tamanho,
+        quantidadeTotal: input.quantidadeTotal,
+        quantidadeDisponivel: input.quantidadeDisponivel,
+        observacao: sanitize(input.observacao) as string | null,
+      }).returning();
+      return row;
+    }),
+  updateSize: adminAuthProcedure
+    .input(z.object({
+      id: z.number(),
+      tamanho: z.string().optional(),
+      quantidadeTotal: z.number().optional(),
+      quantidadeDisponivel: z.number().optional(),
+      observacao: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const { bikeSizes } = await import("../drizzle/schema");
+      const { eq } = await import("drizzle-orm");
+      const db = await (await import("./db")).getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      const { id, ...data } = input;
+      await db.update(bikeSizes).set({
+        ...data,
+        observacao: sanitize(data.observacao) as string | null,
+      }).where(eq(bikeSizes.id, id));
+      return { success: true };
+    }),
+  deleteSize: adminAuthProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input }) => {
+      const { bikeSizes } = await import("../drizzle/schema");
+      const { eq } = await import("drizzle-orm");
+      const db = await (await import("./db")).getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      await db.delete(bikeSizes).where(eq(bikeSizes.id, input.id));
+      return { success: true };
+    }),
+  // ─── Bike Maintenance Logs ───────────────────────────────────────────────
+  listMaintenance: adminAuthProcedure
+    .input(z.object({ bikeId: z.number() }))
+    .query(async ({ input }) => {
+      const { bikeMaintenanceLogs } = await import("../drizzle/schema");
+      const { eq, desc } = await import("drizzle-orm");
+      const db = await (await import("./db")).getDb();
+      if (!db) return [];
+      return db.select().from(bikeMaintenanceLogs)
+        .where(eq(bikeMaintenanceLogs.bikeId, input.bikeId))
+        .orderBy(desc(bikeMaintenanceLogs.dataEntrada));
+    }),
+  addMaintenance: adminAuthProcedure
+    .input(z.object({
+      bikeId: z.number(),
+      descricao: z.string().min(1),
+      custo: z.string().optional(),
+      dataEntrada: z.string().optional(),
+      dataPrevistaRetorno: z.string().optional(),
+      status: z.enum(["em_andamento", "concluida"]).default("em_andamento"),
+      fotos: z.array(z.string()).optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const { bikeMaintenanceLogs, bikes } = await import("../drizzle/schema");
+      const { eq } = await import("drizzle-orm");
+      const db = await (await import("./db")).getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      const [row] = await db.insert(bikeMaintenanceLogs).values({
+        bikeId: input.bikeId,
+        descricao: input.descricao,
+        custo: sanitize(input.custo) as string | null,
+        dataEntrada: input.dataEntrada ? new Date(input.dataEntrada) : new Date(),
+        dataPrevistaRetorno: input.dataPrevistaRetorno ? new Date(input.dataPrevistaRetorno) : null,
+        status: input.status,
+        fotos: input.fotos ?? null,
+      }).returning();
+      if (input.status === "em_andamento") {
+        await db.update(bikes).set({ status: "maintenance" }).where(eq(bikes.id, input.bikeId));
+      }
+      return row;
+    }),
+  updateMaintenance: adminAuthProcedure
+    .input(z.object({
+      id: z.number(),
+      bikeId: z.number(),
+      descricao: z.string().optional(),
+      custo: z.string().optional(),
+      dataPrevistaRetorno: z.string().optional(),
+      status: z.enum(["em_andamento", "concluida"]).optional(),
+      fotos: z.array(z.string()).optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const { bikeMaintenanceLogs, bikes } = await import("../drizzle/schema");
+      const { eq } = await import("drizzle-orm");
+      const db = await (await import("./db")).getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      const { id, bikeId, ...data } = input;
+      await db.update(bikeMaintenanceLogs).set({
+        ...(data.descricao !== undefined ? { descricao: data.descricao } : {}),
+        custo: data.custo !== undefined ? (sanitize(data.custo) as string | null) : undefined,
+        dataPrevistaRetorno: data.dataPrevistaRetorno ? new Date(data.dataPrevistaRetorno) : undefined,
+        ...(data.status !== undefined ? { status: data.status } : {}),
+        ...(data.fotos !== undefined ? { fotos: data.fotos } : {}),
+        updatedAt: new Date(),
+      }).where(eq(bikeMaintenanceLogs.id, id));
+      if (data.status === "concluida") {
+        const remaining = await db.select({ id: bikeMaintenanceLogs.id, status: bikeMaintenanceLogs.status })
+          .from(bikeMaintenanceLogs)
+          .where(eq(bikeMaintenanceLogs.bikeId, bikeId));
+        const hasOngoing = remaining.some((r: any) => r.id !== id && r.status === "em_andamento");
+        if (!hasOngoing) {
+          await db.update(bikes).set({ status: "available" }).where(eq(bikes.id, bikeId));
+        }
+      }
+      return { success: true };
+    }),
+  uploadBikePhoto: adminAuthProcedure
+    .input(z.object({
+      bikeId: z.number(),
+      base64: z.string(),
+      mimeType: z.string().default("image/jpeg"),
+    }))
+    .mutation(async ({ input }) => {
+      const { storagePut } = await import("./storage");
+      const { bikes } = await import("../drizzle/schema");
+      const { eq } = await import("drizzle-orm");
+      const db = await (await import("./db")).getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      const base64Data = input.base64.replace(/^data:[^;]+;base64,/, "");
+      const buffer = Buffer.from(base64Data, "base64");
+      const ext = input.mimeType.split("/")[1] || "jpg";
+      const key = `bikes/${input.bikeId}/photo-${Date.now()}.${ext}`;
+      const { url } = await storagePut(key, buffer, input.mimeType);
+      await db.update(bikes).set({ photoUrl: url }).where(eq(bikes.id, input.bikeId));
+      return { url };
+    }),
+  uploadMaintenancePhoto: adminAuthProcedure
+    .input(z.object({
+      bikeId: z.number(),
+      base64: z.string(),
+      mimeType: z.string().default("image/jpeg"),
+    }))
+    .mutation(async ({ input }) => {
+      const { storagePut } = await import("./storage");
+      const base64Data = input.base64.replace(/^data:[^;]+;base64,/, "");
+      const buffer = Buffer.from(base64Data, "base64");
+      const ext = input.mimeType.split("/")[1] || "jpg";
+      const key = `bikes/${input.bikeId}/maintenance-${Date.now()}.${ext}`;
+      const { url } = await storagePut(key, buffer, input.mimeType);
+      return { url };
+    }),
 });
 
 // ─── Rentals router ───────────────────────────────────────────────────────────
@@ -1138,7 +1310,17 @@ const publicApiRouter = router({
       if (storedKey && input.apiKey !== storedKey) {
         throw new TRPCError({ code: "UNAUTHORIZED", message: "Chave de API inválida." });
       }
-
+      // Validate CPF and RG
+      if (input.cpf && input.cpf.replace(/\D/g, "").length > 0) {
+        if (!validarCPF(input.cpf)) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "CPF inválido." });
+        }
+      }
+      if (input.rg && input.rg.replace(/[.\-\s]/g, "").length > 0) {
+        if (!validarRG(input.rg)) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "RG inválido." });
+        }
+      }
       // Check bike availability
       const available = await checkBikeAvailability(input.bikeId, input.startDate, input.endDate);
       if (!available) {
