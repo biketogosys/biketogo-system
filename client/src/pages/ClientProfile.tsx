@@ -325,56 +325,9 @@ export default function ClientProfile() {
             )}
 
             {activeTab === "documentacao" && (
-              <div className="space-y-6">
-                {/* LGPD consent status */}
-                <div className="flex items-center gap-3 p-3 rounded-lg border border-border bg-secondary">
-                  <Shield className="w-4 h-4 text-primary flex-shrink-0" />
-                  <div>
-                    <p className="text-xs font-semibold text-foreground">Consentimento LGPD</p>
-                    <p className="text-xs text-muted-foreground">
-                      {(client as any).lgpdConsent
-                        ? `Aceito em ${(client as any).lgpdConsentAt ? new Date((client as any).lgpdConsentAt).toLocaleString("pt-BR") : "data n\u00e3o registrada"}`
-                        : "N\u00e3o registrado"}
-                    </p>
-                  </div>
-                  <span className={`ml-auto text-xs px-2 py-0.5 rounded-full font-medium ${
-                    (client as any).lgpdConsent ? "bg-green-500/15 text-green-500" : "bg-muted text-muted-foreground"
-                  }`}>
-                    {(client as any).lgpdConsent ? "Aceito" : "Pendente"}
-                  </span>
-                </div>
-
-                {/* Photos from public form */}
-                {((client as any).docFrontUrl || (client as any).docBackUrl) && (
-                  <div>
-                    <h3 className="text-xs font-semibold text-primary uppercase tracking-wider mb-3">
-                      Fotos do Documento (Formul\u00e1rio P\u00fablico)
-                    </h3>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      {(client as any).docFrontUrl && (
-                        <div className="bg-secondary border border-border rounded-lg overflow-hidden">
-                          <div className="aspect-video bg-muted flex items-center justify-center">
-                            <img src={(client as any).docFrontUrl} alt="Frente do documento" className="w-full h-full object-cover" />
-                          </div>
-                          <div className="p-3"><p className="text-xs font-medium text-foreground">Frente do Documento</p></div>
-                        </div>
-                      )}
-                      {(client as any).docBackUrl && (
-                        <div className="bg-secondary border border-border rounded-lg overflow-hidden">
-                          <div className="aspect-video bg-muted flex items-center justify-center">
-                            <img src={(client as any).docBackUrl} alt="Verso do documento" className="w-full h-full object-cover" />
-                          </div>
-                          <div className="p-3"><p className="text-xs font-medium text-foreground">Verso do Documento</p></div>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )}
-
-                {/* Additional uploaded documents */}
-                <div>
+              <div>
                 <h3 className="text-xs font-semibold text-primary uppercase tracking-wider mb-4">
-                  Documentos Adicionais
+                  Documentos
                 </h3>
                 {(!docs || docs.length === 0) ? (
                   <div className="flex flex-col items-center justify-center h-32 text-muted-foreground">
@@ -415,7 +368,6 @@ export default function ClientProfile() {
                     ))}
                   </div>
                 )}
-                </div>
               </div>
             )}
 

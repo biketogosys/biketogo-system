@@ -77,7 +77,6 @@ import {
 import { notifyOwner } from "./_core/notification";
 import { sendEmail, buildReservationEmailHtml } from "./email";
 import { sendWhatsApp, buildOwnerReservationMessage } from "./whatsapp";
-import { createStripeCheckout } from "./stripe";
 import { COOKIE_NAME } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
@@ -910,20 +909,6 @@ const publicApiRouter = router({
       email: z.string().email().optional().or(z.literal("")),
       instagram: z.string().optional(),
       accommodation: z.string().optional(),
-      // Address
-      zipCode: z.string().optional(),
-      street: z.string().optional(),
-      number: z.string().optional(),
-      complement: z.string().optional(),
-      neighborhood: z.string().optional(),
-      city: z.string().optional(),
-      state: z.string().optional(),
-      country: z.string().optional(),
-      // Profile
-      docOrigin: z.string().optional(),
-      pedalFreq: z.string().optional(),
-      howFound: z.string().optional(),
-      lgpdConsent: z.boolean().optional(),
       // Rental data
       bikeId: z.number(),
       startDate: z.string(),
@@ -967,16 +952,6 @@ const publicApiRouter = router({
         email: input.email || null,
         instagram: input.instagram,
         accommodation: input.accommodation,
-        zipCode: input.zipCode,
-        street: input.street,
-        number: input.number,
-        complement: input.complement,
-        neighborhood: input.neighborhood,
-        city: input.city,
-        state: input.state,
-        country: input.country || "Brasil",
-        pedalFrequency: input.pedalFreq,
-        origin: input.howFound,
         source: "shopify",
         status: "lead",
       } as any);
@@ -1058,56 +1033,6 @@ const publicApiRouter = router({
       }
 
       return { clientId, rentalId, success: true };
-    }),
-
-  // ─── Create Stripe Checkout Session ────────────────────────────────────────
-  createCheckout: publicProcedure
-    .input(z.object({
-      rentalId: z.number(),
-      clientId: z.number(),
-      clientName: z.string(),
-      clientEmail: z.string().optional(),
-      bikeModel: z.string(),
-      startDate: z.string(),
-      endDate: z.string(),
-      totalAmountBRL: z.number(),
-      paymentType: z.enum(["card", "pix"]),
-      origin: z.string(),
-    }))
-    .mutation(async ({ input }) => {
-      const result = await createStripeCheckout({
-        rentalId: input.rentalId,
-        clientId: input.clientId,
-        clientName: input.clientName,
-        clientEmail: input.clientEmail,
-        bikeModel: input.bikeModel,
-        startDate: input.startDate,
-        endDate: input.endDate,
-        totalAmountBRL: input.totalAmountBRL,
-        paymentType: input.paymentType,
-        origin: input.origin,
-      });
-      return result;
-    }),
-
-  // ─── Upload document photo (base64) ────────────────────────────────────────
-  uploadDocument: publicProcedure
-    .input(z.object({
-      clientId: z.number(),
-      side: z.enum(["front", "back"]),
-      base64: z.string(),
-      mimeType: z.string().default("image/jpeg"),
-    }))
-    .mutation(async ({ input }) => {
-      const { storagePut } = await import("./storage");
-      const base64Data = input.base64.replace(/^data:[^;]+;base64,/, "");
-      const buffer = Buffer.from(base64Data, "base64");
-      const ext = input.mimeType.split("/")[1] || "jpg";
-      const key = `clients/${input.clientId}/doc-${input.side}-${Date.now()}.${ext}`;
-      const { url } = await storagePut(key, buffer, input.mimeType);
-      const field = input.side === "front" ? "docFrontUrl" : "docBackUrl";
-      await updateClient(input.clientId, { [field]: url } as any);
-      return { url };
     }),
 });
 

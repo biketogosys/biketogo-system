@@ -8,16 +8,8 @@ import { registerOAuthRoutes } from "./oauth";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
-import { createClient, updateRental } from "../db";
+import { createClient } from "../db";
 import { notifyOwner } from "./notification";
-import { constructStripeEvent } from "../stripe";
-import {
-  registerSecurityMiddlewares,
-  loginRateLimiter,
-  precadastroRateLimiter,
-  reservarRateLimiter,
-  shopifyCorsMiddleware,
-} from "./security";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -41,35 +33,6 @@ async function findAvailablePort(startPort: number = 3000): Promise<number> {
 async function startServer() {
   const app = express();
   const server = createServer(app);
-
-  // ─── Stripe webhook MUST be registered BEFORE express.json() ──────────────
-  app.post("/api/stripe/webhook", express.raw({ type: "application/json" }), async (req, res) => {
-    const sig = req.headers["stripe-signature"] as string;
-    try {
-      const event = constructStripeEvent(req.body as Buffer, sig);
-      // Test events — return verification response
-      if (event.id.startsWith("evt_test_")) {
-        console.log("[Webhook] Test event detected");
-        return res.json({ verified: true });
-      }
-      if (event.type === "checkout.session.completed") {
-        const session = event.data.object as any;
-        const rentalId = parseInt(session.metadata?.rental_id || "0");
-        if (rentalId) {
-          await updateRental(rentalId, { paymentStatus: "paid", stripeSessionId: session.id } as any);
-          console.log(`[Stripe] Payment confirmed for rental #${rentalId}`);
-        }
-      }
-      res.json({ received: true });
-    } catch (err: any) {
-      console.error("[Stripe Webhook]", err.message);
-      res.status(400).send(`Webhook Error: ${err.message}`);
-    }
-  });
-
-  // ─── Helmet.js — headers de segurança HTTP ────────────────────────────────
-  registerSecurityMiddlewares(app);
-
   // Configure body parser with larger size limit for file uploads
   app.use(express.json({ limit: "50mb" }));
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
@@ -77,72 +40,52 @@ async function startServer() {
   app.use(cookieParser());
   // OAuth callback under /api/oauth/callback
   registerOAuthRoutes(app);
-
   // ─── Public endpoint: Shopify pre-registration form ──────────────────────
-  // CORS restrito + Rate limiting para rotas Shopify
-  app.post(
-    "/api/shopify/precadastro",
-    shopifyCorsMiddleware,
-    precadastroRateLimiter,
-    async (req, res) => {
-      try {
-        const body = req.body;
-        const clientId = await createClient({
-          name: body.name || "Sem nome",
-          cpf: body.cpf,
-          rg: body.rg,
-          birthDate: body.birthDate,
-          gender: body.gender,
-          height: body.height,
-          pedalFrequency: body.pedalFrequency,
-          origin: body.origin,
-          phone: body.phone,
-          email: body.email,
-          instagram: body.instagram,
-          accommodation: body.accommodation,
-          zipCode: body.zipCode,
-          street: body.street,
-          number: body.number,
-          neighborhood: body.neighborhood,
-          city: body.city,
-          state: body.state,
-          country: body.country || "Brasil",
-          status: "lead",
-          source: "shopify",
-        });
+  app.post("/api/shopify/precadastro", async (req, res) => {
+    try {
+      const body = req.body;
+      const clientId = await createClient({
+        name: body.name || "Sem nome",
+        cpf: body.cpf,
+        rg: body.rg,
+        birthDate: body.birthDate,
+        gender: body.gender,
+        height: body.height,
+        pedalFrequency: body.pedalFrequency,
+        origin: body.origin,
+        phone: body.phone,
+        email: body.email,
+        instagram: body.instagram,
+        accommodation: body.accommodation,
+        zipCode: body.zipCode,
+        street: body.street,
+        number: body.number,
+        neighborhood: body.neighborhood,
+        city: body.city,
+        state: body.state,
+        country: body.country || "Brasil",
+        status: "lead",
+        source: "shopify",
+      });
 
-        // Notify owner via built-in notification
-        await notifyOwner({
-          title: `Novo pré-cadastro: ${body.name}`,
-          content: `Cliente ${body.name} (CPF: ${body.cpf || 'N/A'}) realizou pré-cadastro pelo site. ID: #${clientId}`,
-        });
+      // Notify owner via built-in notification
+      await notifyOwner({
+        title: `Novo pré-cadastro: ${body.name}`,
+        content: `Cliente ${body.name} (CPF: ${body.cpf || 'N/A'}) realizou pré-cadastro pelo site. ID: #${clientId}`,
+      });
 
-        res.json({ success: true, clientId });
-      } catch (error) {
-        console.error("[Shopify Precadastro]", error);
-        res.status(500).json({ success: false, error: "Erro ao salvar cadastro." });
-      }
+      res.json({ success: true, clientId });
+    } catch (error) {
+      console.error("[Shopify Precadastro]", error);
+      res.status(500).json({ success: false, error: "Erro ao salvar cadastro." });
     }
-  );
+  });
 
-  // ─── CORS para OPTIONS em rotas Shopify ───────────────────────────────────
-  app.options("/api/shopify/*", shopifyCorsMiddleware);
-
-  // ─── Rate limiting para login (tRPC auth.login) ───────────────────────────
-  // Aplica rate limit em todas as chamadas tRPC de login
-  app.use("/api/trpc/auth.login", loginRateLimiter);
-
-  // ─── Rate limiting para reservas (tRPC publicApi.submitReservation) ───────
-  app.use("/api/trpc/publicApi.submitReservation", reservarRateLimiter);
-
-  // ─── CORS genérico para demais rotas (não-Shopify) ────────────────────────
+  // ─── CORS for Shopify ──────────────────────────────────────────────────────
   app.use((req, res, next) => {
-    // Não sobrescrever headers já definidos pelo shopifyCorsMiddleware
-    if (!res.getHeader("Access-Control-Allow-Origin")) {
-      res.header("Access-Control-Allow-Origin", "*");
-      res.header("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
-      res.header("Access-Control-Allow-Headers", "Content-Type");
-    }
+    res.header("Access-Control-Allow-Origin", "*");
+    res.header("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
+    res.header("Access-Control-Allow-Headers", "Content-Type");
     if (req.method === "OPTIONS") return res.sendStatus(200);
     next();
   });
