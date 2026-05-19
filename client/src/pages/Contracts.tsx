@@ -1,0 +1,646 @@
+import { trpc } from "@/lib/trpc";
+import { useState, useMemo } from "react";
+import { toast } from "sonner";
+import {
+  FileText,
+  Loader2,
+  ChevronLeft,
+  CheckCircle2,
+  AlertTriangle,
+  XCircle,
+  Clock,
+  Archive,
+  RefreshCw,
+  Bike,
+  Package,
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+
+// ─── Types ────────────────────────────────────────────────────────────────────
+type ContractStatus = "ativo" | "parcialmente_devolvido" | "encerrado";
+type AccessoryReturnStatus = "ok" | "danificado" | "perdido" | "roubado";
+
+const contractStatusConfig: Record<
+  ContractStatus,
+  { label: string; variant: "default" | "secondary" | "destructive" | "outline"; cls: string }
+> = {
+  ativo: { label: "Ativo", variant: "default", cls: "bg-green-100 text-green-800 border-green-200" },
+  parcialmente_devolvido: {
+    label: "Parcialmente Devolvido",
+    variant: "secondary",
+    cls: "bg-amber-100 text-amber-800 border-amber-200",
+  },
+  encerrado: { label: "Encerrado", variant: "outline", cls: "bg-gray-100 text-gray-600 border-gray-200" },
+};
+
+const accessoryStatusConfig: Record<
+  AccessoryReturnStatus,
+  { label: string; icon: React.ReactNode; cls: string }
+> = {
+  ok: { label: "OK", icon: <CheckCircle2 className="h-4 w-4 text-green-500" />, cls: "text-green-700" },
+  danificado: {
+    label: "Danificado",
+    icon: <AlertTriangle className="h-4 w-4 text-amber-500" />,
+    cls: "text-amber-700",
+  },
+  perdido: { label: "Perdido", icon: <XCircle className="h-4 w-4 text-red-500" />, cls: "text-red-700" },
+  roubado: { label: "Roubado", icon: <XCircle className="h-4 w-4 text-red-700" />, cls: "text-red-800" },
+};
+
+const rentalStatusLabels: Record<string, string> = {
+  active: "Ativo",
+  returned: "Devolvido",
+  overdue: "Atrasado",
+  cancelled: "Cancelado",
+};
+
+// ─── Status Badge ─────────────────────────────────────────────────────────────
+function ContractStatusBadge({ status }: { status: ContractStatus }) {
+  const cfg = contractStatusConfig[status] ?? contractStatusConfig.ativo;
+  return (
+    <span
+      className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${cfg.cls}`}
+    >
+      {cfg.label}
+    </span>
+  );
+}
+
+// ─── Close Contract Dialog ────────────────────────────────────────────────────
+function CloseContractDialog({
+  contractId,
+  open,
+  onClose,
+}: {
+  contractId: number;
+  open: boolean;
+  onClose: () => void;
+}) {
+  const utils = trpc.useUtils();
+  const { data: detail, isLoading } = trpc.contracts.getById.useQuery(
+    { id: contractId },
+    { enabled: open }
+  );
+
+  const [accChecklist, setAccChecklist] = useState<
+    Record<number, { status: AccessoryReturnStatus; observacao: string }>
+  >({});
+
+  const closeMutation = trpc.contracts.close.useMutation({
+    onSuccess: () => {
+      toast.success("Contrato encerrado com sucesso!");
+      utils.contracts.list.invalidate();
+      utils.contracts.getById.invalidate({ id: contractId });
+      onClose();
+    },
+    onError: (e) => toast.error("Erro ao encerrar contrato: " + e.message),
+  });
+
+  const handleClose = () => {
+    const accessories = detail?.accessories?.map((acc) => ({
+      id: acc.id,
+      status: accChecklist[acc.id]?.status ?? "ok",
+      observacao: accChecklist[acc.id]?.observacao ?? "",
+    }));
+    closeMutation.mutate({ id: contractId, accessories });
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
+      <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <CheckCircle2 className="h-5 w-5 text-green-600" />
+            Encerrar Contrato #{contractId}
+          </DialogTitle>
+        </DialogHeader>
+
+        {isLoading ? (
+          <div className="flex justify-center py-8">
+            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+          </div>
+        ) : (
+          <div className="space-y-6">
+            {/* Bikes checklist */}
+            <div>
+              <h3 className="font-semibold text-sm mb-3 flex items-center gap-2">
+                <Bike className="h-4 w-4" /> Bikes vinculadas
+              </h3>
+              <div className="rounded-md border divide-y">
+                {detail?.rentals?.map((rental) => (
+                  <div key={rental.id} className="flex items-center justify-between px-4 py-3">
+                    <div>
+                      <p className="font-medium text-sm">
+                        {rental.bikeBrand} {rental.bikeModel}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {rental.bikeSerialNumber} · {rental.startDate} → {rental.endDate ?? "—"}
+                      </p>
+                    </div>
+                    <span
+                      className={`text-xs font-medium px-2 py-1 rounded-full ${
+                        rental.status === "returned"
+                          ? "bg-green-100 text-green-700"
+                          : rental.status === "active"
+                          ? "bg-blue-100 text-blue-700"
+                          : "bg-gray-100 text-gray-600"
+                      }`}
+                    >
+                      {rentalStatusLabels[rental.status] ?? rental.status}
+                    </span>
+                  </div>
+                ))}
+                {(!detail?.rentals || detail.rentals.length === 0) && (
+                  <p className="text-sm text-muted-foreground px-4 py-3">Nenhuma bike vinculada.</p>
+                )}
+              </div>
+            </div>
+
+            {/* Accessories checklist */}
+            {detail?.accessories && detail.accessories.length > 0 && (
+              <div>
+                <h3 className="font-semibold text-sm mb-3 flex items-center gap-2">
+                  <Package className="h-4 w-4" /> Checklist de Acessórios
+                </h3>
+                <div className="space-y-3">
+                  {detail.accessories.map((acc) => (
+                    <div key={acc.id} className="rounded-md border p-4 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <p className="font-medium text-sm">
+                          {acc.accessoryName ?? `Acessório #${acc.accessoryId}`}{" "}
+                          <span className="text-muted-foreground font-normal">× {acc.qty}</span>
+                        </p>
+                        <Select
+                          value={accChecklist[acc.id]?.status ?? acc.status ?? "ok"}
+                          onValueChange={(v) =>
+                            setAccChecklist((prev) => ({
+                              ...prev,
+                              [acc.id]: {
+                                ...prev[acc.id],
+                                status: v as AccessoryReturnStatus,
+                                observacao: prev[acc.id]?.observacao ?? "",
+                              },
+                            }))
+                          }
+                        >
+                          <SelectTrigger className="w-36 h-8 text-xs">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {(["ok", "danificado", "perdido", "roubado"] as AccessoryReturnStatus[]).map(
+                              (s) => (
+                                <SelectItem key={s} value={s} className="text-xs">
+                                  <span className="flex items-center gap-1.5">
+                                    {accessoryStatusConfig[s].icon}
+                                    {accessoryStatusConfig[s].label}
+                                  </span>
+                                </SelectItem>
+                              )
+                            )}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div>
+                        <Label className="text-xs text-muted-foreground">Observação</Label>
+                        <Textarea
+                          className="mt-1 text-sm resize-none"
+                          rows={2}
+                          placeholder="Descreva o estado do acessório..."
+                          value={accChecklist[acc.id]?.observacao ?? ""}
+                          onChange={(e) =>
+                            setAccChecklist((prev) => ({
+                              ...prev,
+                              [acc.id]: {
+                                ...prev[acc.id],
+                                status: prev[acc.id]?.status ?? "ok",
+                                observacao: e.target.value,
+                              },
+                            }))
+                          }
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>
+            Cancelar
+          </Button>
+          <Button
+            onClick={handleClose}
+            disabled={closeMutation.isPending}
+            className="bg-green-600 hover:bg-green-700 text-white"
+          >
+            {closeMutation.isPending ? (
+              <Loader2 className="h-4 w-4 animate-spin mr-2" />
+            ) : (
+              <CheckCircle2 className="h-4 w-4 mr-2" />
+            )}
+            Confirmar Encerramento
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─── Contract Detail Panel ────────────────────────────────────────────────────
+function ContractDetail({
+  contractId,
+  onBack,
+}: {
+  contractId: number;
+  onBack: () => void;
+}) {
+  const utils = trpc.useUtils();
+  const { data, isLoading } = trpc.contracts.getById.useQuery({ id: contractId });
+  const [closeOpen, setCloseOpen] = useState(false);
+
+  const archiveMutation = trpc.contracts.archive.useMutation({
+    onSuccess: () => {
+      toast.success("Contrato arquivado.");
+      utils.contracts.list.invalidate();
+      onBack();
+    },
+    onError: (e) => toast.error("Erro ao arquivar: " + e.message),
+  });
+
+  const recalcMutation = trpc.contracts.updateStatus.useMutation({
+    onSuccess: () => {
+      toast.success("Status recalculado.");
+      utils.contracts.getById.invalidate({ id: contractId });
+    },
+    onError: (e) => toast.error("Erro: " + e.message),
+  });
+
+  if (isLoading) {
+    return (
+      <div className="flex justify-center items-center h-64">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  if (!data) {
+    return (
+      <div className="text-center py-16 text-muted-foreground">
+        Contrato não encontrado.
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <Button variant="ghost" size="sm" onClick={onBack}>
+            <ChevronLeft className="h-4 w-4 mr-1" /> Voltar
+          </Button>
+          <div>
+            <h2 className="text-xl font-bold flex items-center gap-2">
+              <FileText className="h-5 w-5 text-primary" />
+              Contrato #{data.id}
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              Cliente: <span className="font-medium text-foreground">{data.clientName ?? `#${data.clientId}`}</span>
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <ContractStatusBadge status={data.status as ContractStatus} />
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => recalcMutation.mutate({ id: contractId })}
+            disabled={recalcMutation.isPending}
+          >
+            <RefreshCw className={`h-4 w-4 mr-1 ${recalcMutation.isPending ? "animate-spin" : ""}`} />
+            Recalcular
+          </Button>
+          {data.status !== "encerrado" && (
+            <Button
+              size="sm"
+              className="bg-green-600 hover:bg-green-700 text-white"
+              onClick={() => setCloseOpen(true)}
+            >
+              <CheckCircle2 className="h-4 w-4 mr-1" /> Encerrar
+            </Button>
+          )}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => archiveMutation.mutate({ id: contractId })}
+            disabled={archiveMutation.isPending}
+          >
+            <Archive className="h-4 w-4 mr-1" /> Arquivar
+          </Button>
+        </div>
+      </div>
+
+      {/* Info cards */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="rounded-lg border p-4">
+          <p className="text-xs text-muted-foreground">Valor Total</p>
+          <p className="text-lg font-bold">
+            {data.valorTotal ? `R$ ${Number(data.valorTotal).toFixed(2)}` : "—"}
+          </p>
+        </div>
+        <div className="rounded-lg border p-4">
+          <p className="text-xs text-muted-foreground">Criado em</p>
+          <p className="text-sm font-medium">
+            {data.criadoEm ? new Date(data.criadoEm).toLocaleDateString("pt-BR") : "—"}
+          </p>
+        </div>
+        <div className="rounded-lg border p-4">
+          <p className="text-xs text-muted-foreground">Encerrado em</p>
+          <p className="text-sm font-medium">
+            {data.encerradoEm ? new Date(data.encerradoEm).toLocaleDateString("pt-BR") : "—"}
+          </p>
+        </div>
+        <div className="rounded-lg border p-4">
+          <p className="text-xs text-muted-foreground">Bikes</p>
+          <p className="text-lg font-bold">{data.rentals?.length ?? 0}</p>
+        </div>
+      </div>
+
+      {/* Bikes table */}
+      <div>
+        <h3 className="font-semibold mb-3 flex items-center gap-2">
+          <Bike className="h-4 w-4" /> Bikes Vinculadas
+        </h3>
+        <div className="rounded-md border overflow-hidden">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Bike</TableHead>
+                <TableHead>Nº Série</TableHead>
+                <TableHead>Período</TableHead>
+                <TableHead>Valor</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Condição</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {data.rentals?.map((r) => (
+                <TableRow key={r.id}>
+                  <TableCell className="font-medium">
+                    {r.bikeBrand} {r.bikeModel}
+                  </TableCell>
+                  <TableCell className="text-muted-foreground text-xs">{r.bikeSerialNumber}</TableCell>
+                  <TableCell className="text-xs">
+                    {r.startDate} → {r.endDate ?? "—"}
+                  </TableCell>
+                  <TableCell>
+                    {r.totalAmount ? `R$ ${Number(r.totalAmount).toFixed(2)}` : "—"}
+                  </TableCell>
+                  <TableCell>
+                    <span
+                      className={`text-xs font-medium px-2 py-0.5 rounded-full ${
+                        r.status === "returned"
+                          ? "bg-green-100 text-green-700"
+                          : r.status === "active"
+                          ? "bg-blue-100 text-blue-700"
+                          : r.status === "overdue"
+                          ? "bg-red-100 text-red-700"
+                          : "bg-gray-100 text-gray-600"
+                      }`}
+                    >
+                      {rentalStatusLabels[r.status] ?? r.status}
+                    </span>
+                  </TableCell>
+                  <TableCell className="text-xs text-muted-foreground">
+                    {r.returnCondition ?? "—"}
+                  </TableCell>
+                </TableRow>
+              ))}
+              {(!data.rentals || data.rentals.length === 0) && (
+                <TableRow>
+                  <TableCell colSpan={6} className="text-center text-muted-foreground py-6">
+                    Nenhuma bike vinculada.
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </div>
+      </div>
+
+      {/* Accessories checklist */}
+      {data.accessories && data.accessories.length > 0 && (
+        <div>
+          <h3 className="font-semibold mb-3 flex items-center gap-2">
+            <Package className="h-4 w-4" /> Acessórios do Contrato
+          </h3>
+          <div className="rounded-md border divide-y">
+            {data.accessories.map((acc) => {
+              const statusCfg =
+                accessoryStatusConfig[acc.status as AccessoryReturnStatus] ??
+                accessoryStatusConfig.ok;
+              return (
+                <div key={acc.id} className="flex items-start justify-between px-4 py-3">
+                  <div>
+                    <p className="font-medium text-sm">
+                      {acc.accessoryName ?? `Acessório #${acc.accessoryId}`}{" "}
+                      <span className="text-muted-foreground">× {acc.qty}</span>
+                    </p>
+                    {acc.observacao && (
+                      <p className="text-xs text-muted-foreground mt-0.5">{acc.observacao}</p>
+                    )}
+                  </div>
+                  <span className={`flex items-center gap-1 text-xs font-medium ${statusCfg.cls}`}>
+                    {statusCfg.icon}
+                    {statusCfg.label}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Close dialog */}
+      <CloseContractDialog
+        contractId={contractId}
+        open={closeOpen}
+        onClose={() => setCloseOpen(false)}
+      />
+    </div>
+  );
+}
+
+// ─── Contracts List ───────────────────────────────────────────────────────────
+export default function Contracts() {
+  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [page, setPage] = useState(0);
+  const limit = 20;
+
+  const { data, isLoading, refetch } = trpc.contracts.list.useQuery({
+    limit,
+    offset: page * limit,
+  });
+
+  const items = data?.items ?? [];
+  const total = data?.total ?? 0;
+  const totalPages = Math.ceil(total / limit);
+
+  if (selectedId !== null) {
+    return (
+      <div className="p-6">
+        <ContractDetail contractId={selectedId} onBack={() => setSelectedId(null)} />
+      </div>
+    );
+  }
+
+  return (
+    <div className="p-6 space-y-6">
+      {/* Page header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold flex items-center gap-2">
+            <FileText className="h-6 w-6 text-primary" />
+            Contratos
+          </h1>
+          <p className="text-sm text-muted-foreground mt-1">
+            Gestão de contratos multi-bike
+          </p>
+        </div>
+        <Button variant="outline" size="sm" onClick={() => refetch()}>
+          <RefreshCw className="h-4 w-4 mr-1" /> Atualizar
+        </Button>
+      </div>
+
+      {/* Table */}
+      <div className="rounded-md border overflow-hidden">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="w-16">#</TableHead>
+              <TableHead>Cliente</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead>Valor Total</TableHead>
+              <TableHead>Criado em</TableHead>
+              <TableHead>Encerrado em</TableHead>
+              <TableHead className="w-24"></TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {isLoading ? (
+              <TableRow>
+                <TableCell colSpan={7} className="text-center py-12">
+                  <Loader2 className="h-6 w-6 animate-spin mx-auto text-muted-foreground" />
+                </TableCell>
+              </TableRow>
+            ) : items.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={7} className="text-center py-16">
+                  <div className="flex flex-col items-center gap-3 text-muted-foreground">
+                    <FileText className="h-10 w-10 opacity-30" />
+                    <p className="text-sm">Nenhum contrato encontrado.</p>
+                    <p className="text-xs">
+                      Contratos são criados ao vincular múltiplos aluguéis a um cliente.
+                    </p>
+                  </div>
+                </TableCell>
+              </TableRow>
+            ) : (
+              items.map((c) => (
+                <TableRow
+                  key={c.id}
+                  className="cursor-pointer hover:bg-muted/50 transition-colors"
+                  onClick={() => setSelectedId(c.id)}
+                >
+                  <TableCell className="font-mono text-muted-foreground text-xs">#{c.id}</TableCell>
+                  <TableCell className="font-medium">
+                    {c.clientName ?? `Cliente #${c.clientId}`}
+                  </TableCell>
+                  <TableCell>
+                    <ContractStatusBadge status={c.status as ContractStatus} />
+                  </TableCell>
+                  <TableCell>
+                    {c.valorTotal ? `R$ ${Number(c.valorTotal).toFixed(2)}` : "—"}
+                  </TableCell>
+                  <TableCell className="text-sm text-muted-foreground">
+                    {c.criadoEm ? new Date(c.criadoEm).toLocaleDateString("pt-BR") : "—"}
+                  </TableCell>
+                  <TableCell className="text-sm text-muted-foreground">
+                    {c.encerradoEm ? new Date(c.encerradoEm).toLocaleDateString("pt-BR") : "—"}
+                  </TableCell>
+                  <TableCell>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSelectedId(c.id);
+                      }}
+                    >
+                      Ver detalhes
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))
+            )}
+          </TableBody>
+        </Table>
+      </div>
+
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between text-sm text-muted-foreground">
+          <span>
+            {page * limit + 1}–{Math.min((page + 1) * limit, total)} de {total} contratos
+          </span>
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={page === 0}
+              onClick={() => setPage((p) => p - 1)}
+            >
+              Anterior
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={page >= totalPages - 1}
+              onClick={() => setPage((p) => p + 1)}
+            >
+              Próxima
+            </Button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

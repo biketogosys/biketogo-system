@@ -1,4 +1,5 @@
 import { useAuth } from "@/_core/hooks/useAuth";
+import { useTheme } from "@/contexts/ThemeContext";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
   DropdownMenu,
@@ -20,11 +21,25 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { useIsMobile } from "@/hooks/useMobile";
-import { LayoutDashboard, LogOut, PanelLeft, Users, Bike, ClipboardList, Package, DollarSign, Settings, UserCog } from "lucide-react";
+import { LayoutDashboard, LogOut, PanelLeft, Users, Bike, ClipboardList, Package, DollarSign, Settings, UserCog, Sun, Moon, FileText } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
 import { Button } from "./ui/button";
+
+function ThemeToggleMenuItem() {
+  const { theme, toggleTheme, switchable } = useTheme();
+  if (!switchable || !toggleTheme) return null;
+  return (
+    <DropdownMenuItem onClick={toggleTheme} className="cursor-pointer">
+      {theme === "dark" ? (
+        <><Sun className="mr-2 h-4 w-4" /><span>Modo Claro</span></>
+      ) : (
+        <><Moon className="mr-2 h-4 w-4" /><span>Modo Escuro</span></>
+      )}
+    </DropdownMenuItem>
+  );
+}
 
 const menuItems = [
   { icon: LayoutDashboard, label: "Dashboard", path: "/" },
@@ -33,6 +48,7 @@ const menuItems = [
   { icon: ClipboardList, label: "Aluguéis", path: "/alugueis" },
   { icon: Package, label: "Acessórios", path: "/acessorios" },
   { icon: DollarSign, label: "Financeiro", path: "/financeiro" },
+  { icon: FileText, label: "Contratos", path: "/contratos" },
   { icon: UserCog, label: "Usuários", path: "/usuarios" },
   { icon: Settings, label: "Configurações", path: "/configuracoes" },
 ];
@@ -237,7 +253,8 @@ function DashboardLayoutContent({
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-48">
-                  <DropdownMenuItem
+                <ThemeToggleMenuItem />
+                <DropdownMenuItem
                   onClick={logout}
                   className="cursor-pointer text-destructive focus:text-destructive"
                 >

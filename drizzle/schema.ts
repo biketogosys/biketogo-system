@@ -26,6 +26,8 @@ export const paymentStatusEnum = pgEnum("payment_status", ["pending", "paid", "p
 export const returnConditionEnum = pgEnum("return_condition", ["ok", "damaged"]);
 export const rentalStatusEnum = pgEnum("rental_status", ["active", "returned", "overdue", "cancelled"]);
 export const accessoryStatusEnum = pgEnum("accessory_status", ["available", "rented", "maintenance", "lost"]);
+export const contractStatusEnum = pgEnum("contract_status", ["ativo", "parcialmente_devolvido", "encerrado"]);
+export const accessoryReturnStatusEnum = pgEnum("accessory_return_status", ["ok", "danificado", "perdido", "roubado"]);
 
 // ─── Users (Manus auth — kept for backward compat) ──────────────────────────
 export const users = pgTable("users", {
@@ -177,6 +179,10 @@ export const rentals = pgTable("rentals", {
   // Return
   returnCondition: returnConditionEnum("returnCondition"),
   status: rentalStatusEnum("status").default("active").notNull(),
+  // Contract link
+  contractId: integer("contractId"),
+  // Soft delete
+  deletedAt: timestamp("deletedAt"),
   notes: text("notes"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().notNull(),
@@ -257,6 +263,33 @@ export const revenues = pgTable("revenues", {
 });
 export type Revenue = typeof revenues.$inferSelect;
 export type InsertRevenue = typeof revenues.$inferInsert;
+
+// ─── Contracts ───────────────────────────────────────────────────────────────
+export const contracts = pgTable("contracts", {
+  id: serial("id").primaryKey(),
+  clientId: integer("clientId").notNull(),
+  status: contractStatusEnum("status").default("ativo").notNull(),
+  valorTotal: numeric("valorTotal", { precision: 10, scale: 2 }),
+  pdfUrl: text("pdfUrl"),
+  criadoEm: timestamp("criadoEm").defaultNow().notNull(),
+  encerradoEm: timestamp("encerradoEm"),
+  deletedAt: timestamp("deletedAt"),
+});
+export type Contract = typeof contracts.$inferSelect;
+export type InsertContract = typeof contracts.$inferInsert;
+
+// ─── Contract Accessories (checklist de acessórios por contrato) ──────────────
+export const contractAccessories = pgTable("contract_accessories", {
+  id: serial("id").primaryKey(),
+  contractId: integer("contractId").notNull(),
+  accessoryId: integer("accessoryId").notNull(),
+  qty: integer("qty").default(1).notNull(),
+  status: accessoryReturnStatusEnum("status").default("ok").notNull(),
+  observacao: text("observacao"),
+  fotoUrl: text("fotoUrl"),
+});
+export type ContractAccessory = typeof contractAccessories.$inferSelect;
+export type InsertContractAccessory = typeof contractAccessories.$inferInsert;
 
 // ─── System Settings (configurações globais) ─────────────────────────────────
 export const systemSettings = pgTable("system_settings", {

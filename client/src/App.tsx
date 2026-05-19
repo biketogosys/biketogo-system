@@ -3,7 +3,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/NotFound";
 import { Route, Switch } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
-import { ThemeProvider } from "./contexts/ThemeContext";
+import { ThemeProvider, useTheme } from "./contexts/ThemeContext";
 import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
 import Clients from "./pages/Clients";
@@ -15,6 +15,7 @@ import Financial from "./pages/Financial";
 import UserManagement from "./pages/UserManagement";
 import Settings from "./pages/Settings";
 import PublicReservation from "./pages/PublicReservation";
+import Contracts from "./pages/Contracts";
 import { useAuth } from "./_core/hooks/useAuth";
 import { Loader2 } from "lucide-react";
 import DashboardLayout from "./components/DashboardLayout";
@@ -53,6 +54,7 @@ function Router() {
       <Route path="/financeiro" component={() => <ProtectedRoute component={Financial} />} />
       <Route path="/usuarios" component={() => <ProtectedRoute component={UserManagement} />} />
       <Route path="/configuracoes" component={() => <ProtectedRoute component={Settings} />} />
+      <Route path="/contratos" component={() => <ProtectedRoute component={Contracts} />} />
       <Route path="/reservar" component={PublicReservation} />
       <Route path="/login" component={Login} />
       <Route path="/404" component={NotFound} />
@@ -61,14 +63,21 @@ function Router() {
   );
 }
 
+function AppInner() {
+  const { theme } = useTheme();
+  return (
+    <TooltipProvider>
+      <Toaster richColors theme={theme as "light" | "dark"} />
+      <Router />
+    </TooltipProvider>
+  );
+}
+
 function App() {
   return (
     <ErrorBoundary>
-      <ThemeProvider defaultTheme="dark">
-        <TooltipProvider>
-          <Toaster richColors theme="dark" />
-          <Router />
-        </TooltipProvider>
+      <ThemeProvider defaultTheme="light" switchable={true}>
+        <AppInner />
       </ThemeProvider>
     </ErrorBoundary>
   );

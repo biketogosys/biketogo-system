@@ -1217,6 +1217,222 @@ const dashboardRouter = router({
   }),
 });
 
+// ─── Contracts router ───────────────────────────────────────────────────────────────
+import { and, eq, isNull, sql as drizzleSql } from "drizzle-orm";
+import {
+  contracts,
+  contractAccessories,
+  rentals as rentalsTable,
+  clients as clientsTable,
+  bikes as bikesTable,
+  accessories as accessoriesTable,
+  Contract,
+  InsertContract,
+} from "../drizzle/schema";
+import { getDb } from "./db";
+
+/** Recalcula e persiste o status do contrato com base nos rentals vinculados */
+async function recalcContractStatus(contractId: number): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  const linked = await db
+    .select({ status: rentalsTable.status })
+    .from(rentalsTable)
+    .where(and(eq(rentalsTable.contractId, contractId), isNull(rentalsTable.deletedAt)));
+  if (linked.length === 0) return;
+  const total = linked.length;
+  const returned = linked.filter(r => r.status === "returned" || r.status === "cancelled").length;
+  let newStatus: "ativo" | "parcialmente_devolvido" | "encerrado";
+  if (returned === 0) {
+    newStatus = "ativo";
+  } else if (returned < total) {
+    newStatus = "parcialmente_devolvido";
+  } else {
+    newStatus = "encerrado";
+  }
+  const updateData: Record<string, unknown> = { status: newStatus };
+  if (newStatus === "encerrado") updateData.encerradoEm = new Date();
+  await db.update(contracts).set(updateData).where(eq(contracts.id, contractId));
+}
+
+const contractsRouter = router({
+  // Cria contrato e vincula N rentals existentes
+  create: adminAuthProcedure
+    .input(z.object({
+      clientId: z.number(),
+      rentalIds: z.array(z.number()).min(1),
+      valorTotal: z.string().optional(),
+      accessories: z.array(z.object({
+        accessoryId: z.number(),
+        qty: z.number().min(1).default(1),
+      })).optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      const [contract] = await db.insert(contracts).values({
+        clientId: input.clientId,
+        valorTotal: input.valorTotal ?? null,
+        status: "ativo",
+      }).returning({ id: contracts.id });
+      // Link rentals to contract
+      for (const rentalId of input.rentalIds) {
+        await db.update(rentalsTable)
+          .set({ contractId: contract.id })
+          .where(eq(rentalsTable.id, rentalId));
+      }
+      // Add accessories checklist
+      if (input.accessories && input.accessories.length > 0) {
+        for (const acc of input.accessories) {
+          await db.insert(contractAccessories).values({
+            contractId: contract.id,
+            accessoryId: acc.accessoryId,
+            qty: acc.qty,
+            status: "ok",
+          });
+        }
+      }
+      await recalcContractStatus(contract.id);
+      return { id: contract.id };
+    }),
+
+  // Lista contratos ativos (sem soft delete)
+  list: adminAuthProcedure
+    .input(z.object({
+      limit: z.number().min(1).max(200).default(50),
+      offset: z.number().min(0).default(0),
+    }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return { items: [], total: 0 };
+      const [items, countResult] = await Promise.all([
+        db.select({
+          id: contracts.id,
+          clientId: contracts.clientId,
+          status: contracts.status,
+          valorTotal: contracts.valorTotal,
+          criadoEm: contracts.criadoEm,
+          encerradoEm: contracts.encerradoEm,
+          clientName: clientsTable.name,
+        })
+          .from(contracts)
+          .leftJoin(clientsTable, eq(contracts.clientId, clientsTable.id))
+          .where(isNull(contracts.deletedAt))
+          .orderBy(contracts.criadoEm)
+          .limit(input.limit)
+          .offset(input.offset),
+        db.select({ count: drizzleSql<number>`count(*)` })
+          .from(contracts)
+          .where(isNull(contracts.deletedAt)),
+      ]);
+      return { items, total: Number(countResult[0]?.count ?? 0) };
+    }),
+
+  // Detalhe do contrato com rentals e acessórios vinculados
+  getById: adminAuthProcedure
+    .input(z.object({ id: z.number() }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      const [contract] = await db.select({
+        id: contracts.id,
+        clientId: contracts.clientId,
+        status: contracts.status,
+        valorTotal: contracts.valorTotal,
+        pdfUrl: contracts.pdfUrl,
+        criadoEm: contracts.criadoEm,
+        encerradoEm: contracts.encerradoEm,
+        clientName: clientsTable.name,
+        clientPhone: clientsTable.phone,
+        clientEmail: clientsTable.email,
+      })
+        .from(contracts)
+        .leftJoin(clientsTable, eq(contracts.clientId, clientsTable.id))
+        .where(eq(contracts.id, input.id));
+      if (!contract) throw new TRPCError({ code: "NOT_FOUND" });
+      const linkedRentals = await db.select({
+        id: rentalsTable.id,
+        bikeId: rentalsTable.bikeId,
+        startDate: rentalsTable.startDate,
+        endDate: rentalsTable.endDate,
+        status: rentalsTable.status,
+        returnCondition: rentalsTable.returnCondition,
+        totalAmount: rentalsTable.totalAmount,
+        notes: rentalsTable.notes,
+        bikeModel: bikesTable.model,
+        bikeBrand: bikesTable.brand,
+        bikeSerialNumber: bikesTable.serialNumber,
+      })
+        .from(rentalsTable)
+        .leftJoin(bikesTable, eq(rentalsTable.bikeId, bikesTable.id))
+        .where(and(eq(rentalsTable.contractId, input.id), isNull(rentalsTable.deletedAt)));
+      const accChecklist = await db.select({
+        id: contractAccessories.id,
+        accessoryId: contractAccessories.accessoryId,
+        qty: contractAccessories.qty,
+        status: contractAccessories.status,
+        observacao: contractAccessories.observacao,
+        fotoUrl: contractAccessories.fotoUrl,
+        accessoryName: accessoriesTable.name,
+      })
+        .from(contractAccessories)
+        .leftJoin(accessoriesTable, eq(contractAccessories.accessoryId, accessoriesTable.id))
+        .where(eq(contractAccessories.contractId, input.id));
+      return { ...contract, rentals: linkedRentals, accessories: accChecklist };
+    }),
+
+  // Recalcula status do contrato manualmente
+  updateStatus: adminAuthProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input }) => {
+      await recalcContractStatus(input.id);
+      return { success: true };
+    }),
+
+  // Encerra contrato: atualiza checklist de acessórios e recalcula status
+  close: adminAuthProcedure
+    .input(z.object({
+      id: z.number(),
+      accessories: z.array(z.object({
+        id: z.number(),
+        status: z.enum(["ok", "danificado", "perdido", "roubado"]),
+        observacao: z.string().optional(),
+        fotoUrl: z.string().optional(),
+      })).optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      // Update accessories checklist
+      if (input.accessories && input.accessories.length > 0) {
+        for (const acc of input.accessories) {
+          await db.update(contractAccessories)
+            .set({
+              status: acc.status,
+              observacao: acc.observacao ?? null,
+              fotoUrl: acc.fotoUrl ?? null,
+            })
+            .where(eq(contractAccessories.id, acc.id));
+        }
+      }
+      // Recalc status (may set to encerrado if all rentals returned)
+      await recalcContractStatus(input.id);
+      return { success: true };
+    }),
+
+  // Soft delete do contrato
+  archive: adminAuthProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      await db.update(contracts)
+        .set({ deletedAt: new Date() })
+        .where(eq(contracts.id, input.id));
+      return { success: true };
+    }),
+});
+
 // ─── App router ───────────────────────────────────────────────────────────────
 export const appRouter = router({
   system: systemRouter,
@@ -1229,6 +1445,7 @@ export const appRouter = router({
   settings: settingsRouter,
   publicApi: publicApiRouter,
   dashboard: dashboardRouter,
+  contracts: contractsRouter,
 });
 
 export type AppRouter = typeof appRouter;
