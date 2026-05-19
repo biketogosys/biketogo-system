@@ -88,6 +88,62 @@ import { ENV } from "./_core/env";
 const JWT_SECRET = process.env.JWT_SECRET || "biketogo-secret-key-change-me";
 const ADMIN_COOKIE = "btg_session";
 
+// ─── Validações de documento ─────────────────────────────────────────────────
+function validarCPF(cpf: string): boolean {
+  const digits = cpf.replace(/\D/g, "");
+  if (digits.length !== 11) return false;
+  if (/^(\d)\1{10}$/.test(digits)) return false; // sequências iguais
+  let sum = 0;
+  for (let i = 0; i < 9; i++) sum += parseInt(digits[i]) * (10 - i);
+  let r = (sum * 10) % 11;
+  if (r === 10 || r === 11) r = 0;
+  if (r !== parseInt(digits[9])) return false;
+  sum = 0;
+  for (let i = 0; i < 10; i++) sum += parseInt(digits[i]) * (11 - i);
+  r = (sum * 10) % 11;
+  if (r === 10 || r === 11) r = 0;
+  return r === parseInt(digits[10]);
+}
+
+function validarRG(rg: string): boolean {
+  const clean = rg.replace(/[.\-\s]/g, "").toUpperCase();
+  if (clean.length < 7 || clean.length > 9) return false;
+  // Aceita formato livre (dígito verificador pode ser X em alguns estados)
+  return /^[0-9]{6,8}[0-9X]$/.test(clean);
+}
+
+function validarDocumentoCliente(input: {
+  nacionalidade?: string | null;
+  cpf?: string | null;
+  rg?: string | null;
+  tipoDocumento?: string | null;
+  numeroPassaporte?: string | null;
+}) {
+  const { nacionalidade, cpf, rg, tipoDocumento, numeroPassaporte } = input;
+  if (!nacionalidade) return; // sem nacionalidade informada, validação opcional
+
+  if (nacionalidade === "brasileiro") {
+    if (!cpf || cpf.replace(/\D/g, "").length === 0) {
+      throw new TRPCError({ code: "BAD_REQUEST", message: "CPF é obrigatório para brasileiros." });
+    }
+    if (!validarCPF(cpf)) {
+      throw new TRPCError({ code: "BAD_REQUEST", message: "CPF inválido. Verifique os dígitos verificadores." });
+    }
+  }
+
+  if (nacionalidade === "estrangeiro") {
+    if (!numeroPassaporte || numeroPassaporte.trim().length === 0) {
+      throw new TRPCError({ code: "BAD_REQUEST", message: "Número do passaporte é obrigatório para estrangeiros." });
+    }
+  }
+
+  if (rg && rg.replace(/[.\-\s]/g, "").length > 0) {
+    if (!validarRG(rg)) {
+      throw new TRPCError({ code: "BAD_REQUEST", message: "RG inválido. Verifique o dígito verificador." });
+    }
+  }
+}
+
 // ─── Helper: sign admin JWT ──────────────────────────────────────────────────
 function signAdminToken(userId: number, role: string) {
   return jwt.sign({ userId, role }, JWT_SECRET, { expiresIn: "7d" });
@@ -276,8 +332,22 @@ const clientsRouter = router({
       country: z.string().optional(),
       notes: z.string().optional(),
       status: z.enum(["lead", "verified", "blocked"]).default("lead"),
+      // Bloco B — nacionalidade e documento
+      nacionalidade: z.enum(["brasileiro", "estrangeiro"]).optional(),
+      tipoDocumento: z.enum(["cpf", "passaporte"]).optional(),
+      numeroPassaporte: z.string().max(50).optional(),
+      complement: z.string().optional(),
+      lgpdConsent: z.boolean().optional(),
+      lgpdConsentAt: z.string().optional(),
     }))
     .mutation(async ({ input }) => {
+      validarDocumentoCliente({
+        nacionalidade: input.nacionalidade,
+        cpf: input.cpf,
+        rg: input.rg,
+        tipoDocumento: input.tipoDocumento,
+        numeroPassaporte: input.numeroPassaporte,
+      });
       const id = await createClient({
         ...input,
         source: "manual",
@@ -298,12 +368,17 @@ const clientsRouter = router({
         neighborhood: sanitize(input.neighborhood) as string | null,
         city: sanitize(input.city) as string | null,
         state: sanitize(input.state) as string | null,
-        country: sanitize(input.country) as string | null || "Brasil",
+         country: sanitize(input.country) as string | null || "Brasil",
         notes: sanitize(input.notes) as string | null,
+        nacionalidade: sanitize(input.nacionalidade) as "brasileiro" | "estrangeiro" | null,
+        tipoDocumento: sanitize(input.tipoDocumento) as "cpf" | "passaporte" | null,
+        numeroPassaporte: sanitize(input.numeroPassaporte) as string | null,
+        complement: sanitize(input.complement) as string | null,
+        lgpdConsent: input.lgpdConsent ?? false,
+        lgpdConsentAt: input.lgpdConsent ? new Date() : null,
       });
       return { id };
     }),
-
   update: adminAuthProcedure
     .input(z.object({
       id: z.number(),
@@ -330,9 +405,22 @@ const clientsRouter = router({
       status: z.enum(["lead", "verified", "blocked"]).optional(),
       receiveEmail: z.boolean().optional(),
       blocked: z.boolean().optional(),
+      // Bloco B — nacionalidade e documento
+      nacionalidade: z.enum(["brasileiro", "estrangeiro"]).optional(),
+      tipoDocumento: z.enum(["cpf", "passaporte"]).optional(),
+      numeroPassaporte: z.string().max(50).optional(),
+      complement: z.string().optional(),
+      lgpdConsent: z.boolean().optional(),
     }))
     .mutation(async ({ input }) => {
       const { id, ...data } = input;
+      validarDocumentoCliente({
+        nacionalidade: data.nacionalidade,
+        cpf: data.cpf,
+        rg: data.rg,
+        tipoDocumento: data.tipoDocumento,
+        numeroPassaporte: data.numeroPassaporte,
+      });
       const sanitized: any = {
         ...data,
         cpf: sanitize(data.cpf),
@@ -354,6 +442,14 @@ const clientsRouter = router({
         state: sanitize(data.state),
         country: sanitize(data.country),
         notes: sanitize(data.notes),
+        nacionalidade: sanitize(data.nacionalidade),
+        tipoDocumento: sanitize(data.tipoDocumento),
+        numeroPassaporte: sanitize(data.numeroPassaporte),
+        complement: sanitize(data.complement),
+        ...(data.lgpdConsent !== undefined ? {
+          lgpdConsent: data.lgpdConsent,
+          lgpdConsentAt: data.lgpdConsent ? new Date() : null,
+        } : {}),
       };
       await updateClient(id, sanitized);
       return { success: true };

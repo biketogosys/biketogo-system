@@ -1,12 +1,26 @@
 import { trpc } from "@/lib/trpc";
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { Link } from "wouter";
-import { Search, Plus, Loader2, User, MapPin, Calendar, ChevronRight, Trash2 } from "lucide-react";
+import {
+  Search, Plus, Loader2, User, MapPin, Calendar, ChevronRight,
+  Trash2, X, Upload, CheckCircle2, AlertCircle,
+} from "lucide-react";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import NewClientDialog from "@/components/NewClientDialog";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  maskCPF, maskRG, maskCEP, maskPhone, isValidCPF, isValidRG, fetchViaCEP,
+  dateDisplayToISO, maskDate,
+} from "@/hooks/useMask";
 
+// ─── Status Badge ─────────────────────────────────────────────────────────────
 type Status = "lead" | "verified" | "blocked" | undefined;
 
 function StatusBadge({ status }: { status: string }) {
@@ -19,6 +33,590 @@ function StatusBadge({ status }: { status: string }) {
   return <span className={s.cls}>{s.label}</span>;
 }
 
+// ─── DDI list ─────────────────────────────────────────────────────────────────
+const DDI_LIST = [
+  { code: "+55", label: "🇧🇷 +55 Brasil" },
+  { code: "+1",  label: "🇺🇸 +1 EUA/Canadá" },
+  { code: "+54", label: "🇦🇷 +54 Argentina" },
+  { code: "+56", label: "🇨🇱 +56 Chile" },
+  { code: "+598", label: "🇺🇾 +598 Uruguai" },
+  { code: "+595", label: "🇵🇾 +595 Paraguai" },
+  { code: "+34", label: "🇪🇸 +34 Espanha" },
+  { code: "+351", label: "🇵🇹 +351 Portugal" },
+  { code: "+44", label: "🇬🇧 +44 Reino Unido" },
+  { code: "+49", label: "🇩🇪 +49 Alemanha" },
+  { code: "+33", label: "🇫🇷 +33 França" },
+  { code: "+39", label: "🇮🇹 +39 Itália" },
+  { code: "+81", label: "🇯🇵 +81 Japão" },
+  { code: "+86", label: "🇨🇳 +86 China" },
+  { code: "+91", label: "🇮🇳 +91 Índia" },
+];
+
+// ─── Empty form state ─────────────────────────────────────────────────────────
+function emptyForm() {
+  return {
+    name: "",
+    birthDate: "",
+    nacionalidade: "" as "" | "brasileiro" | "estrangeiro",
+    tipoDocumento: "" as "" | "cpf" | "passaporte",
+    cpf: "",
+    rg: "",
+    numeroPassaporte: "",
+    ddi: "+55",
+    phone: "",
+    phoneAlt: "",
+    email: "",
+    instagram: "",
+    zipCode: "",
+    street: "",
+    number: "",
+    complement: "",
+    neighborhood: "",
+    city: "",
+    state: "",
+    country: "Brasil",
+    pedalFrequency: "" as "" | "iniciante" | "intermediario" | "avancado",
+    tipoUso: "" as "" | "lazer" | "esporte" | "urbano" | "cicloturismo",
+    notes: "",
+    accommodation: "",
+    origin: "",
+    lgpdConsent: false,
+    aceiteMarketing: false,
+  };
+}
+
+// ─── New Client Modal (6 tabs) ────────────────────────────────────────────────
+interface NewClientModalProps {
+  open: boolean;
+  onClose: () => void;
+  onSuccess: () => void;
+}
+
+function NewClientModal({ open, onClose, onSuccess }: NewClientModalProps) {
+  const [form, setForm] = useState(emptyForm);
+  const [activeTab, setActiveTab] = useState("identificacao");
+  const [cepLoading, setCepLoading] = useState(false);
+  const [docFrenteFile, setDocFrenteFile] = useState<File | null>(null);
+  const [docVersoFile, setDocVersoFile] = useState<File | null>(null);
+  const [docFrentePreview, setDocFrentePreview] = useState("");
+  const [docVersoPreview, setDocVersoPreview] = useState("");
+  const frenteRef = useRef<HTMLInputElement>(null);
+  const versoRef = useRef<HTMLInputElement>(null);
+  const utils = trpc.useUtils();
+
+  const createMutation = trpc.clients.create.useMutation({
+    onSuccess: () => {
+      toast.success("Cliente criado com sucesso!");
+      utils.clients.list.invalidate();
+      onSuccess();
+      resetForm();
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  function resetForm() {
+    setForm(emptyForm());
+    setActiveTab("identificacao");
+    setDocFrenteFile(null);
+    setDocVersoFile(null);
+    setDocFrentePreview("");
+    setDocVersoPreview("");
+  }
+
+  function set<K extends keyof ReturnType<typeof emptyForm>>(key: K, value: ReturnType<typeof emptyForm>[K]) {
+    setForm((f) => ({ ...f, [key]: value }));
+  }
+
+  async function handleCEPBlur() {
+    const digits = form.zipCode.replace(/\D/g, "");
+    if (digits.length !== 8) return;
+    setCepLoading(true);
+    const result = await fetchViaCEP(digits);
+    setCepLoading(false);
+    if (!result) return toast.error("CEP não encontrado.");
+    setForm((f) => ({
+      ...f,
+      street: result.logradouro || f.street,
+      neighborhood: result.bairro || f.neighborhood,
+      city: result.localidade || f.city,
+      state: result.uf || f.state,
+    }));
+  }
+
+  function handleFileChange(side: "frente" | "verso", file: File | null) {
+    if (!file) return;
+    const url = URL.createObjectURL(file);
+    if (side === "frente") { setDocFrenteFile(file); setDocFrentePreview(url); }
+    else { setDocVersoFile(file); setDocVersoPreview(url); }
+  }
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!form.name.trim()) { setActiveTab("identificacao"); return toast.error("Nome é obrigatório."); }
+    if (!form.lgpdConsent) { setActiveTab("lgpd"); return toast.error("Aceite os termos de uso para continuar."); }
+    if (form.nacionalidade === "brasileiro" && form.cpf && !isValidCPF(form.cpf)) {
+      setActiveTab("identificacao");
+      return toast.error("CPF inválido. Verifique os dígitos verificadores.");
+    }
+    if (form.rg && !isValidRG(form.rg)) {
+      setActiveTab("identificacao");
+      return toast.error("RG inválido. Verifique o dígito verificador.");
+    }
+
+    const phone = form.ddi !== "+55" ? `${form.ddi} ${form.phone}` : form.phone;
+
+    createMutation.mutate({
+      name: form.name,
+      cpf: form.cpf || undefined,
+      rg: form.rg || undefined,
+      birthDate: form.birthDate ? dateDisplayToISO(form.birthDate) : undefined,
+      nacionalidade: (form.nacionalidade || undefined) as "brasileiro" | "estrangeiro" | undefined,
+      tipoDocumento: (form.tipoDocumento || undefined) as "cpf" | "passaporte" | undefined,
+      numeroPassaporte: form.numeroPassaporte || undefined,
+      phone: phone || undefined,
+      email: form.email || undefined,
+      instagram: form.instagram || undefined,
+      zipCode: form.zipCode || undefined,
+      street: form.street || undefined,
+      number: form.number || undefined,
+      complement: form.complement || undefined,
+      neighborhood: form.neighborhood || undefined,
+      city: form.city || undefined,
+      state: form.state || undefined,
+      country: form.country || "Brasil",
+      pedalFrequency: form.pedalFrequency || undefined,
+      origin: form.origin || undefined,
+      accommodation: form.accommodation || undefined,
+      notes: form.notes || undefined,
+      lgpdConsent: form.lgpdConsent,
+      status: "lead",
+    });
+  }
+
+  if (!open) return null;
+
+  const inputCls = "bg-secondary border-border text-sm";
+  const labelCls = "text-xs text-muted-foreground mb-1.5 block";
+  const canSave = form.lgpdConsent && !createMutation.isPending;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4">
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => { onClose(); resetForm(); }} />
+      <div className="relative bg-card border border-border rounded-xl w-full max-w-2xl shadow-2xl flex flex-col max-h-[95vh]">
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-border flex-shrink-0">
+          <h2 className="text-base font-semibold text-foreground" style={{ fontFamily: "'Montserrat', sans-serif" }}>
+            Novo Cliente
+          </h2>
+          <button onClick={() => { onClose(); resetForm(); }} className="text-muted-foreground hover:text-foreground transition-colors">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* Tabs */}
+        <form onSubmit={handleSubmit} className="flex flex-col flex-1 overflow-hidden">
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="flex flex-col flex-1 overflow-hidden">
+            <TabsList className="flex-shrink-0 mx-5 mt-4 grid grid-cols-6 h-auto gap-0.5">
+              {[
+                { value: "identificacao", label: "1. ID" },
+                { value: "contato", label: "2. Contato" },
+                { value: "endereco", label: "3. Endereço" },
+                { value: "documento", label: "4. Docs" },
+                { value: "perfil", label: "5. Perfil" },
+                { value: "lgpd", label: "6. LGPD" },
+              ].map((tab) => (
+                <TabsTrigger key={tab.value} value={tab.value} className="text-xs px-1 py-1.5">
+                  {tab.label}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+
+            <div className="flex-1 overflow-y-auto px-5 py-4">
+              {/* ── Aba 1: Identificação ── */}
+              <TabsContent value="identificacao" className="mt-0 space-y-4">
+                <div>
+                  <Label className={labelCls}>Nome completo *</Label>
+                  <Input value={form.name} onChange={(e) => set("name", e.target.value)} placeholder="João Silva" className={inputCls} />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <Label className={labelCls}>Data de nascimento</Label>
+                    <Input
+                      value={form.birthDate}
+                      onChange={(e) => set("birthDate", maskDate(e.target.value))}
+                      placeholder="DD/MM/AAAA"
+                      className={inputCls}
+                      maxLength={10}
+                    />
+                  </div>
+                  <div>
+                    <Label className={labelCls}>Nacionalidade</Label>
+                    <Select value={form.nacionalidade} onValueChange={(v) => set("nacionalidade", v as "brasileiro" | "estrangeiro")}>
+                      <SelectTrigger className={inputCls}>
+                        <SelectValue placeholder="Selecionar..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="brasileiro">Brasileiro</SelectItem>
+                        <SelectItem value="estrangeiro">Estrangeiro</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                <div>
+                  <Label className={labelCls}>Tipo de documento</Label>
+                  <Select value={form.tipoDocumento} onValueChange={(v) => set("tipoDocumento", v as "cpf" | "passaporte")}>
+                    <SelectTrigger className={inputCls}>
+                      <SelectValue placeholder="Selecionar..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="cpf">CPF</SelectItem>
+                      <SelectItem value="passaporte">Passaporte</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                {form.tipoDocumento !== "passaporte" && (
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <Label className={labelCls}>
+                        CPF {form.nacionalidade === "brasileiro" ? "*" : ""}
+                        {form.cpf.replace(/\D/g, "").length === 11 && (
+                          isValidCPF(form.cpf)
+                            ? <CheckCircle2 className="inline w-3 h-3 ml-1 text-green-500" />
+                            : <AlertCircle className="inline w-3 h-3 ml-1 text-destructive" />
+                        )}
+                      </Label>
+                      <Input
+                        value={form.cpf}
+                        onChange={(e) => set("cpf", maskCPF(e.target.value))}
+                        placeholder="000.000.000-00"
+                        className={inputCls}
+                        maxLength={14}
+                      />
+                    </div>
+                    <div>
+                      <Label className={labelCls}>
+                        RG
+                        {form.rg.replace(/[.\-\s]/g, "").length >= 8 && (
+                          isValidRG(form.rg)
+                            ? <CheckCircle2 className="inline w-3 h-3 ml-1 text-green-500" />
+                            : <AlertCircle className="inline w-3 h-3 ml-1 text-destructive" />
+                        )}
+                      </Label>
+                      <Input
+                        value={form.rg}
+                        onChange={(e) => set("rg", maskRG(e.target.value))}
+                        placeholder="00.000.000-0"
+                        className={inputCls}
+                        maxLength={12}
+                      />
+                    </div>
+                  </div>
+                )}
+                {form.tipoDocumento === "passaporte" && (
+                  <div>
+                    <Label className={labelCls}>Número do passaporte {form.nacionalidade === "estrangeiro" ? "*" : ""}</Label>
+                    <Input
+                      value={form.numeroPassaporte}
+                      onChange={(e) => set("numeroPassaporte", e.target.value.toUpperCase())}
+                      placeholder="AB123456"
+                      className={inputCls}
+                      maxLength={50}
+                    />
+                  </div>
+                )}
+              </TabsContent>
+
+              {/* ── Aba 2: Contato ── */}
+              <TabsContent value="contato" className="mt-0 space-y-4">
+                <div>
+                  <Label className={labelCls}>E-mail</Label>
+                  <Input type="email" value={form.email} onChange={(e) => set("email", e.target.value)} placeholder="joao@email.com" className={inputCls} />
+                </div>
+                <div>
+                  <Label className={labelCls}>WhatsApp</Label>
+                  <div className="flex gap-2">
+                    <Select value={form.ddi} onValueChange={(v) => set("ddi", v)}>
+                      <SelectTrigger className={`${inputCls} w-44 flex-shrink-0`}>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {DDI_LIST.map((d) => (
+                          <SelectItem key={d.code} value={d.code}>{d.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Input
+                      value={form.phone}
+                      onChange={(e) => set("phone", form.ddi === "+55" ? maskPhone(e.target.value) : e.target.value)}
+                      placeholder={form.ddi === "+55" ? "(48) 9 9999-9999" : "Número"}
+                      className={`${inputCls} flex-1`}
+                    />
+                  </div>
+                </div>
+                <div>
+                  <Label className={labelCls}>Telefone alternativo</Label>
+                  <Input
+                    value={form.phoneAlt}
+                    onChange={(e) => set("phoneAlt", maskPhone(e.target.value))}
+                    placeholder="(48) 3333-4444"
+                    className={inputCls}
+                  />
+                </div>
+                <div>
+                  <Label className={labelCls}>Instagram</Label>
+                  <Input value={form.instagram} onChange={(e) => set("instagram", e.target.value)} placeholder="@usuario" className={inputCls} />
+                </div>
+              </TabsContent>
+
+              {/* ── Aba 3: Endereço ── */}
+              <TabsContent value="endereco" className="mt-0 space-y-4">
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="col-span-2">
+                    <Label className={labelCls}>CEP</Label>
+                    <div className="relative">
+                      <Input
+                        value={form.zipCode}
+                        onChange={(e) => set("zipCode", maskCEP(e.target.value))}
+                        onBlur={handleCEPBlur}
+                        placeholder="00000-000"
+                        className={inputCls}
+                        maxLength={9}
+                      />
+                      {cepLoading && <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 animate-spin text-muted-foreground" />}
+                    </div>
+                  </div>
+                  <div>
+                    <Label className={labelCls}>Estado</Label>
+                    <Input value={form.state} onChange={(e) => set("state", e.target.value.toUpperCase())} placeholder="SC" className={inputCls} maxLength={2} />
+                  </div>
+                </div>
+                <div>
+                  <Label className={labelCls}>Logradouro</Label>
+                  <Input value={form.street} onChange={(e) => set("street", e.target.value)} placeholder="Rua das Flores" className={inputCls} />
+                </div>
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <Label className={labelCls}>Número</Label>
+                    <Input value={form.number} onChange={(e) => set("number", e.target.value)} placeholder="123" className={inputCls} />
+                  </div>
+                  <div className="col-span-2">
+                    <Label className={labelCls}>Complemento</Label>
+                    <Input value={form.complement} onChange={(e) => set("complement", e.target.value)} placeholder="Apto 4" className={inputCls} />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <Label className={labelCls}>Bairro</Label>
+                    <Input value={form.neighborhood} onChange={(e) => set("neighborhood", e.target.value)} placeholder="Centro" className={inputCls} />
+                  </div>
+                  <div>
+                    <Label className={labelCls}>Cidade</Label>
+                    <Input value={form.city} onChange={(e) => set("city", e.target.value)} placeholder="Florianópolis" className={inputCls} />
+                  </div>
+                </div>
+                <div>
+                  <Label className={labelCls}>País</Label>
+                  <Input value={form.country} onChange={(e) => set("country", e.target.value)} placeholder="Brasil" className={inputCls} />
+                </div>
+              </TabsContent>
+
+              {/* ── Aba 4: Documentos ── */}
+              <TabsContent value="documento" className="mt-0 space-y-5">
+                <p className="text-xs text-muted-foreground">
+                  Faça upload das fotos do documento de identificação. A frente é obrigatória.
+                </p>
+                {/* Frente */}
+                <div>
+                  <Label className={labelCls}>Frente do documento *</Label>
+                  <input
+                    ref={frenteRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(e) => handleFileChange("frente", e.target.files?.[0] ?? null)}
+                  />
+                  {docFrentePreview ? (
+                    <div className="relative w-full h-36 rounded-lg overflow-hidden border border-border bg-secondary">
+                      <img src={docFrentePreview} alt="Frente" className="w-full h-full object-cover" />
+                      <button
+                        type="button"
+                        onClick={() => { setDocFrenteFile(null); setDocFrentePreview(""); }}
+                        className="absolute top-2 right-2 bg-black/60 rounded-full p-1 text-white hover:bg-black/80"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => frenteRef.current?.click()}
+                      className="w-full h-28 border-2 border-dashed border-border rounded-lg flex flex-col items-center justify-center gap-2 text-muted-foreground hover:border-primary/50 hover:text-primary transition-colors"
+                    >
+                      <Upload className="w-5 h-5" />
+                      <span className="text-xs">Clique para selecionar</span>
+                    </button>
+                  )}
+                </div>
+                {/* Verso */}
+                <div>
+                  <Label className={labelCls}>Verso do documento (opcional)</Label>
+                  <input
+                    ref={versoRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(e) => handleFileChange("verso", e.target.files?.[0] ?? null)}
+                  />
+                  {docVersoPreview ? (
+                    <div className="relative w-full h-36 rounded-lg overflow-hidden border border-border bg-secondary">
+                      <img src={docVersoPreview} alt="Verso" className="w-full h-full object-cover" />
+                      <button
+                        type="button"
+                        onClick={() => { setDocVersoFile(null); setDocVersoPreview(""); }}
+                        className="absolute top-2 right-2 bg-black/60 rounded-full p-1 text-white hover:bg-black/80"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => versoRef.current?.click()}
+                      className="w-full h-28 border-2 border-dashed border-border rounded-lg flex flex-col items-center justify-center gap-2 text-muted-foreground hover:border-primary/50 hover:text-primary transition-colors"
+                    >
+                      <Upload className="w-5 h-5" />
+                      <span className="text-xs">Clique para selecionar (opcional)</span>
+                    </button>
+                  )}
+                </div>
+                {(docFrenteFile || docVersoFile) && (
+                  <p className="text-xs text-amber-500 flex items-center gap-1">
+                    <AlertCircle className="w-3 h-3" />
+                    Os documentos serão enviados após criar o cliente (integração S3 pendente).
+                  </p>
+                )}
+              </TabsContent>
+
+              {/* ── Aba 5: Perfil de uso ── */}
+              <TabsContent value="perfil" className="mt-0 space-y-4">
+                <div>
+                  <Label className={labelCls}>Experiência em ciclismo</Label>
+                  <Select value={form.pedalFrequency} onValueChange={(v) => set("pedalFrequency", v as "iniciante" | "intermediario" | "avancado")}>
+                    <SelectTrigger className={inputCls}>
+                      <SelectValue placeholder="Selecionar..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="iniciante">Iniciante</SelectItem>
+                      <SelectItem value="intermediario">Intermediário</SelectItem>
+                      <SelectItem value="avancado">Avançado</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label className={labelCls}>Tipo de uso preferido</Label>
+                  <Select value={form.tipoUso} onValueChange={(v) => set("tipoUso", v as "lazer" | "esporte" | "urbano" | "cicloturismo")}>
+                    <SelectTrigger className={inputCls}>
+                      <SelectValue placeholder="Selecionar..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="lazer">Lazer</SelectItem>
+                      <SelectItem value="esporte">Esporte</SelectItem>
+                      <SelectItem value="urbano">Urbano</SelectItem>
+                      <SelectItem value="cicloturismo">Cicloturismo</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label className={labelCls}>Origem / Como nos conheceu</Label>
+                  <Input value={form.origin} onChange={(e) => set("origin", e.target.value)} placeholder="Instagram, indicação..." className={inputCls} />
+                </div>
+                <div>
+                  <Label className={labelCls}>Hospedagem / Acomodação</Label>
+                  <Input value={form.accommodation} onChange={(e) => set("accommodation", e.target.value)} placeholder="Hotel, pousada..." className={inputCls} />
+                </div>
+                <div>
+                  <Label className={labelCls}>Observações internas (visível apenas para admin)</Label>
+                  <Textarea
+                    value={form.notes}
+                    onChange={(e) => set("notes", e.target.value)}
+                    placeholder="Notas sobre o cliente..."
+                    className={`${inputCls} resize-none`}
+                    rows={3}
+                  />
+                </div>
+              </TabsContent>
+
+              {/* ── Aba 6: LGPD ── */}
+              <TabsContent value="lgpd" className="mt-0 space-y-5">
+                <div className="rounded-lg border border-border bg-secondary/50 p-4 text-xs text-muted-foreground leading-relaxed">
+                  <p className="font-semibold text-foreground mb-2">Termos de uso e Política de Privacidade</p>
+                  <p>
+                    Ao cadastrar seus dados, você concorda com o tratamento das informações pessoais
+                    pela Bike To Go para fins de gestão de locações, comunicação e melhorias de serviço,
+                    conforme a Lei Geral de Proteção de Dados (LGPD — Lei 13.709/2018).
+                  </p>
+                  <p className="mt-2">
+                    Seus dados são armazenados com segurança e não serão compartilhados com terceiros
+                    sem seu consentimento explícito.
+                  </p>
+                </div>
+                <div className="flex items-start gap-3">
+                  <Checkbox
+                    id="lgpdConsent"
+                    checked={form.lgpdConsent}
+                    onCheckedChange={(v) => set("lgpdConsent", !!v)}
+                    className="mt-0.5"
+                  />
+                  <label htmlFor="lgpdConsent" className="text-sm text-foreground cursor-pointer leading-snug">
+                    Li e aceito os Termos de Uso e a Política de Privacidade. *
+                  </label>
+                </div>
+                <div className="flex items-start gap-3">
+                  <Checkbox
+                    id="aceiteMarketing"
+                    checked={form.aceiteMarketing}
+                    onCheckedChange={(v) => set("aceiteMarketing", !!v)}
+                    className="mt-0.5"
+                  />
+                  <label htmlFor="aceiteMarketing" className="text-sm text-muted-foreground cursor-pointer leading-snug">
+                    Aceito receber comunicações de marketing e promoções por e-mail e WhatsApp. (opcional)
+                  </label>
+                </div>
+                {!form.lgpdConsent && (
+                  <p className="text-xs text-destructive flex items-center gap-1">
+                    <AlertCircle className="w-3 h-3" />
+                    O aceite dos termos é obrigatório para salvar o cadastro.
+                  </p>
+                )}
+              </TabsContent>
+            </div>
+
+            {/* Footer */}
+            <div className="flex gap-3 px-5 py-4 border-t border-border flex-shrink-0">
+              <Button type="button" variant="outline" onClick={() => { onClose(); resetForm(); }} className="flex-1">
+                Cancelar
+              </Button>
+              <Button
+                type="submit"
+                disabled={!canSave}
+                className="flex-1"
+                style={canSave ? { background: "oklch(0.68 0.12 65)", color: "oklch(0.10 0.005 240)" } : {}}
+              >
+                {createMutation.isPending ? (
+                  <><Loader2 className="w-4 h-4 animate-spin mr-2" />Salvando...</>
+                ) : (
+                  "Salvar cliente"
+                )}
+              </Button>
+            </div>
+          </Tabs>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// ─── Main Clients page ────────────────────────────────────────────────────────
 export default function Clients() {
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<Status>(undefined);
@@ -113,21 +711,11 @@ export default function Clients() {
           <table className="w-full hidden md:table">
             <thead>
               <tr className="border-b border-border">
-                <th className="text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider px-4 py-3">
-                  ID
-                </th>
-                <th className="text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider px-4 py-3">
-                  Cliente
-                </th>
-                <th className="text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider px-4 py-3">
-                  Localidade
-                </th>
-                <th className="text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider px-4 py-3">
-                  Status
-                </th>
-                <th className="text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider px-4 py-3">
-                  Atualização
-                </th>
+                <th className="text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider px-4 py-3">ID</th>
+                <th className="text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider px-4 py-3">Cliente</th>
+                <th className="text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider px-4 py-3">Localidade</th>
+                <th className="text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider px-4 py-3">Status</th>
+                <th className="text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider px-4 py-3">Atualização</th>
                 <th className="px-4 py-3" />
               </tr>
             </thead>
@@ -135,25 +723,17 @@ export default function Clients() {
               {clients.map((client, idx) => (
                 <tr
                   key={client.id}
-                  className={`border-b border-border/50 hover:bg-accent/30 transition-colors ${
-                    idx === clients.length - 1 ? "border-b-0" : ""
-                  }`}
+                  className={`border-b border-border/50 hover:bg-accent/30 transition-colors ${idx === clients.length - 1 ? "border-b-0" : ""}`}
                 >
-                  <td className="px-4 py-3 text-xs text-muted-foreground font-mono">
-                    #{client.id}
-                  </td>
+                  <td className="px-4 py-3 text-xs text-muted-foreground font-mono">#{client.id}</td>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-3">
                       <div className="w-8 h-8 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center flex-shrink-0">
-                        <span className="text-xs font-semibold text-primary">
-                          {client.name.charAt(0).toUpperCase()}
-                        </span>
+                        <span className="text-xs font-semibold text-primary">{client.name.charAt(0).toUpperCase()}</span>
                       </div>
                       <div>
                         <p className="text-sm font-medium text-foreground">{client.name}</p>
-                        {client.cpf && (
-                          <p className="text-xs text-muted-foreground">{client.cpf}</p>
-                        )}
+                        {client.cpf && <p className="text-xs text-muted-foreground">{client.cpf}</p>}
                       </div>
                     </div>
                   </td>
@@ -167,9 +747,7 @@ export default function Clients() {
                       <span className="text-xs text-muted-foreground/50">—</span>
                     )}
                   </td>
-                  <td className="px-4 py-3">
-                    <StatusBadge status={client.status} />
-                  </td>
+                  <td className="px-4 py-3"><StatusBadge status={client.status} /></td>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-1 text-xs text-muted-foreground">
                       <Calendar className="w-3 h-3" />
@@ -202,9 +780,7 @@ export default function Clients() {
               <Link key={client.id} href={`/clientes/${client.id}`}>
                 <div className="p-4 flex items-center gap-3 hover:bg-accent/30 transition-colors">
                   <div className="w-10 h-10 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center flex-shrink-0">
-                    <span className="text-sm font-semibold text-primary">
-                      {client.name.charAt(0).toUpperCase()}
-                    </span>
+                    <span className="text-sm font-semibold text-primary">{client.name.charAt(0).toUpperCase()}</span>
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-foreground truncate">{client.name}</p>
@@ -223,16 +799,11 @@ export default function Clients() {
         </div>
       )}
 
-      {showNew && (
-        <NewClientDialog
-          open={showNew}
-          onClose={() => setShowNew(false)}
-          onSuccess={() => {
-            setShowNew(false);
-            utils.clients.list.invalidate();
-          }}
-        />
-      )}
+      <NewClientModal
+        open={showNew}
+        onClose={() => setShowNew(false)}
+        onSuccess={() => setShowNew(false)}
+      />
     </div>
   );
 }
