@@ -91,6 +91,7 @@ const emptyForm: AccessoryForm = {
 export default function Accessories() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<AccessoryStatus | "all">("all");
+  const [categoryFilter, setCategoryFilter] = useState<string>("all");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [form, setForm] = useState<AccessoryForm>(emptyForm);
@@ -102,6 +103,11 @@ export default function Accessories() {
     search: search || undefined,
     status: statusFilter !== "all" ? statusFilter : undefined,
   });
+
+  // Categorias únicas derivadas da lista atual
+  const uniqueCategories = Array.from(
+    new Set((accessories ?? []).map((i: any) => i.category).filter(Boolean))
+  ) as string[];
 
   const createMutation = trpc.accessories.create.useMutation({
     onSuccess: () => {
@@ -176,7 +182,10 @@ export default function Accessories() {
     }
   }
 
-  const items = accessories ?? [];
+  const allItems = accessories ?? [];
+  const items = categoryFilter === "all"
+    ? allItems
+    : allItems.filter((i: any) => i.category === categoryFilter);
   const counts = {
     all: items.length,
     available: items.filter((i) => i.status === "available").length,
@@ -224,6 +233,35 @@ export default function Accessories() {
             </button>
           ))}
         </div>
+
+        {/* Category filter */}
+        {uniqueCategories.length > 0 && (
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={() => setCategoryFilter("all")}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
+                categoryFilter === "all"
+                  ? "bg-[#C8920A] text-white border-[#C8920A]"
+                  : "border-border text-muted-foreground hover:border-[#C8920A]/50"
+              }`}
+            >
+              Todas
+            </button>
+            {uniqueCategories.map((cat) => (
+              <button
+                key={cat}
+                onClick={() => setCategoryFilter(cat)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
+                  categoryFilter === cat
+                    ? "bg-[#C8920A] text-white border-[#C8920A]"
+                    : "border-border text-muted-foreground hover:border-[#C8920A]/50"
+                }`}
+              >
+                {cat}
+              </button>
+            ))}
+          </div>
+        )}
 
         {/* Search */}
         <div className="relative">

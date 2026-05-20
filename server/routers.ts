@@ -1279,16 +1279,65 @@ const publicApiRouter = router({
     }))
     .query(({ input }) => checkBikeAvailability(input.bikeId, input.startDate, input.endDate)),
 
-  // Get available accessories
+  // Get available accessories (with real-time availability)
   availableAccessories: publicProcedure.query(async () => {
     const all = await getAccessories({ status: "available" });
+    const db = await (await import("./db")).getDb();
+    if (!db) return all.map((a) => ({ id: a.id, name: a.name, category: a.category, dailyRate: a.dailyRate, quantity: a.quantity, quantidadeTotal: a.quantidadeTotal ?? a.quantity, quantidadeDisponivel: a.quantidadeTotal ?? a.quantity }));
+    const { rentalAccessories: ra, rentals: rt } = await import("../drizzle/schema");
+    const { eq, inArray, and: andOp } = await import("drizzle-orm");
+    const ids = all.map((i) => i.id);
+    const activeUsage = ids.length > 0 ? await db
+      .select({ accessoryId: ra.accessoryId, qty: ra.quantity })
+      .from(ra)
+      .innerJoin(rt, eq(ra.rentalId, rt.id))
+      .where(andOp(inArray(ra.accessoryId, ids), inArray(rt.status, ["active", "overdue"]))) : [];
+    const usageMap: Record<number, number> = {};
+    for (const row of activeUsage) { usageMap[row.accessoryId] = (usageMap[row.accessoryId] ?? 0) + (row.qty ?? 1); }
     return all.map((a) => ({
       id: a.id,
       name: a.name,
       category: a.category,
       dailyRate: a.dailyRate,
       quantity: a.quantity,
+      quantidadeTotal: a.quantidadeTotal ?? a.quantity,
+      quantidadeDisponivel: Math.max(0, (a.quantidadeTotal ?? a.quantity) - (usageMap[a.id] ?? 0)),
     }));
+  }),
+
+  // Get available accessories grouped by category (for public form)
+  availableAccessoriesByCategory: publicProcedure.query(async () => {
+    const all = await getAccessories({ status: "available" });
+    const db = await (await import("./db")).getDb();
+    const availMap: Record<number, number> = {};
+    if (db) {
+      const { rentalAccessories: ra, rentals: rt } = await import("../drizzle/schema");
+      const { eq, inArray, and: andOp } = await import("drizzle-orm");
+      const ids = all.map((i) => i.id);
+      if (ids.length > 0) {
+        const activeUsage = await db
+          .select({ accessoryId: ra.accessoryId, qty: ra.quantity })
+          .from(ra)
+          .innerJoin(rt, eq(ra.rentalId, rt.id))
+          .where(andOp(inArray(ra.accessoryId, ids), inArray(rt.status, ["active", "overdue"])));
+        for (const row of activeUsage) { availMap[row.accessoryId] = (availMap[row.accessoryId] ?? 0) + (row.qty ?? 1); }
+      }
+    }
+    const items = all.map((a) => ({
+      id: a.id,
+      name: a.name,
+      category: a.category ?? "Outros",
+      dailyRate: a.dailyRate,
+      quantidadeTotal: a.quantidadeTotal ?? a.quantity,
+      quantidadeDisponivel: Math.max(0, (a.quantidadeTotal ?? a.quantity) - (availMap[a.id] ?? 0)),
+    }));
+    const grouped: Record<string, typeof items> = {};
+    for (const item of items) {
+      const cat = item.category ?? "Outros";
+      if (!grouped[cat]) grouped[cat] = [];
+      grouped[cat].push(item);
+    }
+    return Object.entries(grouped).map(([category, accessories]) => ({ category, accessories }));
   }),
 
   // Get delivery fee setting
@@ -1739,7 +1788,7 @@ const contractsRouter = router({
       if (hasPendencia) {
         // Flag contract with pendencia_acessorio
         await db.update(contracts)
-          .set({ pendenciaAcessorio: true } as any)
+          .set({ pendenciaAcessorio: true })
           .where(eq(contracts.id, input.id));
         // Notify admin
         const pendentes = (input.accessories ?? [])

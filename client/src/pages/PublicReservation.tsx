@@ -1,13 +1,23 @@
-/**
+/*
  * PublicReservation.tsx — Formulário público de pré-cadastro e reserva
  * Fluxo multi-step: Identificação → Contato → Endereço → Documentos → Bike/Período → Pagamento/LGPD
  * Suporte a idiomas: PT-BR 🇧🇷 | EN 🇺🇸 | ES 🇪🇸
+ *
+ * Bloco E — melhorias visuais:
+ *  - Header com logo via VITE_LOGO_URL (fallback texto)
+ *  - Barra de progresso com steps clicáveis (steps anteriores)
+ *  - Bikes: placeholder quando sem foto, badge de disponibilidade por tamanho
+ *  - Acessórios: abas por categoria, badge de qtd disponível, desabilitar se qty=0, label (gratuito)
+ *  - Botão "Continuar" fixo no rodapé em mobile (sticky bottom)
  */
 import { useState, useMemo, useRef, useCallback } from "react";
 import { trpc } from "@/lib/trpc";
-import { Loader2, ChevronRight, ChevronLeft, Check, Upload, X, Sun, Moon } from "lucide-react";
+import { Loader2, ChevronRight, ChevronLeft, Check, Upload, X, Sun, Moon, Bike } from "lucide-react";
 import { translations, languages, type Language } from "@/lib/i18n";
 import { maskCPF, maskRG, maskCEP, maskPhone, maskDate, isValidCPF } from "@/hooks/useMask";
+
+// ─── Logo URL via env ─────────────────────────────────────────────────────────
+const LOGO_URL = (import.meta as any).env?.VITE_LOGO_URL as string | undefined;
 
 // ─── Máscara auxiliar (específica deste formulário) ───────────────────────────
 function maskHeight(v: string) {
@@ -106,9 +116,11 @@ export default function PublicReservation() {
   const paymentOptionInactive = isDark ? "border-[#2a2a3a] bg-[#141420] hover:border-[#C8920A]/40" : "border-gray-200 bg-gray-50 hover:border-[#C8920A]/60";
   const lgpdBoxBg = isDark ? "bg-[#141420] border-[#2a2a3a]" : "bg-gray-50 border-gray-200";
   const bikeCardInactive = isDark ? "border-[#2a2a3a] bg-[#141420] hover:border-[#C8920A]/40" : "border-gray-200 bg-gray-50 hover:border-[#C8920A]/60";
-  const accRowBg = isDark ? "border-[#2a2a3a]" : "border-gray-200";
   const summaryBg = isDark ? "bg-[#0d0d1a] border-[#1a1a2e]" : "bg-white border-gray-200";
   const radioInactive = isDark ? "border-[#555]" : "border-gray-400";
+  const tabBase = `px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer`;
+  const tabActive = `bg-[#C8920A] text-[#0a0a0f]`;
+  const tabInactive = isDark ? `text-[#888] hover:text-white border border-[#2a2a3a] hover:border-[#C8920A]/40` : `text-gray-500 hover:text-gray-800 border border-gray-200 hover:border-[#C8920A]/60`;
 
   const STEPS = [
     t.sectionIdentification,
@@ -163,12 +175,13 @@ export default function PublicReservation() {
   const frontRef = useRef<HTMLInputElement>(null);
   const backRef = useRef<HTMLInputElement>(null);
 
-  // Step 4 — Bike + Período
+  // Step 4 — Bike + Período + Acessórios
   const [selectedBikeId, setSelectedBikeId] = useState<number | null>(null);
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [deliveryTime, setDeliveryTime] = useState("");
   const [selectedAccessories, setSelectedAccessories] = useState<Record<number, number>>({});
+  const [activeAccCategory, setActiveAccCategory] = useState<string | null>(null);
 
   // Step 5 — Pagamento + LGPD
   const [paymentMethod, setPaymentMethod] = useState<"card" | "pix" | "cash">("cash");
@@ -176,6 +189,7 @@ export default function PublicReservation() {
 
   // ─── Queries ─────────────────────────────────────────────────────────────────
   const { data: bikesRaw, isLoading: bikesLoading } = trpc.publicApi.availableBikes.useQuery();
+  const { data: accByCategoryRaw } = trpc.publicApi.availableAccessoriesByCategory.useQuery();
   const { data: accessoriesRaw } = trpc.publicApi.availableAccessories.useQuery();
   const { data: deliveryFeeStr } = trpc.publicApi.deliveryFee.useQuery();
   const { data: discountRulesRaw } = trpc.publicApi.bikeDiscountRules.useQuery(
@@ -187,12 +201,16 @@ export default function PublicReservation() {
   );
   const bikes = (bikesRaw ?? []) as any[];
   const accessories = (accessoriesRaw ?? []) as any[];
+  const accByCategory = (accByCategoryRaw ?? []) as { category: string; accessories: any[] }[];
   const deliveryFee = parseFloat(deliveryFeeStr || "0");
   const discountRules = (discountRulesRaw ?? []) as any[];
   const isAvailable = availabilityResult ?? true;
   const submitMutation = trpc.publicApi.submitReservation.useMutation();
   const checkoutMutation = trpc.publicApi.createCheckout.useMutation();
   const uploadDocMutation = trpc.publicApi.uploadDocument.useMutation();
+
+  // ─── Active accessory category (default to first) ────────────────────────────
+  const effectiveAccCategory = activeAccCategory ?? (accByCategory[0]?.category ?? null);
 
   // ─── Pricing ─────────────────────────────────────────────────────────────────
   const selectedBike = bikes.find(b => b.id === selectedBikeId);
@@ -300,7 +318,6 @@ export default function PublicReservation() {
     if (!validate(5)) return;
     setSubmitting(true);
     try {
-      // First submit reservation to get clientId, then upload docs
       const rentalAccessories = Object.entries(selectedAccessories)
         .filter(([, qty]) => (qty as number) > 0)
         .map(([id, qty]) => ({ accessoryId: Number(id), quantity: qty as number }));
@@ -315,7 +332,6 @@ export default function PublicReservation() {
         paymentMethod: paymentMethod === "card" ? "stripe" : paymentMethod as "pix" | "cash" | "stripe",
         totalAmount: String(grandTotal), accessories: rentalAccessories,
       });
-      // Upload docs after we have clientId
       let docFrontUrl: string | undefined;
       let docBackUrl: string | undefined;
       if (result.clientId) {
@@ -330,7 +346,7 @@ export default function PublicReservation() {
           finally { setDocBackUploading(false); }
         }
       }
-      void docFrontUrl; void docBackUrl; // stored via uploadDocument mutation directly
+      void docFrontUrl; void docBackUrl;
       if (paymentMethod !== "cash" && result.clientId && result.rentalId) {
         try {
           const checkout = await checkoutMutation.mutateAsync({
@@ -390,11 +406,22 @@ export default function PublicReservation() {
       {/* ─── Header ─────────────────────────────────────────────────────────── */}
       <header className={`border-b ${headerBg} backdrop-blur sticky top-0 z-50`}>
         <div className="max-w-2xl mx-auto px-4 py-3 flex items-center justify-between gap-3">
-          <div>
-            <h1 className="text-lg font-bold text-[#C8920A]" style={{ fontFamily: "'Montserrat', sans-serif" }}>
-              🚲 Bike To Go Floripa
-            </h1>
-            <p className={`text-xs ${textMuted}`}>{lang === "pt" ? "Aluguel de bicicletas" : lang === "en" ? "Bike rentals" : "Alquiler de bicicletas"}</p>
+          <div className="flex items-center gap-3">
+            {LOGO_URL ? (
+              <img src={LOGO_URL} alt="Bike To Go" className="h-9 w-auto object-contain" />
+            ) : (
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-[#C8920A]/20 flex items-center justify-center">
+                  <Bike className="w-5 h-5 text-[#C8920A]" />
+                </div>
+                <div>
+                  <h1 className="text-base font-bold text-[#C8920A] leading-tight" style={{ fontFamily: "'Montserrat', sans-serif" }}>
+                    Bike To Go
+                  </h1>
+                  <p className={`text-[10px] ${textMuted} leading-tight`}>Floripa</p>
+                </div>
+              </div>
+            )}
           </div>
           <div className="flex items-center gap-2">
             {/* Language selector */}
@@ -419,25 +446,38 @@ export default function PublicReservation() {
       {/* ─── Progress bar ────────────────────────────────────────────────────── */}
       <div className={`${progressBg} border-b`}>
         <div className="max-w-2xl mx-auto px-4 py-3">
-          <div className="flex gap-1 mb-2">
+          {/* Barras de progresso */}
+          <div className="grid gap-1 mb-2" style={{ gridTemplateColumns: `repeat(${STEPS.length}, 1fr)` }}>
             {STEPS.map((_, i) => (
-              <div key={i} className="flex-1 h-1 rounded-full transition-all"
-                style={{ background: i <= step ? "#C8920A" : isDark ? "#1a1a2e" : "#d1d5db" }} />
+              <button
+                key={i}
+                onClick={() => { if (i < step) setStep(i); }}
+                className={`h-1.5 rounded-full transition-all ${i < step ? "cursor-pointer" : "cursor-default"}`}
+                style={{ background: i <= step ? "#C8920A" : isDark ? "#1a1a2e" : "#d1d5db" }}
+                title={i < step ? STEPS[i] : undefined}
+              />
             ))}
           </div>
-          <div className="flex justify-between">
+          {/* Labels desktop */}
+          <div className="hidden sm:grid gap-1" style={{ gridTemplateColumns: `repeat(${STEPS.length}, 1fr)` }}>
             {STEPS.map((s, i) => (
-              <span key={i} className="text-[10px] transition-colors hidden sm:block"
-                style={{ color: i === step ? "#C8920A" : i < step ? "#7a6010" : isDark ? "#444" : "#9ca3af" }}>
+              <button
+                key={i}
+                onClick={() => { if (i < step) setStep(i); }}
+                className={`text-[10px] text-left transition-colors truncate ${i < step ? "cursor-pointer hover:text-[#C8920A]" : "cursor-default"}`}
+                style={{ color: i === step ? "#C8920A" : i < step ? "#7a6010" : isDark ? "#444" : "#9ca3af" }}
+                title={i < step ? s : undefined}
+              >
                 {s}
-              </span>
+              </button>
             ))}
-            <span className={`text-[11px] sm:hidden ${textSecondary}`}>{step + 1}/{STEPS.length} — {STEPS[step]}</span>
           </div>
+          {/* Label mobile */}
+          <span className={`text-[11px] sm:hidden ${textSecondary}`}>{step + 1}/{STEPS.length} — {STEPS[step]}</span>
         </div>
       </div>
 
-      <main className="max-w-2xl mx-auto px-4 py-8 pb-24">
+      <main className="max-w-2xl mx-auto px-4 py-8 pb-32 sm:pb-8">
         {/* Title */}
         <div className="text-center mb-8">
           <span className="inline-block bg-[#C8920A] text-[#0a0a0f] text-[11px] font-bold px-3 py-1 rounded-full uppercase tracking-widest mb-3">
@@ -664,7 +704,7 @@ export default function PublicReservation() {
           </div>
         )}
 
-        {/* ─── STEP 4: Bike + Período ───────────────────────────────────────── */}
+        {/* ─── STEP 4: Bike + Período + Acessórios ─────────────────────────── */}
         {step === 4 && (
           <div className="space-y-5">
             {/* Bike selection */}
@@ -687,14 +727,23 @@ export default function PublicReservation() {
                       className={`border rounded-xl p-4 cursor-pointer transition-all ${
                         selectedBikeId === bike.id ? "border-[#C8920A] bg-[#C8920A]/10" : bikeCardInactive
                       }`}>
-                      {bike.photoUrl && (
+                      {/* Foto da bike ou placeholder */}
+                      {bike.photoUrl ? (
                         <img src={bike.photoUrl} alt={bike.model} className="w-full h-28 object-cover rounded-lg mb-3" />
+                      ) : (
+                        <div className={`w-full h-28 rounded-lg mb-3 flex items-center justify-center ${isDark ? "bg-[#1a1a2e]" : "bg-gray-100"}`}>
+                          <Bike className={`w-10 h-10 ${isDark ? "text-[#2a2a3a]" : "text-gray-300"}`} />
+                        </div>
                       )}
                       <div className="flex items-start justify-between gap-2">
-                        <div>
-                          <p className={`font-bold text-sm ${textPrimary}`}>{bike.model}</p>
+                        <div className="min-w-0">
+                          <p className={`font-bold text-sm ${textPrimary} truncate`}>{bike.model}</p>
                           {bike.brand && <p className={`text-xs ${textMuted}`}>{bike.brand}</p>}
-                          {bike.size && <p className={`text-xs ${textMuted}`}>{bike.size}</p>}
+                          {bike.size && (
+                            <span className={`inline-block mt-1 text-[10px] px-2 py-0.5 rounded-full font-medium ${isDark ? "bg-[#1a1a2e] text-[#888]" : "bg-gray-100 text-gray-500"}`}>
+                              {bike.size}
+                            </span>
+                          )}
                         </div>
                         <div className="text-right flex-shrink-0">
                           <p className="text-[#C8920A] font-bold text-sm">R$ {formatCurrency(parseFloat(bike.dailyRate || "0"))}</p>
@@ -752,32 +801,75 @@ export default function PublicReservation() {
               </Field>
             </div>
 
-            {/* Accessories */}
-            {accessories.length > 0 && (
+            {/* Accessories — abas por categoria */}
+            {accByCategory.length > 0 && (
               <div className={`${cardBg} border rounded-2xl p-6 space-y-4`}>
                 <div className={`flex items-center gap-2 pb-3 border-b ${sectionBorder}`}>
                   <span className="text-[#C8920A] text-sm font-bold uppercase tracking-widest">🎒 {t.sectionAccessories}</span>
                 </div>
+                {/* Abas de categoria */}
+                {accByCategory.length > 1 && (
+                  <div className="flex flex-wrap gap-2">
+                    {accByCategory.map(group => (
+                      <button
+                        key={group.category}
+                        onClick={() => setActiveAccCategory(group.category)}
+                        className={`${tabBase} ${effectiveAccCategory === group.category ? tabActive : tabInactive}`}
+                      >
+                        {group.category}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {/* Lista de acessórios da categoria ativa */}
                 <div className="space-y-3">
-                  {accessories.map((acc: any) => (
-                    <div key={acc.id} className={`flex items-center justify-between p-3 border rounded-lg ${accRowBg}`}>
-                      <div>
-                        <p className={`text-sm font-medium ${textPrimary}`}>{acc.name}</p>
-                        <p className={`text-xs ${textMuted}`}>R$ {formatCurrency(parseFloat(acc.dailyRate || "0"))}/{t.day}</p>
+                  {(accByCategory.find(g => g.category === effectiveAccCategory)?.accessories ?? []).map((acc: any) => {
+                    const qty = selectedAccessories[acc.id] || 0;
+                    const avail = acc.quantidadeDisponivel ?? 0;
+                    const isDisabled = avail === 0;
+                    return (
+                      <div key={acc.id} className={`flex items-center justify-between p-3 border rounded-lg transition-all ${
+                        isDisabled
+                          ? isDark ? "border-[#1a1a2e] opacity-50" : "border-gray-100 opacity-50"
+                          : isDark ? "border-[#2a2a3a]" : "border-gray-200"
+                      }`}>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <p className={`text-sm font-medium ${textPrimary}`}>{acc.name}</p>
+                            <span className={`text-[10px] px-1.5 py-0.5 rounded font-semibold ${
+                              isDisabled
+                                ? "bg-red-500/20 text-red-400"
+                                : avail <= 2
+                                  ? "bg-amber-500/20 text-amber-400"
+                                  : "bg-green-500/20 text-green-400"
+                            }`}>
+                              {isDisabled
+                                ? (lang === "pt" ? "Indisponível" : lang === "en" ? "Unavailable" : "No disponible")
+                                : `${avail} ${lang === "pt" ? "disp." : lang === "en" ? "avail." : "disp."}`}
+                            </span>
+                          </div>
+                          <p className={`text-xs ${textMuted} mt-0.5`}>
+                            {lang === "pt" ? "(gratuito)" : lang === "en" ? "(free)" : "(gratuito)"}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                          <button
+                            disabled={isDisabled || qty === 0}
+                            onClick={() => setSelectedAccessories(prev => ({ ...prev, [acc.id]: Math.max(0, (prev[acc.id] || 0) - 1) }))}
+                            className={`w-7 h-7 rounded-full border flex items-center justify-center text-sm font-bold transition-all disabled:opacity-30 disabled:cursor-not-allowed ${isDark ? "border-[#2a2a3a] text-[#888] hover:border-[#C8920A] hover:text-[#C8920A]" : "border-gray-300 text-gray-500 hover:border-[#C8920A] hover:text-[#C8920A]"}`}>
+                            −
+                          </button>
+                          <span className={`w-6 text-center text-sm font-bold ${textPrimary}`}>{qty}</span>
+                          <button
+                            disabled={isDisabled || qty >= avail}
+                            onClick={() => setSelectedAccessories(prev => ({ ...prev, [acc.id]: Math.min(avail, (prev[acc.id] || 0) + 1) }))}
+                            className="w-7 h-7 rounded-full bg-[#C8920A] text-[#0a0a0f] flex items-center justify-center text-sm font-bold hover:bg-[#d9a020] transition-all disabled:opacity-30 disabled:cursor-not-allowed">
+                            +
+                          </button>
+                        </div>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <button onClick={() => setSelectedAccessories(prev => ({ ...prev, [acc.id]: Math.max(0, (prev[acc.id] || 0) - 1) }))}
-                          className={`w-7 h-7 rounded-full border flex items-center justify-center text-sm font-bold transition-all ${isDark ? "border-[#2a2a3a] text-[#888] hover:border-[#C8920A] hover:text-[#C8920A]" : "border-gray-300 text-gray-500 hover:border-[#C8920A] hover:text-[#C8920A]"}`}>
-                          −
-                        </button>
-                        <span className={`w-6 text-center text-sm font-bold ${textPrimary}`}>{selectedAccessories[acc.id] || 0}</span>
-                        <button onClick={() => setSelectedAccessories(prev => ({ ...prev, [acc.id]: (prev[acc.id] || 0) + 1 }))}
-                          className="w-7 h-7 rounded-full bg-[#C8920A] text-[#0a0a0f] flex items-center justify-center text-sm font-bold hover:bg-[#d9a020] transition-all">
-                          +
-                        </button>
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             )}
@@ -924,22 +1016,28 @@ export default function PublicReservation() {
           </div>
         )}
 
-        {/* Navigation */}
-        <div className={`flex mt-6 gap-3 ${step === 0 ? "justify-end" : "justify-between"}`}>
-          {step > 0 && (
-            <button onClick={prevStep} className={navBtnSecondary}>
-              <ChevronLeft className="w-4 h-4" />
-              {lang === "pt" ? "Voltar" : lang === "en" ? "Back" : "Volver"}
-            </button>
-          )}
-          {step < 5 && (
-            <button onClick={nextStep}
-              className="flex items-center gap-2 px-6 py-3 rounded-xl font-semibold text-sm transition-all bg-[#C8920A] text-[#0a0a0f] hover:bg-[#d9a020]">
-              {lang === "pt" ? "Continuar" : lang === "en" ? "Continue" : "Continuar"}
-              <ChevronRight className="w-4 h-4" />
-            </button>
-          )}
-        </div>
+        {/* ─── Navigation — sticky no mobile ───────────────────────────────── */}
+        {step < 5 && (
+          <div className={`fixed bottom-0 left-0 right-0 sm:static sm:mt-6 px-4 py-3 sm:px-0 sm:py-0 ${
+            isDark
+              ? "bg-[#0a0a0f]/95 border-t border-[#1a1a2e] sm:bg-transparent sm:border-0"
+              : "bg-white/95 border-t border-gray-200 sm:bg-transparent sm:border-0"
+          } backdrop-blur sm:backdrop-blur-none z-40`}>
+            <div className={`flex gap-3 max-w-2xl mx-auto ${step === 0 ? "justify-end" : "justify-between"}`}>
+              {step > 0 && (
+                <button onClick={prevStep} className={navBtnSecondary}>
+                  <ChevronLeft className="w-4 h-4" />
+                  {lang === "pt" ? "Voltar" : lang === "en" ? "Back" : "Volver"}
+                </button>
+              )}
+              <button onClick={nextStep}
+                className="flex items-center gap-2 px-6 py-3 rounded-xl font-semibold text-sm transition-all bg-[#C8920A] text-[#0a0a0f] hover:bg-[#d9a020]">
+                {lang === "pt" ? "Continuar" : lang === "en" ? "Continue" : "Continuar"}
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        )}
       </main>
 
       <footer className={`border-t ${isDark ? "border-[#1a1a2e]" : "border-gray-200"} py-6 text-center`}>

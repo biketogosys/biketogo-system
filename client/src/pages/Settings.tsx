@@ -1,5 +1,6 @@
 import { trpc } from "@/lib/trpc";
 import { useState, useEffect } from "react";
+import { maskPhone } from "@/hooks/useMask";
 import { toast } from "sonner";
 import { Loader2, Save, Settings as SettingsIcon, Truck, Phone, Clock, Mail, MessageCircle, Link, Eye, EyeOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -203,11 +204,18 @@ export default function Settings() {
             <SettingField
               label="Número WhatsApp para receber notificações"
               value={whatsappNumber}
-              onChange={setWhatsappNumber}
-              onSave={() => save("whatsapp_number", whatsappNumber)}
+              onChange={(v) => setWhatsappNumber(maskPhone(v))}
+              onSave={() => {
+                const digits = whatsappNumber.replace(/\D/g, "");
+                if (whatsappNumber && digits.length < 10) {
+                  toast.error("Número de WhatsApp inválido. Informe DDD + número.");
+                  return;
+                }
+                save("whatsapp_number", whatsappNumber);
+              }}
               saving={saving}
-              placeholder="+55 48 99999-9999"
-              hint="Formato: +55 48 99999-9999 (com código do país e DDD)"
+              placeholder="(48) 99999-9999"
+              hint="Formato: (48) 99999-9999 — DDD + número"
             />
             <SettingField
               label="Email de contato / remetente"

@@ -284,6 +284,7 @@ export const contracts = pgTable("contracts", {
   criadoEm: timestamp("criadoEm").defaultNow().notNull(),
   encerradoEm: timestamp("encerradoEm"),
   deletedAt: timestamp("deletedAt"),
+  pendenciaAcessorio: boolean("pendenciaAcessorio").default(false).notNull(),
 });
 export type Contract = typeof contracts.$inferSelect;
 export type InsertContract = typeof contracts.$inferInsert;
