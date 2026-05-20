@@ -3,12 +3,14 @@ import { Link } from "wouter";
 import {
   Users, Bike, FileText, DollarSign, Loader2,
   TrendingUp, AlertCircle, ArrowRight, Wrench,
+  TrendingDown, Minus,
 } from "lucide-react";
 import {
-  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer,
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
+  ResponsiveContainer, Legend,
 } from "recharts";
 
+// ─── Stat Card ────────────────────────────────────────────────────────────────
 function StatCard({
   title,
   value,
@@ -16,6 +18,7 @@ function StatCard({
   icon: Icon,
   color,
   href,
+  negative,
 }: {
   title: string;
   value: string | number;
@@ -23,6 +26,7 @@ function StatCard({
   icon: React.ElementType;
   color: string;
   href?: string;
+  negative?: boolean;
 }) {
   const content = (
     <div className="bg-card border border-border rounded-xl p-5 hover:border-primary/30 transition-colors group">
@@ -37,7 +41,13 @@ function StatCard({
           <ArrowRight className="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors" />
         )}
       </div>
-      <p className="text-2xl font-bold text-foreground" style={{ fontFamily: "'Montserrat', sans-serif" }}>
+      <p
+        className="text-2xl font-bold"
+        style={{
+          fontFamily: "'Montserrat', sans-serif",
+          color: negative ? "oklch(0.55 0.20 25)" : "inherit",
+        }}
+      >
         {value}
       </p>
       <p className="text-sm text-muted-foreground mt-1">{title}</p>
@@ -49,19 +59,25 @@ function StatCard({
   return content;
 }
 
-function RevenueTooltip({ active, payload, label }: any) {
+// ─── Custom Tooltip ───────────────────────────────────────────────────────────
+function GroupedTooltip({ active, payload, label }: any) {
   if (!active || !payload?.length) return null;
-  const value = payload[0]?.value ?? 0;
+  const fmt = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
   return (
-    <div className="bg-card border border-border rounded-lg px-3 py-2 shadow-lg text-xs">
-      <p className="text-muted-foreground mb-1">Semana de {label}</p>
-      <p className="font-semibold text-foreground">
-        {value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
-      </p>
+    <div className="bg-card border border-border rounded-lg px-3 py-2 shadow-lg text-xs space-y-1">
+      <p className="text-muted-foreground font-medium mb-1">Semana de {label}</p>
+      {payload.map((p: any) => (
+        <div key={p.dataKey} className="flex items-center gap-2">
+          <span className="w-2 h-2 rounded-full inline-block" style={{ backgroundColor: p.color }} />
+          <span className="text-muted-foreground">{p.name}:</span>
+          <span className="font-semibold text-foreground">{fmt(p.value ?? 0)}</span>
+        </div>
+      ))}
     </div>
   );
 }
 
+// ─── Dashboard ────────────────────────────────────────────────────────────────
 export default function Dashboard() {
   const { data, isLoading } = trpc.dashboard.summary.useQuery();
   const { data: weeklyData, isLoading: weeklyLoading } = trpc.dashboard.weeklyRevenue.useQuery();
@@ -74,17 +90,20 @@ export default function Dashboard() {
     );
   }
 
-  const { clientStats, bikeStats, rentalStats } = data ?? {
+  const { clientStats, bikeStats, rentalStats, financial } = data ?? {
     clientStats: { total: 0, leads: 0, verified: 0, blocked: 0 },
     bikeStats: { total: 0, available: 0, rented: 0, maintenance: 0 },
     rentalStats: { active: 0, monthRevenue: "0" },
+    financial: { receitaAlugueis: 0, receitasExtras: 0, despesas: 0, lucroLiquido: 0 },
   };
 
-  const revenue = parseFloat(rentalStats.monthRevenue || "0");
-  const revenueFormatted = revenue.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+  const fin = financial ?? { receitaAlugueis: 0, receitasExtras: 0, despesas: 0, lucroLiquido: 0 };
+  const fmt = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
   const chartData = weeklyData ?? [];
-  const maxRevenue = Math.max(...chartData.map((d) => d.receita), 1);
+  const hasChartData = chartData.some(
+    (d) => d.receitaAlugueis > 0 || d.receitasExtras > 0 || d.despesas > 0
+  );
 
   return (
     <div className="p-6 max-w-6xl mx-auto">
@@ -98,8 +117,8 @@ export default function Dashboard() {
         </p>
       </div>
 
-      {/* Stats grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+      {/* Operational stats */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         <StatCard
           title="Total de clientes"
           value={clientStats.total}
@@ -125,55 +144,79 @@ export default function Dashboard() {
           href="/alugueis"
         />
         <StatCard
-          title="Receita do mês"
-          value={revenueFormatted}
-          subtitle="Pagamentos confirmados"
+          title="Bikes disponíveis"
+          value={bikeStats.available}
+          subtitle={`de ${bikeStats.total} no total`}
+          icon={TrendingUp}
+          color="oklch(0.60 0.18 145)"
+          href="/bicicletas"
+        />
+      </div>
+
+      {/* Financial cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+        <StatCard
+          title="Receita Aluguéis"
+          value={fmt(fin.receitaAlugueis)}
+          subtitle="Mês atual — pagos"
+          icon={DollarSign}
+          color="oklch(0.68 0.12 65)"
+          href="/financeiro"
+        />
+        <StatCard
+          title="Receitas Extras"
+          value={fmt(fin.receitasExtras)}
+          subtitle="Mês atual"
           icon={TrendingUp}
           color="oklch(0.60 0.18 145)"
           href="/financeiro"
         />
+        <StatCard
+          title="Despesas"
+          value={fmt(fin.despesas)}
+          subtitle="Mês atual"
+          icon={TrendingDown}
+          color="oklch(0.55 0.20 25)"
+          href="/financeiro"
+          negative
+        />
+        <StatCard
+          title="Lucro Líquido"
+          value={fmt(fin.lucroLiquido)}
+          subtitle="Receitas − Despesas"
+          icon={fin.lucroLiquido >= 0 ? TrendingUp : Minus}
+          color={fin.lucroLiquido >= 0 ? "oklch(0.60 0.18 145)" : "oklch(0.55 0.20 25)"}
+          href="/financeiro"
+          negative={fin.lucroLiquido < 0}
+        />
       </div>
 
-      {/* Weekly Revenue Chart */}
+      {/* Grouped Bar Chart */}
       <div className="bg-card border border-border rounded-xl p-5 mb-8">
         <div className="flex items-center justify-between mb-5">
           <div>
             <h2 className="text-sm font-semibold text-foreground uppercase tracking-wider">
-              Receita Semanal
+              Receitas &amp; Despesas — Últimas 8 Semanas
             </h2>
             <p className="text-xs text-muted-foreground mt-0.5">
-              Últimas 8 semanas — devoluções confirmadas
+              Aluguéis confirmados, receitas extras e despesas por semana
             </p>
           </div>
-          {!weeklyLoading && chartData.length > 0 && (
-            <span className="text-xs text-muted-foreground">
-              Pico:{" "}
-              <span className="text-foreground font-medium">
-                {maxRevenue.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
-              </span>
-            </span>
-          )}
         </div>
 
         {weeklyLoading ? (
           <div className="flex items-center justify-center h-48">
             <Loader2 className="w-5 h-5 animate-spin text-primary" />
           </div>
-        ) : chartData.every((d) => d.receita === 0) ? (
+        ) : !hasChartData ? (
           <div className="flex flex-col items-center justify-center h-48 text-muted-foreground">
             <TrendingUp className="w-8 h-8 mb-2 opacity-20" />
-            <p className="text-sm">Nenhuma receita registrada nas últimas 8 semanas</p>
+            <p className="text-sm">Nenhum dado financeiro nas últimas 8 semanas</p>
           </div>
         ) : (
-          <ResponsiveContainer width="100%" height={200}>
-            <AreaChart data={chartData} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
-              <defs>
-                <linearGradient id="revenueGradient" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="oklch(0.60 0.18 145)" stopOpacity={0.3} />
-                  <stop offset="95%" stopColor="oklch(0.60 0.18 145)" stopOpacity={0} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.3 0 0 / 0.15)" vertical={false} />
+          <ResponsiveContainer width="100%" height={220}>
+            <BarChart data={chartData} margin={{ top: 4, right: 4, left: 0, bottom: 0 }} barCategoryGap="30%">
+              <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.3 0 0 / 0.12)" vertical={false} />
               <XAxis
                 dataKey="week"
                 tick={{ fontSize: 11, fill: "oklch(0.6 0 0)" }}
@@ -184,24 +227,34 @@ export default function Dashboard() {
                 tick={{ fontSize: 11, fill: "oklch(0.6 0 0)" }}
                 axisLine={false}
                 tickLine={false}
-                width={60}
-                tickFormatter={(v) =>
-                  v >= 1000
-                    ? `R$${(v / 1000).toFixed(1)}k`
-                    : `R$${v}`
-                }
+                width={62}
+                tickFormatter={(v) => v >= 1000 ? `R$${(v / 1000).toFixed(1)}k` : `R$${v}`}
               />
-              <Tooltip content={<RevenueTooltip />} />
-              <Area
-                type="monotone"
-                dataKey="receita"
-                stroke="oklch(0.60 0.18 145)"
-                strokeWidth={2}
-                fill="url(#revenueGradient)"
-                dot={{ r: 3, fill: "oklch(0.60 0.18 145)", strokeWidth: 0 }}
-                activeDot={{ r: 5, fill: "oklch(0.60 0.18 145)", strokeWidth: 0 }}
+              <Tooltip content={<GroupedTooltip />} />
+              <Legend
+                iconType="circle"
+                iconSize={8}
+                wrapperStyle={{ fontSize: 11, paddingTop: 8 }}
               />
-            </AreaChart>
+              <Bar
+                dataKey="receitaAlugueis"
+                name="Rec. Aluguéis"
+                fill="oklch(0.68 0.12 65)"
+                radius={[3, 3, 0, 0]}
+              />
+              <Bar
+                dataKey="receitasExtras"
+                name="Rec. Extras"
+                fill="oklch(0.60 0.18 145)"
+                radius={[3, 3, 0, 0]}
+              />
+              <Bar
+                dataKey="despesas"
+                name="Despesas"
+                fill="oklch(0.55 0.20 25)"
+                radius={[3, 3, 0, 0]}
+              />
+            </BarChart>
           </ResponsiveContainer>
         )}
       </div>
@@ -220,9 +273,7 @@ export default function Dashboard() {
               { label: "Manutenção", value: bikeStats.maintenance, total: bikeStats.total, cls: "badge-maintenance" },
             ].map((item) => (
               <div key={item.label} className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <span className={item.cls}>{item.label}</span>
-                </div>
+                <span className={item.cls}>{item.label}</span>
                 <div className="flex items-center gap-3">
                   <div className="w-24 h-1.5 bg-secondary rounded-full overflow-hidden">
                     <div
@@ -235,10 +286,7 @@ export default function Dashboard() {
               </div>
             ))}
           </div>
-          <Link
-            href="/bicicletas"
-            className="mt-4 flex items-center gap-1 text-xs text-primary hover:underline"
-          >
+          <Link href="/bicicletas" className="mt-4 flex items-center gap-1 text-xs text-primary hover:underline">
             Ver todas as bicicletas <ArrowRight className="w-3 h-3" />
           </Link>
         </div>
@@ -255,9 +303,7 @@ export default function Dashboard() {
               { label: "Bloqueado", value: clientStats.blocked, total: clientStats.total, cls: "badge-blocked" },
             ].map((item) => (
               <div key={item.label} className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <span className={item.cls}>{item.label}</span>
-                </div>
+                <span className={item.cls}>{item.label}</span>
                 <div className="flex items-center gap-3">
                   <div className="w-24 h-1.5 bg-secondary rounded-full overflow-hidden">
                     <div
@@ -270,10 +316,7 @@ export default function Dashboard() {
               </div>
             ))}
           </div>
-          <Link
-            href="/clientes"
-            className="mt-4 flex items-center gap-1 text-xs text-primary hover:underline"
-          >
+          <Link href="/clientes" className="mt-4 flex items-center gap-1 text-xs text-primary hover:underline">
             Ver todos os clientes <ArrowRight className="w-3 h-3" />
           </Link>
         </div>

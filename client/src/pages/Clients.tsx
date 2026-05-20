@@ -1,5 +1,6 @@
 import { trpc } from "@/lib/trpc";
 import { useState, useRef } from "react";
+import { RotateCcw, Archive } from "lucide-react";
 import { Link } from "wouter";
 import {
   Search, Plus, Loader2, User, MapPin, Calendar, ChevronRight,
@@ -622,6 +623,8 @@ export default function Clients() {
   const [status, setStatus] = useState<Status>(undefined);
   const [showNew, setShowNew] = useState(false);
   const [page, setPage] = useState(1);
+  const [viewMode, setViewMode] = useState<"active" | "archived">("active");
+  const [archivedPage, setArchivedPage] = useState(1);
   const utils = trpc.useUtils();
 
   const { data, isLoading } = trpc.clients.list.useQuery({
@@ -629,15 +632,31 @@ export default function Clients() {
     status,
     page,
     limit: 20,
-  });
+  }, { enabled: viewMode === "active" });
+
+  const { data: archivedData, isLoading: archivedLoading } = trpc.clients.listArchived.useQuery({
+    page: archivedPage,
+    limit: 20,
+  }, { enabled: viewMode === "archived" });
 
   const deleteMutation = trpc.clients.delete.useMutation({
-    onSuccess: () => { toast.success("Cliente removido."); utils.clients.list.invalidate(); },
+    onSuccess: () => { toast.success("Cliente arquivado."); utils.clients.list.invalidate(); },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const restoreMutation = trpc.clients.restore.useMutation({
+    onSuccess: () => {
+      toast.success("Cliente restaurado com sucesso.");
+      utils.clients.listArchived.invalidate();
+      utils.clients.list.invalidate();
+    },
     onError: (e) => toast.error(e.message),
   });
 
   const clients = data?.items ?? [];
   const total = data?.total ?? 0;
+  const archivedClients = archivedData?.items ?? [];
+  const archivedTotal = archivedData?.total ?? 0;
 
   const statusFilters: { label: string; value: Status; cls: string }[] = [
     { label: "Todos", value: undefined, cls: "" },
@@ -668,8 +687,32 @@ export default function Clients() {
         </Button>
       </div>
 
+      {/* View mode tabs */}
+      <div className="flex gap-2 mb-5">
+        <button
+          onClick={() => setViewMode("active")}
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border transition-all ${
+            viewMode === "active"
+              ? "bg-primary/15 border-primary/40 text-primary"
+              : "bg-card border-border text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          <User className="w-3.5 h-3.5" /> Ativos
+        </button>
+        <button
+          onClick={() => setViewMode("archived")}
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border transition-all ${
+            viewMode === "archived"
+              ? "bg-amber-500/15 border-amber-500/40 text-amber-400"
+              : "bg-card border-border text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          <Archive className="w-3.5 h-3.5" /> Arquivados {archivedTotal > 0 && `(${archivedTotal})`}
+        </button>
+      </div>
+
       {/* Filters */}
-      <div className="flex flex-col sm:flex-row gap-3 mb-6">
+      <div className={`flex flex-col sm:flex-row gap-3 mb-6 ${viewMode === "archived" ? "hidden" : ""}`}>
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input
@@ -696,8 +739,93 @@ export default function Clients() {
         </div>
       </div>
 
-      {/* Table */}
-      {isLoading ? (
+      {/* Archived table */}
+      {viewMode === "archived" && (
+        <>
+          {archivedLoading ? (
+            <div className="flex items-center justify-center h-48">
+              <Loader2 className="w-6 h-6 animate-spin text-primary" />
+            </div>
+          ) : archivedClients.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-48 text-muted-foreground">
+              <Archive className="w-10 h-10 mb-3 opacity-30" />
+              <p className="text-sm">Nenhum cliente arquivado</p>
+            </div>
+          ) : (
+            <div className="bg-card border border-border rounded-xl overflow-hidden">
+              <table className="w-full hidden md:table">
+                <thead>
+                  <tr className="border-b border-border">
+                    <th className="text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider px-4 py-3">ID</th>
+                    <th className="text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider px-4 py-3">Cliente</th>
+                    <th className="text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider px-4 py-3">Arquivado em</th>
+                    <th className="px-4 py-3" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {archivedClients.map((client, idx) => (
+                    <tr key={client.id} className={`border-b border-border/50 hover:bg-accent/30 transition-colors ${idx === archivedClients.length - 1 ? "border-b-0" : ""}` }>
+                      <td className="px-4 py-3 text-xs text-muted-foreground font-mono">#{client.id}</td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 rounded-full bg-secondary border border-border flex items-center justify-center flex-shrink-0">
+                            <span className="text-xs font-semibold text-muted-foreground">{client.name.charAt(0).toUpperCase()}</span>
+                          </div>
+                          <div>
+                            <p className="text-sm font-medium text-foreground">{client.name}</p>
+                            {client.cpf && <p className="text-xs text-muted-foreground">{client.cpf}</p>}
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-xs text-muted-foreground">
+                        {client.deletedAt ? new Date(client.deletedAt).toLocaleDateString("pt-BR") : "—"}
+                      </td>
+                      <td className="px-4 py-3">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-7 text-xs gap-1"
+                          onClick={() => restoreMutation.mutate({ id: client.id })}
+                          disabled={restoreMutation.isPending}
+                        >
+                          <RotateCcw className="w-3 h-3" /> Restaurar
+                        </Button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {/* Mobile */}
+              <div className="md:hidden divide-y divide-border">
+                {archivedClients.map((client) => (
+                  <div key={client.id} className="p-4 flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-secondary border border-border flex items-center justify-center flex-shrink-0">
+                      <span className="text-sm font-semibold text-muted-foreground">{client.name.charAt(0).toUpperCase()}</span>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-foreground truncate">{client.name}</p>
+                      <p className="text-xs text-muted-foreground">Arquivado em {client.deletedAt ? new Date(client.deletedAt).toLocaleDateString("pt-BR") : "—"}</p>
+                    </div>
+                    <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={() => restoreMutation.mutate({ id: client.id })} disabled={restoreMutation.isPending}>
+                      <RotateCcw className="w-3 h-3" /> Restaurar
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          {(archivedData?.totalPages ?? 1) > 1 && (
+            <div className="flex items-center justify-between mt-4">
+              <Button variant="outline" size="sm" onClick={() => setArchivedPage((p) => Math.max(1, p - 1))} disabled={archivedPage <= 1}>← Anterior</Button>
+              <span className="text-sm text-muted-foreground">Página {archivedPage} de {archivedData?.totalPages ?? 1}</span>
+              <Button variant="outline" size="sm" onClick={() => setArchivedPage((p) => p + 1)} disabled={archivedPage >= (archivedData?.totalPages ?? 1)}>Próxima →</Button>
+            </div>
+          )}
+        </>
+      )}
+
+      {/* Active table */}
+      {viewMode === "active" && isLoading ? (
         <div className="flex items-center justify-center h-48">
           <Loader2 className="w-6 h-6 animate-spin text-primary" />
         </div>

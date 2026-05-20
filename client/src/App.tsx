@@ -16,6 +16,7 @@ import UserManagement from "./pages/UserManagement";
 import Settings from "./pages/Settings";
 import PublicReservation from "./pages/PublicReservation";
 import Contracts from "./pages/Contracts";
+import AuditLog from "./pages/AuditLog";
 import { useAuth } from "./_core/hooks/useAuth";
 import { Loader2 } from "lucide-react";
 import DashboardLayout from "./components/DashboardLayout";
@@ -55,6 +56,7 @@ function Router() {
       <Route path="/usuarios" component={() => <ProtectedRoute component={UserManagement} />} />
       <Route path="/configuracoes" component={() => <ProtectedRoute component={Settings} />} />
       <Route path="/contratos" component={() => <ProtectedRoute component={Contracts} />} />
+      <Route path="/auditoria" component={() => <ProtectedRoute component={AuditLog} />} />
       <Route path="/reservar" component={PublicReservation} />
       <Route path="/login" component={Login} />
       <Route path="/404" component={NotFound} />

@@ -479,6 +479,36 @@ const clientsRouter = router({
       return { success: true };
     }),
   stats: adminAuthProcedure.query(() => getClientStats()),
+  listArchived: adminAuthProcedure
+    .input(z.object({
+      page: z.number().min(1).default(1),
+      limit: z.number().min(1).max(100).default(20),
+    }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return { items: [], total: 0, totalPages: 0 };
+      const { clients: clientsTable } = await import("../drizzle/schema");
+      const { isNotNull, desc: descOp, sql: sqlOp } = await import("drizzle-orm");
+      const offset = (input.page - 1) * input.limit;
+      const where = isNotNull(clientsTable.deletedAt);
+      const [items, countResult] = await Promise.all([
+        db.select().from(clientsTable).where(where).orderBy(descOp(clientsTable.deletedAt)).limit(input.limit).offset(offset),
+        db.select({ count: sqlOp<number>`count(*)` }).from(clientsTable).where(where),
+      ]);
+      const total = Number(countResult[0]?.count ?? 0);
+      return { items, total, totalPages: Math.ceil(total / input.limit) };
+    }),
+  restore: adminOnlyProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+      const { clients: clientsTable } = await import("../drizzle/schema");
+      const { eq: eqOp } = await import("drizzle-orm");
+      await db.update(clientsTable).set({ deletedAt: null }).where(eqOp(clientsTable.id, input.id));
+      await createAuditLog({ adminId: (ctx as any).adminUser?.id ?? null, acao: "restaurou_cliente", tabela: "clients", registroId: input.id });
+      return { success: true };
+    }),
 
   documents: adminAuthProcedure
     .input(z.object({ clientId: z.number() }))
@@ -960,6 +990,36 @@ const rentalsRouter = router({
     .query(({ input }) => getRentalAccessories(input.rentalId)),
 
   stats: adminAuthProcedure.query(() => getRentalStats()),
+  listArchived: adminAuthProcedure
+    .input(z.object({
+      page: z.number().min(1).default(1),
+      limit: z.number().min(1).max(100).default(20),
+    }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return { items: [], total: 0, totalPages: 0 };
+      const { rentals: rentalsTable } = await import("../drizzle/schema");
+      const { isNotNull, desc: descOp, sql: sqlOp } = await import("drizzle-orm");
+      const offset = (input.page - 1) * input.limit;
+      const where = isNotNull(rentalsTable.deletedAt);
+      const [items, countResult] = await Promise.all([
+        db.select().from(rentalsTable).where(where).orderBy(descOp(rentalsTable.deletedAt)).limit(input.limit).offset(offset),
+        db.select({ count: sqlOp<number>`count(*)` }).from(rentalsTable).where(where),
+      ]);
+      const total = Number(countResult[0]?.count ?? 0);
+      return { items, total, totalPages: Math.ceil(total / input.limit) };
+    }),
+  restore: adminOnlyProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+      const { rentals: rentalsTable } = await import("../drizzle/schema");
+      const { eq: eqOp } = await import("drizzle-orm");
+      await db.update(rentalsTable).set({ deletedAt: null }).where(eqOp(rentalsTable.id, input.id));
+      await createAuditLog({ adminId: (ctx as any).adminUser?.id ?? null, acao: "restaurou_aluguel", tabela: "rentals", registroId: input.id });
+      return { success: true };
+    }),
 });
 
 // ─── Accessories router ─────────────────────────────────────────────────────
@@ -1592,19 +1652,39 @@ const publicApiRouter = router({
 // ─── Dashboard router ────────────────────────────────────────────────────────
 const dashboardRouter = router({
   summary: adminAuthProcedure.query(async () => {
-    const [clientStats, bikeStats, rentalStats] = await Promise.all([
+    const now = new Date();
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+    const fmt = (d: Date) => d.toISOString().split("T")[0];
+    const [clientStats, bikeStats, rentalStats, financialReport] = await Promise.all([
       getClientStats(),
       getBikeStats(),
       getRentalStats(),
+      getFinancialReport(fmt(startOfMonth), fmt(endOfMonth)),
     ]);
-    return { clientStats, bikeStats, rentalStats };
+    const receitaAlugueis = parseFloat(financialReport.rentalRevenue ?? "0");
+    const receitasExtras = parseFloat(financialReport.extraRevenue ?? "0");
+    const despesas = parseFloat(financialReport.totalExpenses ?? "0");
+    const lucroLiquido = receitaAlugueis + receitasExtras - despesas;
+    return {
+      clientStats,
+      bikeStats,
+      rentalStats,
+      financial: {
+        receitaAlugueis,
+        receitasExtras,
+        despesas,
+        lucroLiquido,
+      },
+    };
   }),
 
   weeklyRevenue: adminAuthProcedure.query(async () => {
     const db = await getDb();
     if (!db) return [];
-    // Last 8 weeks (Mon–Sun), sum totalAmount from rentals with returnedAt in that range
-    const weeks: { week: string; receita: number }[] = [];
+    const { rentals: rentalsSchema, expenses: expensesSchema, revenues: revenuesSchema } = await import("../drizzle/schema");
+    const { between, isNotNull, gte: gteOp, lte: lteOp } = await import("drizzle-orm");
+    const weeks: { week: string; receitaAlugueis: number; receitasExtras: number; despesas: number }[] = [];
     const now = new Date();
     for (let i = 7; i >= 0; i--) {
       const end = new Date(now);
@@ -1613,23 +1693,66 @@ const dashboardRouter = router({
       const start = new Date(end);
       start.setDate(end.getDate() - 6);
       start.setHours(0, 0, 0, 0);
-      const { rentals: rentalsSchema } = await import("../drizzle/schema");
-      const { between, isNotNull } = await import("drizzle-orm");
-      const rows = await db
-        .select({ total: rentalsSchema.totalAmount })
-        .from(rentalsSchema)
-        .where(
-          and(
-            isNotNull(rentalsSchema.returnedAt),
-            between(rentalsSchema.returnedAt, start, end)
-          )
-        );
-      const sum = rows.reduce((acc, r) => acc + parseFloat(r.total ?? "0"), 0);
+      const startStr = start.toISOString().split("T")[0];
+      const endStr = end.toISOString().split("T")[0];
+      const [rentalRows, revenueRows, expenseRows] = await Promise.all([
+        db.select({ total: rentalsSchema.totalAmount })
+          .from(rentalsSchema)
+          .where(and(isNotNull(rentalsSchema.returnedAt), between(rentalsSchema.returnedAt, start, end))),
+        db.select({ total: revenuesSchema.amount })
+          .from(revenuesSchema)
+          .where(and(gteOp(revenuesSchema.date, startStr), lteOp(revenuesSchema.date, endStr))),
+        db.select({ total: expensesSchema.amount })
+          .from(expensesSchema)
+          .where(and(gteOp(expensesSchema.date, startStr), lteOp(expensesSchema.date, endStr))),
+      ]);
       const label = start.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
-      weeks.push({ week: label, receita: Math.round(sum * 100) / 100 });
+      weeks.push({
+        week: label,
+        receitaAlugueis: Math.round(rentalRows.reduce((a, r) => a + parseFloat(r.total ?? "0"), 0) * 100) / 100,
+        receitasExtras: Math.round(revenueRows.reduce((a, r) => a + parseFloat(r.total ?? "0"), 0) * 100) / 100,
+        despesas: Math.round(expenseRows.reduce((a, r) => a + parseFloat(r.total ?? "0"), 0) * 100) / 100,
+      });
     }
     return weeks;
   }),
+});
+
+// ─── Audit Logs router ────────────────────────────────────────────────────────
+const auditLogsRouter = router({
+  list: adminAuthProcedure
+    .input(z.object({
+      page: z.number().min(1).default(1),
+      limit: z.number().min(1).max(100).default(20),
+      acao: z.string().optional(),
+      tabela: z.string().optional(),
+      dataInicio: z.string().optional(),
+      dataFim: z.string().optional(),
+    }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return { data: [], total: 0, totalPages: 0 };
+      const { auditLogs: auditLogsTable } = await import("../drizzle/schema");
+      const { and: andOp, eq: eqOp, gte: gteOp, lte: lteOp, desc: descOp } = await import("drizzle-orm");
+      const conditions: any[] = [];
+      if (input.acao) conditions.push(eqOp(auditLogsTable.acao, input.acao));
+      if (input.tabela) conditions.push(eqOp(auditLogsTable.tabela, input.tabela));
+      if (input.dataInicio) conditions.push(gteOp(auditLogsTable.criadoEm, new Date(input.dataInicio)));
+      if (input.dataFim) {
+        const end = new Date(input.dataFim);
+        end.setHours(23, 59, 59, 999);
+        conditions.push(lteOp(auditLogsTable.criadoEm, end));
+      }
+      const where = conditions.length > 0 ? andOp(...conditions) : undefined;
+      const offset = (input.page - 1) * input.limit;
+      const { sql: sqlOp } = await import("drizzle-orm");
+      const [data, countResult] = await Promise.all([
+        db.select().from(auditLogsTable).where(where).orderBy(descOp(auditLogsTable.criadoEm)).limit(input.limit).offset(offset),
+        db.select({ count: sqlOp<number>`count(*)` }).from(auditLogsTable).where(where),
+      ]);
+      const total = Number(countResult[0]?.count ?? 0);
+      return { data, total, totalPages: Math.ceil(total / input.limit) };
+    }),
 });
 
 // ─── Contracts router ───────────────────────────────────────────────────────────────
@@ -1884,6 +2007,7 @@ export const appRouter = router({
   publicApi: publicApiRouter,
   dashboard: dashboardRouter,
   contracts: contractsRouter,
+  auditLogs: auditLogsRouter,
 });
 
 export type AppRouter = typeof appRouter;

@@ -21,7 +21,7 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { useIsMobile } from "@/hooks/useMobile";
-import { LayoutDashboard, LogOut, PanelLeft, Users, Bike, ClipboardList, Package, DollarSign, Settings, UserCog, Sun, Moon, FileText } from "lucide-react";
+import { LayoutDashboard, LogOut, PanelLeft, Users, Bike, ClipboardList, Package, DollarSign, Settings, UserCog, Sun, Moon, FileText, Shield } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
@@ -50,6 +50,7 @@ const menuItems = [
   { icon: DollarSign, label: "Financeiro", path: "/financeiro" },
   { icon: FileText, label: "Contratos", path: "/contratos" },
   { icon: UserCog, label: "Usuários", path: "/usuarios" },
+  { icon: Shield, label: "Auditoria", path: "/auditoria" },
   { icon: Settings, label: "Configurações", path: "/configuracoes" },
 ];
 
