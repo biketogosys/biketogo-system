@@ -141,7 +141,9 @@ export default function PublicReservation() {
   const [name, setName] = useState("");
   const [cpf, setCpf] = useState("");
   const [rg, setRg] = useState("");
+  const [passport, setPassport] = useState("");
   const [docOrigin, setDocOrigin] = useState("Brasil (+55)");
+  const isBrazilian = docOrigin === "Brasil (+55)";
   const [birthDate, setBirthDate] = useState("");
   const [gender, setGender] = useState("");
   const [height, setHeight] = useState("");
@@ -274,8 +276,11 @@ export default function PublicReservation() {
     const errs: Record<string, string> = {};
     if (s === 0) {
       if (!name.trim() || name.trim().length < 3) errs.name = t.required;
-      if (!cpf || !validateCPF(cpf)) errs.cpf = t.invalidCpf;
-      if (!rg.trim()) errs.rg = t.required;
+      if (isBrazilian) {
+        if (!cpf || !validateCPF(cpf)) errs.cpf = t.invalidCpf;
+      } else {
+        if (!passport.trim() || passport.trim().length < 5) errs.passport = lang === "pt" ? "Passaporte obrigatório (mínimo 5 caracteres)" : lang === "en" ? "Passport required (min. 5 characters)" : "Pasaporte obligatorio (mín. 5 caracteres)";
+      }
       if (!birthDate || birthDate.length < 10) errs.birthDate = t.invalidDate;
       if (!height) errs.height = t.required;
     }
@@ -322,7 +327,7 @@ export default function PublicReservation() {
         .filter(([, qty]) => (qty as number) > 0)
         .map(([id, qty]) => ({ accessoryId: Number(id), quantity: qty as number }));
       const result = await submitMutation.mutateAsync({
-        name, cpf, rg, docOrigin, birthDate, gender, height: String(parseFloat(height) || 0),
+        name, cpf: isBrazilian ? cpf : "", rg: isBrazilian ? rg : passport, docOrigin, birthDate, gender, height: String(parseFloat(height) || 0),
         pedalFreq, howFound: origin, phone, email, instagram, accommodation,
         zipCode, street, number, complement, neighborhood, city, state: stateUF, country,
         lgpdConsent,
@@ -501,19 +506,14 @@ export default function PublicReservation() {
               <input className={errors.name ? inputError : inputNormal} placeholder={t.fullNamePlaceholder}
                 value={name} onChange={e => setName(e.target.value)} />
             </Field>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <Field label={t.cpf} required error={errors.cpf}>
-                <input className={errors.cpf ? inputError : inputNormal} placeholder={t.cpfPlaceholder}
-                  value={cpf} onChange={e => setCpf(maskCPF(e.target.value))} />
-              </Field>
-              <Field label={t.rg} required error={errors.rg} hint={t.rgHint}>
-                <input className={errors.rg ? inputError : inputNormal} placeholder={t.rgPlaceholder}
-                  value={rg} onChange={e => setRg(maskRG(e.target.value))} maxLength={12} />
-              </Field>
-            </div>
+            {/* Origem do documento — sempre visível */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <Field label={t.docOrigin}>
-                <select className={selectBase} value={docOrigin} onChange={e => setDocOrigin(e.target.value)}>
+                <select className={selectBase} value={docOrigin} onChange={e => {
+                  setDocOrigin(e.target.value);
+                  // Limpar erros de documento ao trocar
+                  setErrors(prev => { const n = { ...prev }; delete n.cpf; delete n.rg; delete n.passport; return n; });
+                }}>
                   <option value="Brasil (+55)">{t.docOriginBrazil}</option>
                   <option value="Estrangeiro">{t.docOriginForeign}</option>
                 </select>
@@ -523,6 +523,33 @@ export default function PublicReservation() {
                   value={birthDate} onChange={e => setBirthDate(maskDate(e.target.value))} />
               </Field>
             </div>
+            {/* CPF + RG (Brasil) ou Passaporte (Estrangeiro) */}
+            {isBrazilian ? (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <Field label={t.cpf} required error={errors.cpf}>
+                  <input className={errors.cpf ? inputError : inputNormal} placeholder={t.cpfPlaceholder}
+                    value={cpf} onChange={e => setCpf(maskCPF(e.target.value))} />
+                </Field>
+                <Field label={t.rg} hint={t.rgHint}>
+                  <input className={inputNormal} placeholder={t.rgPlaceholder}
+                    value={rg} onChange={e => setRg(maskRG(e.target.value))} maxLength={12} />
+                </Field>
+              </div>
+            ) : (
+              <Field
+                label={lang === "pt" ? "Número do Passaporte" : lang === "en" ? "Passport Number" : "Número de Pasaporte"}
+                required
+                error={errors.passport}
+              >
+                <input
+                  className={errors.passport ? inputError : inputNormal}
+                  placeholder={lang === "pt" ? "Ex: AB123456" : lang === "en" ? "e.g. AB123456" : "Ej: AB123456"}
+                  value={passport}
+                  onChange={e => setPassport(e.target.value.toUpperCase())}
+                  maxLength={20}
+                />
+              </Field>
+            )}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <Field label={t.gender}>
                 <select className={selectBase} value={gender} onChange={e => setGender(e.target.value)}>
