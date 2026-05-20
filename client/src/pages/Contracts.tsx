@@ -573,17 +573,17 @@ function ContractDetail({
 // ─── Contracts List ───────────────────────────────────────────────────────────
 export default function Contracts() {
   const [selectedId, setSelectedId] = useState<number | null>(null);
-  const [page, setPage] = useState(0);
+  const [page, setPage] = useState(1);
   const limit = 20;
 
   const { data, isLoading, refetch } = trpc.contracts.list.useQuery({
     limit,
-    offset: page * limit,
+    page,
   });
 
   const items = data?.items ?? [];
   const total = data?.total ?? 0;
-  const totalPages = Math.ceil(total / limit);
+  const totalPages = data?.totalPages ?? 1;
 
   if (selectedId !== null) {
     return (
@@ -690,24 +690,24 @@ export default function Contracts() {
       {totalPages > 1 && (
         <div className="flex items-center justify-between text-sm text-muted-foreground">
           <span>
-            {page * limit + 1}–{Math.min((page + 1) * limit, total)} de {total} contratos
+            Página {page} de {totalPages} — {total} contrato{total !== 1 ? "s" : ""}
           </span>
           <div className="flex gap-2">
             <Button
               variant="outline"
               size="sm"
-              disabled={page === 0}
-              onClick={() => setPage((p) => p - 1)}
+              disabled={page <= 1}
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
             >
-              Anterior
+              ← Anterior
             </Button>
             <Button
               variant="outline"
               size="sm"
-              disabled={page >= totalPages - 1}
+              disabled={page >= totalPages}
               onClick={() => setPage((p) => p + 1)}
             >
-              Próxima
+              Próxima →
             </Button>
           </div>
         </div>

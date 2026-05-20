@@ -4,6 +4,10 @@ import {
   Users, Bike, FileText, DollarSign, Loader2,
   TrendingUp, AlertCircle, ArrowRight, Wrench,
 } from "lucide-react";
+import {
+  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
+  ResponsiveContainer,
+} from "recharts";
 
 function StatCard({
   title,
@@ -45,8 +49,22 @@ function StatCard({
   return content;
 }
 
+function RevenueTooltip({ active, payload, label }: any) {
+  if (!active || !payload?.length) return null;
+  const value = payload[0]?.value ?? 0;
+  return (
+    <div className="bg-card border border-border rounded-lg px-3 py-2 shadow-lg text-xs">
+      <p className="text-muted-foreground mb-1">Semana de {label}</p>
+      <p className="font-semibold text-foreground">
+        {value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+      </p>
+    </div>
+  );
+}
+
 export default function Dashboard() {
   const { data, isLoading } = trpc.dashboard.summary.useQuery();
+  const { data: weeklyData, isLoading: weeklyLoading } = trpc.dashboard.weeklyRevenue.useQuery();
 
   if (isLoading) {
     return (
@@ -64,6 +82,9 @@ export default function Dashboard() {
 
   const revenue = parseFloat(rentalStats.monthRevenue || "0");
   const revenueFormatted = revenue.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+
+  const chartData = weeklyData ?? [];
+  const maxRevenue = Math.max(...chartData.map((d) => d.receita), 1);
 
   return (
     <div className="p-6 max-w-6xl mx-auto">
@@ -111,6 +132,78 @@ export default function Dashboard() {
           color="oklch(0.60 0.18 145)"
           href="/financeiro"
         />
+      </div>
+
+      {/* Weekly Revenue Chart */}
+      <div className="bg-card border border-border rounded-xl p-5 mb-8">
+        <div className="flex items-center justify-between mb-5">
+          <div>
+            <h2 className="text-sm font-semibold text-foreground uppercase tracking-wider">
+              Receita Semanal
+            </h2>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Últimas 8 semanas — devoluções confirmadas
+            </p>
+          </div>
+          {!weeklyLoading && chartData.length > 0 && (
+            <span className="text-xs text-muted-foreground">
+              Pico:{" "}
+              <span className="text-foreground font-medium">
+                {maxRevenue.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+              </span>
+            </span>
+          )}
+        </div>
+
+        {weeklyLoading ? (
+          <div className="flex items-center justify-center h-48">
+            <Loader2 className="w-5 h-5 animate-spin text-primary" />
+          </div>
+        ) : chartData.every((d) => d.receita === 0) ? (
+          <div className="flex flex-col items-center justify-center h-48 text-muted-foreground">
+            <TrendingUp className="w-8 h-8 mb-2 opacity-20" />
+            <p className="text-sm">Nenhuma receita registrada nas últimas 8 semanas</p>
+          </div>
+        ) : (
+          <ResponsiveContainer width="100%" height={200}>
+            <AreaChart data={chartData} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
+              <defs>
+                <linearGradient id="revenueGradient" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="oklch(0.60 0.18 145)" stopOpacity={0.3} />
+                  <stop offset="95%" stopColor="oklch(0.60 0.18 145)" stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.3 0 0 / 0.15)" vertical={false} />
+              <XAxis
+                dataKey="week"
+                tick={{ fontSize: 11, fill: "oklch(0.6 0 0)" }}
+                axisLine={false}
+                tickLine={false}
+              />
+              <YAxis
+                tick={{ fontSize: 11, fill: "oklch(0.6 0 0)" }}
+                axisLine={false}
+                tickLine={false}
+                width={60}
+                tickFormatter={(v) =>
+                  v >= 1000
+                    ? `R$${(v / 1000).toFixed(1)}k`
+                    : `R$${v}`
+                }
+              />
+              <Tooltip content={<RevenueTooltip />} />
+              <Area
+                type="monotone"
+                dataKey="receita"
+                stroke="oklch(0.60 0.18 145)"
+                strokeWidth={2}
+                fill="url(#revenueGradient)"
+                dot={{ r: 3, fill: "oklch(0.60 0.18 145)", strokeWidth: 0 }}
+                activeDot={{ r: 5, fill: "oklch(0.60 0.18 145)", strokeWidth: 0 }}
+              />
+            </AreaChart>
+          </ResponsiveContainer>
+        )}
       </div>
 
       {/* Status panels */}

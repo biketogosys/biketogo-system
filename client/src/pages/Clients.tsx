@@ -621,13 +621,14 @@ export default function Clients() {
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<Status>(undefined);
   const [showNew, setShowNew] = useState(false);
+  const [page, setPage] = useState(1);
   const utils = trpc.useUtils();
 
   const { data, isLoading } = trpc.clients.list.useQuery({
     search: search || undefined,
     status,
-    limit: 100,
-    offset: 0,
+    page,
+    limit: 20,
   });
 
   const deleteMutation = trpc.clients.delete.useMutation({
@@ -796,6 +797,31 @@ export default function Clients() {
               </Link>
             ))}
           </div>
+        </div>
+      )}
+
+      {/* Pagination */}
+      {(data?.totalPages ?? 1) > 1 && (
+        <div className="flex items-center justify-between mt-4">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setPage((p) => Math.max(1, p - 1))}
+            disabled={page <= 1}
+          >
+            ← Anterior
+          </Button>
+          <span className="text-sm text-muted-foreground">
+            Página {page} de {data?.totalPages ?? 1}
+          </span>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setPage((p) => p + 1)}
+            disabled={page >= (data?.totalPages ?? 1)}
+          >
+            Próxima →
+          </Button>
         </div>
       )}
 

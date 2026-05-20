@@ -109,6 +109,7 @@ export const clients = pgTable("clients", {
   source: clientSourceEnum("source").default("manual").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+  deletedAt: timestamp("deletedAt"),
 });
 export type Client = typeof clients.$inferSelect;
 export type InsertClient = typeof clients.$inferInsert;
@@ -340,3 +341,18 @@ export const systemSettings = pgTable("system_settings", {
 });
 export type SystemSetting = typeof systemSettings.$inferSelect;
 export type InsertSystemSetting = typeof systemSettings.$inferInsert;
+
+// ─── Audit Logs ────────────────────────────────────────────────────────────────────────────────
+export const auditLogs = pgTable("audit_logs", {
+  id: serial("id").primaryKey(),
+  adminId: integer("adminId"),
+  acao: varchar("acao", { length: 100 }).notNull(),
+  tabela: varchar("tabela", { length: 50 }).notNull(),
+  registroId: integer("registroId"),
+  dadosAntes: jsonb("dadosAntes"),
+  dadosDepois: jsonb("dadosDepois"),
+  ip: varchar("ip", { length: 45 }),
+  criadoEm: timestamp("criadoEm").defaultNow().notNull(),
+});
+export type AuditLog = typeof auditLogs.$inferSelect;
+export type InsertAuditLog = typeof auditLogs.$inferInsert;

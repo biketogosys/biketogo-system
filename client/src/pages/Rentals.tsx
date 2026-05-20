@@ -51,7 +51,7 @@ function ClientAutocomplete({
   const containerRef = useRef<HTMLDivElement>(null);
 
   const { data } = trpc.clients.list.useQuery(
-    { search: inputValue, limit: 10, offset: 0 },
+    { search: inputValue, limit: 10, page: 1 },
     { enabled: open || inputValue.length > 0 }
   );
 
@@ -669,15 +669,16 @@ export default function Rentals() {
   const [statusFilter, setStatusFilter] = useState<RentalStatus | undefined>(undefined);
   const [showNew, setShowNew] = useState(false);
   const [returnRental, setReturnRental] = useState<any>(null);
+  const [page, setPage] = useState(1);
   const utils = trpc.useUtils();
 
   const { data, isLoading } = trpc.rentals.list.useQuery({
     status: statusFilter,
-    limit: 100,
-    offset: 0,
+    page,
+    limit: 20,
   });
 
-  const { data: allClients } = trpc.clients.list.useQuery({ limit: 1000, offset: 0 });
+  const { data: allClients } = trpc.clients.list.useQuery({ limit: 100, page: 1 });
   const { data: allBikes } = trpc.bikes.list.useQuery({});
   const clientMap = Object.fromEntries((allClients?.items ?? []).map((c: any) => [c.id, c.name]));
   const bikeMap = Object.fromEntries((allBikes ?? []).map((b: any) => [b.id, `${b.model} #${b.serialNumber}`]));
@@ -889,6 +890,31 @@ export default function Rentals() {
             utils.bikes.list.invalidate();
           }}
         />
+      )}
+
+      {/* Pagination */}
+      {(data?.totalPages ?? 1) > 1 && (
+        <div className="flex items-center justify-between mt-4">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setPage((p) => Math.max(1, p - 1))}
+            disabled={page <= 1}
+          >
+            ← Anterior
+          </Button>
+          <span className="text-sm text-muted-foreground">
+            Página {page} de {data?.totalPages ?? 1}
+          </span>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setPage((p) => p + 1)}
+            disabled={page >= (data?.totalPages ?? 1)}
+          >
+            Próxima →
+          </Button>
+        </div>
       )}
 
       {returnRental && (

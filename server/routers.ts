@@ -18,6 +18,7 @@ import {
   createClient,
   updateClient,
   deleteClient,
+  archiveClient,
   getClientStats,
   getClientDocuments,
   addClientDocument,
@@ -40,6 +41,7 @@ import {
   createRental,
   updateRental,
   deleteRental,
+  archiveRental,
   checkBikeAvailability,
   getRentalStats,
   // Rental Accessories
@@ -74,6 +76,8 @@ import {
   getSetting,
   setSetting,
   getAllSettings,
+  // Audit
+  createAuditLog,
 } from "./db";
 import { notifyOwner } from "./_core/notification";
 import { sendEmail, buildReservationEmailHtml } from "./email";
@@ -296,10 +300,15 @@ const clientsRouter = router({
     .input(z.object({
       search: z.string().optional(),
       status: z.enum(["lead", "verified", "blocked"]).optional(),
-      limit: z.number().min(1).max(1000).default(50),
-      offset: z.number().min(0).default(0),
+      page: z.number().min(1).default(1),
+      limit: z.number().min(1).max(100).default(20),
     }))
-    .query(({ input }) => getClients(input)),
+    .query(async ({ input }) => {
+      const offset = (input.page - 1) * input.limit;
+      const result = await getClients({ ...input, offset });
+      const totalPages = Math.ceil(result.total / input.limit);
+      return { ...result, page: input.page, totalPages };
+    }),
 
   byId: adminAuthProcedure
     .input(z.object({ id: z.number() }))
@@ -464,11 +473,11 @@ const clientsRouter = router({
 
   delete: adminOnlyProcedure
     .input(z.object({ id: z.number() }))
-    .mutation(async ({ input }) => {
-      await deleteClient(input.id);
+    .mutation(async ({ ctx, input }) => {
+      await archiveClient(input.id);
+      await createAuditLog({ adminId: (ctx as any).adminUser?.id ?? null, acao: "arquivou_cliente", tabela: "clients", registroId: input.id });
       return { success: true };
     }),
-
   stats: adminAuthProcedure.query(() => getClientStats()),
 
   documents: adminAuthProcedure
@@ -555,9 +564,12 @@ const bikesRouter = router({
       notes: z.string().optional(),
       status: z.enum(["available", "rented", "maintenance"]).optional(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ ctx, input }) => {
       const { id, ...data } = input;
       await updateBike(id, data as any);
+      if (data.status) {
+        await createAuditLog({ adminId: (ctx as any).adminUser?.id ?? null, acao: `mudou_status_bike_${data.status}`, tabela: "bikes", registroId: id });
+      }
       return { success: true };
     }),
 
@@ -795,10 +807,15 @@ const rentalsRouter = router({
       clientId: z.number().optional(),
       bikeId: z.number().optional(),
       status: z.enum(["active", "returned", "overdue", "cancelled"]).optional(),
-      limit: z.number().min(1).max(1000).default(50),
-      offset: z.number().min(0).default(0),
+      page: z.number().min(1).default(1),
+      limit: z.number().min(1).max(100).default(20),
     }))
-    .query(({ input }) => getRentals(input)),
+    .query(async ({ input }) => {
+      const offset = (input.page - 1) * input.limit;
+      const result = await getRentals({ ...input, offset });
+      const totalPages = Math.ceil(result.total / input.limit);
+      return { ...result, page: input.page, totalPages };
+    }),
 
   byId: adminAuthProcedure
     .input(z.object({ id: z.number() }))
@@ -927,12 +944,13 @@ const rentalsRouter = router({
 
   delete: adminOnlyProcedure
     .input(z.object({ id: z.number() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ ctx, input }) => {
       const rental = await getRentalById(input.id);
       if (rental && rental.status === "active") {
         await updateBike(rental.bikeId, { status: "available" });
       }
-      await deleteRental(input.id);
+      await archiveRental(input.id);
+      await createAuditLog({ adminId: (ctx as any).adminUser?.id ?? null, acao: "arquivou_aluguel", tabela: "rentals", registroId: input.id });
       return { success: true };
     }),
 
@@ -1581,6 +1599,37 @@ const dashboardRouter = router({
     ]);
     return { clientStats, bikeStats, rentalStats };
   }),
+
+  weeklyRevenue: adminAuthProcedure.query(async () => {
+    const db = await getDb();
+    if (!db) return [];
+    // Last 8 weeks (Mon–Sun), sum totalAmount from rentals with returnedAt in that range
+    const weeks: { week: string; receita: number }[] = [];
+    const now = new Date();
+    for (let i = 7; i >= 0; i--) {
+      const end = new Date(now);
+      end.setDate(now.getDate() - i * 7);
+      end.setHours(23, 59, 59, 999);
+      const start = new Date(end);
+      start.setDate(end.getDate() - 6);
+      start.setHours(0, 0, 0, 0);
+      const { rentals: rentalsSchema } = await import("../drizzle/schema");
+      const { between, isNotNull } = await import("drizzle-orm");
+      const rows = await db
+        .select({ total: rentalsSchema.totalAmount })
+        .from(rentalsSchema)
+        .where(
+          and(
+            isNotNull(rentalsSchema.returnedAt),
+            between(rentalsSchema.returnedAt, start, end)
+          )
+        );
+      const sum = rows.reduce((acc, r) => acc + parseFloat(r.total ?? "0"), 0);
+      const label = start.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
+      weeks.push({ week: label, receita: Math.round(sum * 100) / 100 });
+    }
+    return weeks;
+  }),
 });
 
 // ─── Contracts router ───────────────────────────────────────────────────────────────
@@ -1665,12 +1714,13 @@ const contractsRouter = router({
   // Lista contratos ativos (sem soft delete)
   list: adminAuthProcedure
     .input(z.object({
-      limit: z.number().min(1).max(200).default(50),
-      offset: z.number().min(0).default(0),
+      page: z.number().min(1).default(1),
+      limit: z.number().min(1).max(100).default(20),
     }))
     .query(async ({ input }) => {
       const db = await getDb();
-      if (!db) return { items: [], total: 0 };
+      if (!db) return { items: [], total: 0, page: 1, totalPages: 1 };
+      const offset = (input.page - 1) * input.limit;
       const [items, countResult] = await Promise.all([
         db.select({
           id: contracts.id,
@@ -1686,12 +1736,14 @@ const contractsRouter = router({
           .where(isNull(contracts.deletedAt))
           .orderBy(contracts.criadoEm)
           .limit(input.limit)
-          .offset(input.offset),
+          .offset(offset),
         db.select({ count: drizzleSql<number>`count(*)` })
           .from(contracts)
           .where(isNull(contracts.deletedAt)),
       ]);
-      return { items, total: Number(countResult[0]?.count ?? 0) };
+      const total = Number(countResult[0]?.count ?? 0);
+      const totalPages = Math.ceil(total / input.limit);
+      return { items, total, page: input.page, totalPages };
     }),
 
   // Detalhe do contrato com rentals e acessórios vinculados
@@ -1766,7 +1818,7 @@ const contractsRouter = router({
         fotoUrl: z.string().optional(),
       })).optional(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
       // Update accessories checklist
@@ -1802,18 +1854,19 @@ const contractsRouter = router({
       }
       // Recalc status (may set to encerrado if all rentals returned)
       await recalcContractStatus(input.id);
+      await createAuditLog({ adminId: (ctx as any).adminUser?.id ?? null, acao: "encerrou_contrato", tabela: "contracts", registroId: input.id });
       return { success: true, hasPendencia };
     }),
-
   // Soft delete do contrato
   archive: adminAuthProcedure
     .input(z.object({ id: z.number() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
       await db.update(contracts)
         .set({ deletedAt: new Date() })
         .where(eq(contracts.id, input.id));
+      await createAuditLog({ adminId: (ctx as any).adminUser?.id ?? null, acao: "arquivou_contrato", tabela: "contracts", registroId: input.id });
       return { success: true };
     }),
 });
