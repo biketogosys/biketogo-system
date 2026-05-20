@@ -1341,8 +1341,31 @@ const publicApiRouter = router({
       weight: (b as any).weight || null,
       weightLimit: (b as any).weightLimit || null,
     }));
-  }),
-
+   }),
+  // Get bike sizes with real-time availability
+  bikeSizes: publicProcedure
+    .input(z.object({ bikeId: z.number() }))
+    .query(async ({ input }) => {
+      const db = await (await import("./db")).getDb();
+      if (!db) return [];
+      const { bikeSizes: bs, rentals: rt } = await import("../drizzle/schema");
+      const { eq, inArray } = await import("drizzle-orm");
+      // Get all sizes for this bike
+      const allSizes = await db.select().from(bs).where(eq(bs.bikeId, input.bikeId));
+      // Calculate real-time availability (count active rentals)
+      const activeRentals = await db
+        .select()
+        .from(rt)
+        .where(inArray(rt.status, ["active", "overdue"]));
+      const activeBikeCount = activeRentals.filter(r => r.bikeId === input.bikeId).length;
+      return allSizes.map(size => ({
+        id: size.id,
+        bikeId: size.bikeId,
+        tamanho: size.tamanho,
+        quantidadeTotal: size.quantidadeTotal,
+        quantidadeDisponivel: Math.max(0, size.quantidadeDisponivel - activeBikeCount),
+      }));
+    }),
   // Get discount rules for a bike
   bikeDiscountRules: publicProcedure
     .input(z.object({ bikeId: z.number() }))
@@ -1454,6 +1477,8 @@ const publicApiRouter = router({
       lgpdConsent: z.boolean().optional(),
       // Rental data
       bikeId: z.number(),
+      bikeSizeId: z.number().optional(),
+      bikeQuantity: z.number().min(1).default(1).optional(),
       startDate: z.string(),
       endDate: z.string(),
       deliveryTime: z.string().optional(),

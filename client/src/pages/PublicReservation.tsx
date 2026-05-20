@@ -179,6 +179,8 @@ export default function PublicReservation() {
 
   // Step 4 — Bike + Período + Acessórios
   const [selectedBikeId, setSelectedBikeId] = useState<number | null>(null);
+  const [selectedBikeSizeId, setSelectedBikeSizeId] = useState<number | null>(null);
+  const [bikeQuantity, setBikeQuantity] = useState(1);
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [deliveryTime, setDeliveryTime] = useState("");
@@ -191,6 +193,9 @@ export default function PublicReservation() {
 
   // ─── Queries ─────────────────────────────────────────────────────────────────
   const { data: bikesRaw, isLoading: bikesLoading } = trpc.publicApi.availableBikes.useQuery();
+  const { data: bikeSizesRaw } = trpc.publicApi.bikeSizes.useQuery(
+    { bikeId: selectedBikeId! }, { enabled: !!selectedBikeId }
+  );
   const { data: accByCategoryRaw } = trpc.publicApi.availableAccessoriesByCategory.useQuery();
   const { data: accessoriesRaw } = trpc.publicApi.availableAccessories.useQuery();
   const { data: deliveryFeeStr } = trpc.publicApi.deliveryFee.useQuery();
@@ -303,6 +308,7 @@ export default function PublicReservation() {
     }
     if (s === 4) {
       if (!selectedBikeId) errs.bike = t.mustSelectBike;
+      if (selectedBikeId && !selectedBikeSizeId) errs.bikeSize = "Selecione um tamanho de bicicleta";
       if (!startDate || !endDate) errs.dates = t.mustSelectDates;
       if (!deliveryTime) errs.deliveryTime = t.mustSelectTime;
       if (selectedBikeId && startDate && endDate && !isAvailable) errs.bike = t.bikeUnavailable;
@@ -331,7 +337,7 @@ export default function PublicReservation() {
         pedalFreq, howFound: origin, phone, email, instagram, accommodation,
         zipCode, street, number, complement, neighborhood, city, state: stateUF, country,
         lgpdConsent,
-        bikeId: selectedBikeId!, startDate, endDate,
+        bikeId: selectedBikeId!, bikeSizeId: selectedBikeSizeId ?? undefined, bikeQuantity, startDate, endDate,
         deliveryTime,
         deliveryFee: String(deliveryFee),
         paymentMethod: paymentMethod === "card" ? "stripe" : paymentMethod as "pix" | "cash" | "stripe",
@@ -788,6 +794,66 @@ export default function PublicReservation() {
                 </div>
               )}
             </div>
+
+            {/* Bike size and quantity selection */}
+            {selectedBikeId && (
+              <div className={`${cardBg} border rounded-2xl p-6 space-y-4`}>
+                <div className={`flex items-center gap-2 pb-3 border-b ${sectionBorder}`}>
+                  <span className="text-[#C8920A] text-sm font-bold uppercase tracking-widest">📏 Tamanho e Quantidade</span>
+                </div>
+                {errors.bikeSize && <p className="text-red-400 text-sm">{errors.bikeSize}</p>}
+                {bikeSizesRaw && bikeSizesRaw.length > 0 ? (
+                  <>
+                    <div className="space-y-3">
+                      <p className={`text-sm ${textSecondary}`}>Selecione um tamanho:</p>
+                      <div className="flex flex-wrap gap-2">
+                        {bikeSizesRaw.map((size: any) => {
+                          const isDisabled = size.quantidadeDisponivel === 0;
+                          return (
+                            <button
+                              key={size.id}
+                              onClick={() => !isDisabled && setSelectedBikeSizeId(size.id)}
+                              disabled={isDisabled}
+                              className={`px-4 py-2 rounded-lg font-medium text-sm transition-all ${
+                                selectedBikeSizeId === size.id
+                                  ? "bg-[#C8920A] text-black border border-[#C8920A]"
+                                  : isDisabled
+                                  ? `${isDark ? "bg-[#1a1a2e] text-[#555]" : "bg-gray-200 text-gray-400"} cursor-not-allowed`
+                                  : `${isDark ? "bg-[#0d0d1a] border border-[#2a2a3a]" : "bg-white border border-gray-300"} hover:border-[#C8920A]`
+                              }`}
+                            >
+                              {size.tamanho}
+                              <span className={`ml-2 text-xs ${
+                                isDisabled ? "text-red-400" : "text-[#C8920A]"
+                              }`}>
+                                ({isDisabled ? "Indisponível" : `${size.quantidadeDisponivel} disp.`})
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                    {selectedBikeSizeId && (
+                      <div className="space-y-2">
+                        <label className="text-xs font-semibold text-[#aaa]">
+                          Quantidade <span className="text-red-400">*</span>
+                        </label>
+                        <input
+                          type="number"
+                          min="1"
+                          max={bikeSizesRaw.find((s: any) => s.id === selectedBikeSizeId)?.quantidadeDisponivel || 1}
+                          value={bikeQuantity}
+                          onChange={(e) => setBikeQuantity(Math.max(1, parseInt(e.target.value) || 1))}
+                          className={inputNormal}
+                        />
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <p className={textSecondary}>Nenhum tamanho disponível para esta bicicleta.</p>
+                )}
+              </div>
+            )}
 
             {/* Rental period */}
             <div className={`${cardBg} border rounded-2xl p-6 space-y-4`}>
