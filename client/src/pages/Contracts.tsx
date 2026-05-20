@@ -13,6 +13,7 @@ import {
   RefreshCw,
   Bike,
   Package,
+  Camera,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -108,8 +109,34 @@ function CloseContractDialog({
   );
 
   const [accChecklist, setAccChecklist] = useState<
-    Record<number, { status: AccessoryReturnStatus; observacao: string }>
+    Record<number, { status: AccessoryReturnStatus; observacao: string; fotoUrl?: string; uploading?: boolean }>
   >({});
+
+  async function handleFotoUpload(accId: number, file: File) {
+    setAccChecklist((prev) => ({
+      ...prev,
+      [accId]: { ...prev[accId], status: prev[accId]?.status ?? "ok", observacao: prev[accId]?.observacao ?? "", uploading: true },
+    }));
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("bucket", "manutencao");
+      const res = await fetch("/api/upload-document", { method: "POST", body: formData });
+      if (!res.ok) throw new Error("Upload falhou");
+      const { url } = await res.json();
+      setAccChecklist((prev) => ({
+        ...prev,
+        [accId]: { ...prev[accId], fotoUrl: url, uploading: false },
+      }));
+      toast.success("Foto enviada!");
+    } catch {
+      toast.error("Erro ao enviar foto.");
+      setAccChecklist((prev) => ({
+        ...prev,
+        [accId]: { ...prev[accId], uploading: false },
+      }));
+    }
+  }
 
   const closeMutation = trpc.contracts.close.useMutation({
     onSuccess: () => {
@@ -126,6 +153,7 @@ function CloseContractDialog({
       id: acc.id,
       status: accChecklist[acc.id]?.status ?? "ok",
       observacao: accChecklist[acc.id]?.observacao ?? "",
+      fotoUrl: accChecklist[acc.id]?.fotoUrl,
     }));
     closeMutation.mutate({ id: contractId, accessories });
   };
@@ -244,6 +272,49 @@ function CloseContractDialog({
                           }
                         />
                       </div>
+                      {/* Foto do dano — só aparece se status ≠ ok */}
+                      {(accChecklist[acc.id]?.status ?? acc.status ?? "ok") !== "ok" && (
+                        <div>
+                          <Label className="text-xs text-muted-foreground">Foto do dano (opcional)</Label>
+                          <div className="mt-1 flex items-center gap-2">
+                            <label className="cursor-pointer">
+                              <input
+                                type="file"
+                                accept="image/*"
+                                className="hidden"
+                                onChange={(e) => {
+                                  const file = e.target.files?.[0];
+                                  if (file) handleFotoUpload(acc.id, file);
+                                }}
+                              />
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                className="pointer-events-none"
+                                disabled={accChecklist[acc.id]?.uploading}
+                              >
+                                {accChecklist[acc.id]?.uploading ? (
+                                  <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                                ) : (
+                                  <Camera className="h-3 w-3 mr-1" />
+                                )}
+                                {accChecklist[acc.id]?.fotoUrl ? "Trocar foto" : "Enviar foto"}
+                              </Button>
+                            </label>
+                            {accChecklist[acc.id]?.fotoUrl && (
+                              <a
+                                href={accChecklist[acc.id]!.fotoUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-xs text-blue-600 underline truncate max-w-[180px]"
+                              >
+                                Ver foto
+                              </a>
+                            )}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>

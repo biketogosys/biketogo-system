@@ -28,8 +28,9 @@ import {
   Trash2,
   Tag,
   Hash,
-  DollarSign,
   Layers,
+  CheckCircle2,
+  XCircle,
 } from "lucide-react";
 
 type AccessoryStatus = "available" | "rented" | "maintenance" | "lost";
@@ -49,6 +50,10 @@ const STATUS_COLORS: Record<AccessoryStatus, string> = {
 };
 
 const CATEGORIES = [
+  "segurança",
+  "conforto",
+  "transporte",
+  "navegação",
   "Capacete",
   "Cadeado",
   "Cesta",
@@ -67,8 +72,7 @@ type AccessoryForm = {
   category: string;
   serialNumber: string;
   quantity: number;
-  dailyRate: string;
-  purchasePrice: string;
+  quantidadeTotal: number;
   status: AccessoryStatus;
   notes: string;
 };
@@ -79,8 +83,7 @@ const emptyForm: AccessoryForm = {
   category: "",
   serialNumber: "",
   quantity: 1,
-  dailyRate: "",
-  purchasePrice: "",
+  quantidadeTotal: 1,
   status: "available",
   notes: "",
 };
@@ -143,9 +146,8 @@ export default function Accessories() {
       description: item.description ?? "",
       category: item.category ?? "",
       serialNumber: item.serialNumber ?? "",
-      quantity: item.quantity ?? 1,
-      dailyRate: item.dailyRate ?? "",
-      purchasePrice: item.purchasePrice ?? "",
+      quantity: item.quantidadeTotal ?? item.quantity ?? 1,
+      quantidadeTotal: item.quantidadeTotal ?? item.quantity ?? 1,
       status: item.status ?? "available",
       notes: item.notes ?? "",
     });
@@ -157,10 +159,20 @@ export default function Accessories() {
       toast.error("O nome do acessório é obrigatório.");
       return;
     }
+    const payload = {
+      name: form.name,
+      description: form.description || undefined,
+      category: form.category || undefined,
+      serialNumber: form.serialNumber || undefined,
+      quantity: form.quantidadeTotal,
+      quantidadeTotal: form.quantidadeTotal,
+      status: form.status,
+      notes: form.notes || undefined,
+    };
     if (editingId) {
-      updateMutation.mutate({ id: editingId, ...form });
+      updateMutation.mutate({ id: editingId, ...payload });
     } else {
-      createMutation.mutate(form);
+      createMutation.mutate(payload);
     }
   }
 
@@ -273,15 +285,33 @@ export default function Accessories() {
                   )}
                   <div className="flex items-center gap-1 text-muted-foreground">
                     <Layers className="w-3 h-3" />
-                    <span>Qtd: {item.quantity}</span>
+                    <span>Total: {(item as any).quantidadeTotal ?? item.quantity}</span>
                   </div>
-                  {item.dailyRate && (
-                    <div className="flex items-center gap-1 text-[#C8920A]">
-                      <DollarSign className="w-3 h-3" />
-                      <span>R$ {item.dailyRate}/dia</span>
-                    </div>
-                  )}
                 </div>
+                {(() => {
+                  const dispQty = (item as any).quantidadeDisponivel ?? (item as any).quantidadeTotal ?? item.quantity ?? 0;
+                  const isAvail = dispQty > 0 && item.status === "available";
+                  return (
+                    <div className="flex items-center gap-2">
+                      {isAvail ? (
+                        <div className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30">
+                          <CheckCircle2 className="w-3 h-3 text-emerald-500" />
+                          <span className="text-xs text-emerald-600 font-medium">
+                            {dispQty} disponível{dispQty !== 1 ? "is" : ""}
+                          </span>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-red-500/10 border border-red-500/30">
+                          <XCircle className="w-3 h-3 text-red-500" />
+                          <span className="text-xs text-red-600 font-medium">
+                            {dispQty === 0 ? "Sem estoque" : `${dispQty} disp.`}
+                          </span>
+                        </div>
+                      )}
+                      <span className="text-xs text-muted-foreground">(gratuito)</span>
+                    </div>
+                  );
+                })()}
 
                 <div className="flex gap-2 pt-1 border-t border-border">
                   <Button
@@ -375,34 +405,15 @@ export default function Accessories() {
               </div>
 
               <div className="space-y-1">
-                <Label>Quantidade</Label>
+                <Label>Quantidade Total</Label>
                 <Input
                   type="number"
-                  min={1}
-                  value={form.quantity}
-                  onChange={(e) => setForm({ ...form, quantity: Number(e.target.value) })}
+                  min={0}
+                  value={form.quantidadeTotal}
+                  onChange={(e) => setForm({ ...form, quantidadeTotal: Number(e.target.value), quantity: Number(e.target.value) })}
                   className="bg-background"
                 />
-              </div>
-
-              <div className="space-y-1">
-                <Label>Diária (R$)</Label>
-                <Input
-                  placeholder="0.00"
-                  value={form.dailyRate}
-                  onChange={(e) => setForm({ ...form, dailyRate: e.target.value })}
-                  className="bg-background"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <Label>Preço de Compra (R$)</Label>
-                <Input
-                  placeholder="0.00"
-                  value={form.purchasePrice}
-                  onChange={(e) => setForm({ ...form, purchasePrice: e.target.value })}
-                  className="bg-background"
-                />
+                <p className="text-xs text-muted-foreground">Acessórios são incluídos gratuitamente no aluguel.</p>
               </div>
 
               <div className="col-span-2 space-y-1">

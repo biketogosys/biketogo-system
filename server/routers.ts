@@ -952,7 +952,46 @@ const accessoriesRouter = router({
       search: z.string().optional(),
       category: z.string().optional(),
     }))
-    .query(({ input }) => getAccessories(input)),
+    .query(async ({ input }) => {
+      const items = await getAccessories(input);
+      // Calculate quantidadeDisponivel in real time based on active rentals
+      const db = await (await import("./db")).getDb();
+      if (!db) return items;
+      const { rentalAccessories: ra, rentals: rt } = await import("../drizzle/schema");
+      const { eq, inArray, and: andOp } = await import("drizzle-orm");
+      const ids = items.map((i) => i.id);
+      if (ids.length === 0) return items;
+      const activeUsage = await db
+        .select({ accessoryId: ra.accessoryId, qty: ra.quantity })
+        .from(ra)
+        .innerJoin(rt, eq(ra.rentalId, rt.id))
+        .where(andOp(inArray(ra.accessoryId, ids), inArray(rt.status, ["active", "overdue"])));
+      const usageMap: Record<number, number> = {};
+      for (const row of activeUsage) {
+        usageMap[row.accessoryId] = (usageMap[row.accessoryId] ?? 0) + (row.qty ?? 1);
+      }
+      return items.map((item) => ({
+        ...item,
+        quantidadeDisponivel: Math.max(0, (item.quantidadeTotal ?? item.quantity) - (usageMap[item.id] ?? 0)),
+      }));
+    }),
+  listByCategory: adminAuthProcedure
+    .query(async () => {
+      const items = await getAccessories({});
+      const grouped: Record<string, typeof items> = {};
+      for (const item of items) {
+        const cat = item.category ?? "Sem categoria";
+        if (!grouped[cat]) grouped[cat] = [];
+        grouped[cat].push(item);
+      }
+      return Object.entries(grouped).map(([category, accessories]) => ({ category, accessories }));
+    }),
+  updateQuantity: adminAuthProcedure
+    .input(z.object({ id: z.number(), quantidadeTotal: z.number().min(0) }))
+    .mutation(async ({ input }) => {
+      await updateAccessory(input.id, { quantidadeTotal: input.quantidadeTotal, quantity: input.quantidadeTotal });
+      return { success: true };
+    }),
 
   byId: adminAuthProcedure
     .input(z.object({ id: z.number() }))
@@ -1693,9 +1732,28 @@ const contractsRouter = router({
             .where(eq(contractAccessories.id, acc.id));
         }
       }
+      // Check for accessory pendencies
+      const hasPendencia = (input.accessories ?? []).some(
+        (acc) => acc.status !== "ok"
+      );
+      if (hasPendencia) {
+        // Flag contract with pendencia_acessorio
+        await db.update(contracts)
+          .set({ pendenciaAcessorio: true } as any)
+          .where(eq(contracts.id, input.id));
+        // Notify admin
+        const pendentes = (input.accessories ?? [])
+          .filter((a) => a.status !== "ok")
+          .map((a) => `Acessório #${a.id}: ${a.status}${a.observacao ? " — " + a.observacao : ""}`)
+          .join("\n");
+        await notifyOwner({
+          title: `⚠️ Pendência de acessório — Contrato #${input.id}`,
+          content: `Acessórios com problema ao encerrar o contrato #${input.id}:\n\n${pendentes}`,
+        }).catch(() => {});
+      }
       // Recalc status (may set to encerrado if all rentals returned)
       await recalcContractStatus(input.id);
-      return { success: true };
+      return { success: true, hasPendencia };
     }),
 
   // Soft delete do contrato
