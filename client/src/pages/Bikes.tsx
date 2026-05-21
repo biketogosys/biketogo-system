@@ -396,7 +396,7 @@ function BikeFormDialog({ bike, onClose, onSuccess }: { bike: any | null; onClos
               <div><Label className="text-xs">Diária (R$)</Label><Input type="number" value={form.dailyRate} onChange={e => set("dailyRate", e.target.value)} className="h-8 text-sm" /></div>
               <div><Label className="text-xs">Peso (kg)</Label><Input value={form.weight} onChange={e => set("weight", e.target.value)} className="h-8 text-sm" /></div>
               <div><Label className="text-xs">Limite de peso (kg)</Label><Input value={form.weightLimit} onChange={e => set("weightLimit", e.target.value)} className="h-8 text-sm" /></div>
-              <div><Label className="text-xs">Quantidade</Label><Input type="number" min={1} value={form.quantity} onChange={e => set("quantity", e.target.value)} className="h-8 text-sm" /></div>
+
               <div>
                 <Label className="text-xs">Status</Label>
                 <Select value={form.status} onValueChange={v => set("status", v)}>
@@ -513,7 +513,7 @@ export default function Bikes() {
                 <div className="flex flex-wrap gap-1.5 text-xs text-muted-foreground mb-2">
                   {bike.category && <span className="px-1.5 py-0.5 bg-primary/10 text-primary rounded text-[10px] uppercase">{categoryLabels[bike.category as BikeCategory] || bike.category}</span>}
                   {bike.color && <span className="px-1.5 py-0.5 bg-secondary rounded">{bike.color}</span>}
-                  {bike.quantity > 1 && <span className="px-1.5 py-0.5 bg-secondary rounded">Qtd: {bike.quantity}</span>}
+
                 </div>
                 {bike.dailyRate && (
                   <div className="flex items-center gap-1 mb-3">

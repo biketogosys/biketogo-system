@@ -230,6 +230,7 @@ export async function getClientStats() {
   const result = await db
     .select({ status: clients.status, count: sql<number>`count(*)` })
     .from(clients)
+    .where(isNull(clients.deletedAt))
     .groupBy(clients.status);
   const stats = { total: 0, leads: 0, verified: 0, blocked: 0 };
   for (const row of result) {
@@ -624,6 +625,7 @@ export async function getFinancialReport(startDate: string, endDate: string) {
       .from(rentals)
       .where(and(
         eq(rentals.paymentStatus, "paid"),
+        isNull(rentals.deletedAt),
         gte(rentals.startDate, startDate),
         lte(rentals.startDate, endDate),
       )),
@@ -648,11 +650,12 @@ export async function getRentalStats() {
   const now = new Date();
   const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
   const [activeResult, revenueResult] = await Promise.all([
-    db.select({ count: sql<number>`count(*)` }).from(rentals).where(eq(rentals.status, "active")),
+    db.select({ count: sql<number>`count(*)` }).from(rentals).where(and(eq(rentals.status, "active"), isNull(rentals.deletedAt))),
     db.select({ total: sql<string>`COALESCE(SUM("totalAmount"::numeric), 0)` })
       .from(rentals)
       .where(and(
         eq(rentals.paymentStatus, "paid"),
+        isNull(rentals.deletedAt),
         gte(rentals.createdAt, startOfMonth),
       )),
   ]);

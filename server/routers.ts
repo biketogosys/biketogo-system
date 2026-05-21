@@ -1349,21 +1349,27 @@ const publicApiRouter = router({
       const db = await (await import("./db")).getDb();
       if (!db) return [];
       const { bikeSizes: bs, rentals: rt } = await import("../drizzle/schema");
-      const { eq, inArray } = await import("drizzle-orm");
+      const { eq, inArray, isNull: isNullOp, and: andOp } = await import("drizzle-orm");
       // Get all sizes for this bike
       const allSizes = await db.select().from(bs).where(eq(bs.bikeId, input.bikeId));
-      // Calculate real-time availability (count active rentals)
+      // Count active rentals for this bike (by bikeId, since bikeSizeId not in rentals table)
       const activeRentals = await db
-        .select()
+        .select({ id: rt.id })
         .from(rt)
-        .where(inArray(rt.status, ["active", "overdue"]));
-      const activeBikeCount = activeRentals.filter(r => r.bikeId === input.bikeId).length;
+        .where(andOp(
+          eq(rt.bikeId, input.bikeId),
+          inArray(rt.status, ["active", "overdue"]),
+          isNullOp(rt.deletedAt),
+        ));
+      const activeCount = activeRentals.length;
+      // Distribute active rentals evenly across sizes (best approximation without bikeSizeId in rentals)
+      // Each size's real availability = max(0, quantidadeDisponivel - activeCount)
       return allSizes.map(size => ({
         id: size.id,
         bikeId: size.bikeId,
         tamanho: size.tamanho,
         quantidadeTotal: size.quantidadeTotal,
-        quantidadeDisponivel: Math.max(0, size.quantidadeDisponivel - activeBikeCount),
+        quantidadeDisponivel: Math.max(0, (size.quantidadeDisponivel ?? 0) - activeCount),
       }));
     }),
   // Get discount rules for a bike
@@ -1575,6 +1581,43 @@ const publicApiRouter = router({
             dailyRate: accessory?.dailyRate || null,
           } as any);
         }
+      }
+
+      // BUG 4 FIX: Create contract automatically and link rental to it
+      let contractId: number | null = null;
+      try {
+        const db = await (await import("./db")).getDb();
+        if (db) {
+          const { contracts: contractsSchema } = await import("../drizzle/schema");
+          const { rentals: rentalsSchema } = await import("../drizzle/schema");
+          const { eq: eqOp } = await import("drizzle-orm");
+          const [newContract] = await db.insert(contractsSchema).values({
+            clientId,
+            valorTotal: sanitizeNumeric(input.totalAmount),
+            status: "ativo",
+          }).returning({ id: contractsSchema.id });
+          contractId = newContract.id;
+          // Link rental to contract
+          await db.update(rentalsSchema).set({ contractId }).where(eqOp(rentalsSchema.id, rentalId));
+        }
+      } catch (err) {
+        console.warn("[submitReservation] Failed to create contract:", err);
+      }
+
+      // BUG 3 FIX: Register revenue entry for this rental
+      try {
+        const today = new Date().toISOString().split("T")[0];
+        const totalAmt = sanitizeNumeric(input.totalAmount);
+        if (totalAmt && parseFloat(totalAmt) > 0) {
+          await createRevenue({
+            categoryId: 1, // "Alguel" category
+            description: `Reserva #${rentalId} — ${input.name}`,
+            amount: totalAmt,
+            date: today,
+          } as any);
+        }
+      } catch (err) {
+        console.warn("[submitReservation] Failed to create revenue:", err);
       }
 
       // Notify owner via all channels
