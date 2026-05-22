@@ -188,6 +188,9 @@ export const rentals = pgTable("rentals", {
   // Return
   returnCondition: returnConditionEnum("returnCondition"),
   status: rentalStatusEnum("status").default("active").notNull(),
+  // Bike size and quantity
+  bikeSizeId: integer("bikeSizeId"),
+  quantity: integer("quantity").default(1),
   // Contract link
   contractId: integer("contractId"),
   // Soft delete

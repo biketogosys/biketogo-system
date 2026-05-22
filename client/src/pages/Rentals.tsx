@@ -194,6 +194,25 @@ function ReturnDialog({
           </button>
         </div>
         <div className="p-5 space-y-4">
+          {rental.bikeSizeId && (
+            <div className="p-3 bg-secondary rounded-lg border border-border">
+              <div className="text-xs text-muted-foreground mb-1">Tamanho selecionado</div>
+              <div className="text-sm font-medium text-foreground">{rental.bikeSize?.tamanho || "Não informado"}</div>
+              {rental.quantity && (
+                <div className="text-xs text-muted-foreground mt-1">Quantidade: {rental.quantity}</div>
+              )}
+            </div>
+          )}
+          {rental.contractId && (
+            <div className="p-3 bg-secondary rounded-lg border border-border">
+              <a
+                href={`/contratos?contractId=${rental.contractId}`}
+                className="text-sm font-medium text-blue-400 hover:text-blue-300 flex items-center gap-1"
+              >
+                Ver contrato →
+              </a>
+            </div>
+          )}
           <div>
             <Label className="text-xs text-muted-foreground mb-2 block">Condição da bicicleta</Label>
             <div className="flex gap-3">

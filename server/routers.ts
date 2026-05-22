@@ -1352,25 +1352,28 @@ const publicApiRouter = router({
       const { eq, inArray, isNull: isNullOp, and: andOp } = await import("drizzle-orm");
       // Get all sizes for this bike
       const allSizes = await db.select().from(bs).where(eq(bs.bikeId, input.bikeId));
-      // Count active rentals for this bike (by bikeId, since bikeSizeId not in rentals table)
-      const activeRentals = await db
-        .select({ id: rt.id })
-        .from(rt)
-        .where(andOp(
-          eq(rt.bikeId, input.bikeId),
-          inArray(rt.status, ["active", "overdue"]),
-          isNullOp(rt.deletedAt),
-        ));
-      const activeCount = activeRentals.length;
-      // Distribute active rentals evenly across sizes (best approximation without bikeSizeId in rentals)
-      // Each size's real availability = max(0, quantidadeDisponivel - activeCount)
-      return allSizes.map(size => ({
-        id: size.id,
-        bikeId: size.bikeId,
-        tamanho: size.tamanho,
-        quantidadeTotal: size.quantidadeTotal,
-        quantidadeDisponivel: Math.max(0, (size.quantidadeDisponivel ?? 0) - activeCount),
-      }));
+      // For each size, count active rentals with that specific bikeSizeId
+      const sizeAvailability = await Promise.all(
+        allSizes.map(async (size) => {
+          const activeRentalsForSize = await db
+            .select({ id: rt.id })
+            .from(rt)
+            .where(andOp(
+              eq(rt.bikeSizeId, size.id),
+              inArray(rt.status, ["active", "overdue"]),
+              isNullOp(rt.deletedAt),
+            ));
+          const activeCount = activeRentalsForSize.length;
+          return {
+            id: size.id,
+            bikeId: size.bikeId,
+            tamanho: size.tamanho,
+            quantidadeTotal: size.quantidadeTotal,
+            quantidadeDisponivel: Math.max(0, (size.quantidadeDisponivel ?? 0) - activeCount),
+          };
+        })
+      );
+      return sizeAvailability;
     }),
   // Get discount rules for a bike
   bikeDiscountRules: publicProcedure
@@ -1554,6 +1557,8 @@ const publicApiRouter = router({
       const rentalId = await createRental({
         clientId,
         bikeId: input.bikeId,
+        bikeSizeId: input.bikeSizeId || null,
+        quantity: input.bikeQuantity || 1,
         startDate: sanitizeDateString(input.startDate) as string,
         endDate: sanitizeDateString(input.endDate),
         deliveryTime: sanitize(input.deliveryTime) as string | null,
