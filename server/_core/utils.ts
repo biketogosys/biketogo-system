@@ -64,6 +64,28 @@ export function sanitizeNumeric(val: unknown): string | null {
 }
 
 /**
+ * Sanitizes a phone number for WhatsApp/Z-API:
+ * - Removes all non-numeric characters (spaces, (, ), -, +)
+ * - Ensures the number starts with country code 55 (Brazil)
+ * - Never duplicates the 55 prefix
+ *
+ * Examples:
+ *   (43) 98820-1901       → 5543988201901
+ *   +55 43 98820-1901     → 5543988201901
+ *   5543988201901         → 5543988201901
+ *   43988201901           → 5543988201901
+ */
+export function sanitizePhone(phone: string | null | undefined): string | null {
+  if (!phone) return null;
+  // Remove all non-numeric characters
+  const digits = phone.replace(/\D/g, "");
+  if (!digits) return null;
+  // Add 55 prefix if not already present
+  if (digits.startsWith("55")) return digits;
+  return `55${digits}`;
+}
+
+/**
  * Sanitizes an entire object by applying sanitize() to all values.
  * Useful for bulk sanitization of optional fields before insert/update.
  */

@@ -1,6 +1,6 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
-import { sanitize, sanitizeDate, sanitizeDateString, sanitizeNumeric } from "./_core/utils";
+import { sanitize, sanitizeDate, sanitizeDateString, sanitizeNumeric, sanitizePhone } from "./_core/utils";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import {
@@ -1510,7 +1510,12 @@ const settingsRouter = router({
   set: adminOnlyProcedure
     .input(z.object({ key: z.string(), value: z.string() }))
     .mutation(async ({ input }) => {
-      await setSetting(input.key, input.value);
+      // Sanitize phone numbers before saving
+      const phoneKeys = ["whatsapp_number", "notification_phone"];
+      const valueToSave = phoneKeys.includes(input.key)
+        ? (sanitizePhone(input.value) ?? input.value)
+        : input.value;
+      await setSetting(input.key, valueToSave);
       return { success: true };
     }),
 });
@@ -1850,17 +1855,15 @@ const publicApiRouter = router({
           content: `Cliente: ${input.name}\nBikes: ${bikeSummary}\nPeríodo: ${firstItem.startDate} a ${firstItem.endDate}\nValor Total: R$ ${grandTotal.toFixed(2)}\nPagamento: ${input.paymentMethod || "N/A"}\n\n⚠️ Reserva PENDENTE — verificar e confirmar no painel.`,
         });
 
-        // 2. WhatsApp notification to owner
-        const waMessage = buildOwnerReservationMessage({
-          clientName: input.name,
-          clientPhone: input.phone,
-          bikeModel: bikeSummary,
-          startDate: firstItem.startDate,
-          endDate: firstItem.endDate,
-          deliveryTime: firstItem.deliveryTime,
-          totalAmount: grandTotal.toFixed(2),
-        });
-        await sendWhatsApp({ text: waMessage });
+        // 2. WhatsApp notification to owner (with deep-link to contract)
+        const contractLink = contractId
+          ? `\nAcesse o painel: /contratos?contractId=${contractId}`
+          : "";
+        const waMessage = `🚲 *Nova reserva PENDENTE — Bike To Go*\n\n*Cliente:* ${input.name}\n*Bikes:* ${bikeSummary}\n*Período:* ${firstItem.startDate} a ${firstItem.endDate}\n*Valor Total:* R$ ${grandTotal.toFixed(2)}\n⚠️ Aguardando verificação e confirmação.${contractLink}`;
+        // Sanitize owner phone before sending
+        const rawOwnerPhone = await getSetting("whatsapp_number");
+        const ownerPhone = sanitizePhone(rawOwnerPhone) ?? rawOwnerPhone ?? undefined;
+        await sendWhatsApp({ text: waMessage, to: ownerPhone });
 
         // 3. Email confirmation to client
         if (input.email) {
@@ -1876,6 +1879,30 @@ const publicApiRouter = router({
             to: input.email,
             subject: `Reserva Recebida — ${bikeSummary} | Bike To Go`,
             html: emailHtml,
+          });
+        }
+
+        // 4. Email notification to admin (if admin email is configured)
+        const adminEmail = await getSetting("notification_email");
+        if (adminEmail) {
+          const contractPath = contractId ? `/contratos?contractId=${contractId}` : "/contratos";
+          const adminEmailHtml = `
+            <div style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:24px;">
+              <h2 style="color:#C8920A;">&#x1F6B2; Nova Reserva Pendente — Bike To Go</h2>
+              <p><strong>Cliente:</strong> ${input.name}</p>
+              <p><strong>Bikes:</strong> ${bikeSummary}</p>
+              <p><strong>Período:</strong> ${firstItem.startDate} a ${firstItem.endDate}</p>
+              <p><strong>Valor Total:</strong> R$ ${grandTotal.toFixed(2)}</p>
+              <p><strong>Pagamento:</strong> ${input.paymentMethod || "N/A"}</p>
+              <hr style="border:none;border-top:1px solid #eee;margin:16px 0;" />
+              <p style="color:#e67e22;">&#x26A0;&#xFE0F; Esta reserva está <strong>PENDENTE</strong> e aguarda sua verificação.</p>
+              <p>Acesse o painel para confirmar ou recusar: <a href="${contractPath}">${contractPath}</a></p>
+            </div>
+          `;
+          await sendEmail({
+            to: adminEmail,
+            subject: `⚠️ Nova Reserva Pendente — ${input.name} | Bike To Go`,
+            html: adminEmailHtml,
           });
         }
       } catch (err) {

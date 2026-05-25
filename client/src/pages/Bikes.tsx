@@ -192,6 +192,7 @@ function MaintenanceTab({ bikeId }: { bikeId: number }) {
   // Tamanho afetado: null = todos os tamanhos
   const [tamanhoBikeId, setTamanhoBikeId] = useState<number | null>(null);
   const [quantidadeAfetada, setQuantidadeAfetada] = useState("1");
+  const [serialAfetado, setSerialAfetado] = useState("");
 
   const selectedSize = (sizes as any[]).find((s: any) => s.id === tamanhoBikeId);
   const maxQty = selectedSize ? (selectedSize.quantidadeDisponivel ?? selectedSize.quantidadeTotal ?? 99) : 99;
@@ -203,7 +204,7 @@ function MaintenanceTab({ bikeId }: { bikeId: number }) {
       utils.bikes.listSizes.invalidate();
       setShowForm(false);
       setDesc(""); setCusto(""); setDataPrevista(""); setStatus("em_andamento");
-      setTamanhoBikeId(null); setQuantidadeAfetada("1");
+      setTamanhoBikeId(null); setQuantidadeAfetada("1"); setSerialAfetado("");
       toast.success("Manutenção registrada!");
     },
     onError: (e) => toast.error(e.message),
@@ -271,6 +272,16 @@ function MaintenanceTab({ bikeId }: { bikeId: number }) {
             <Input type="number" min={1} max={maxQty} value={quantidadeAfetada} onChange={e => setQuantidadeAfetada(e.target.value)} className="h-8 text-sm" />
             {selectedSize && <p className="text-xs text-muted-foreground mt-0.5">Máx. disponível: {maxQty}</p>}
           </div>
+          <div>
+            <Label className="text-xs">Número de série da unidade afetada <span className="text-muted-foreground">(opcional)</span></Label>
+            <Input
+              value={serialAfetado}
+              onChange={e => setSerialAfetado(e.target.value)}
+              placeholder="Ex: BK-007"
+              className="h-8 text-sm"
+              maxLength={50}
+            />
+          </div>
           <div className="grid grid-cols-2 gap-2">
             <div><Label className="text-xs">Custo (R$)</Label><Input value={custo} onChange={e => setCusto(e.target.value)} placeholder="0,00" className="h-8 text-sm" /></div>
             <div><Label className="text-xs">Prev. retorno</Label><Input type="date" value={dataPrevista} onChange={e => setDataPrevista(e.target.value)} className="h-8 text-sm" /></div>
@@ -289,7 +300,11 @@ function MaintenanceTab({ bikeId }: { bikeId: number }) {
             <Button size="sm" onClick={() => {
             if (!desc) return toast.error("Informe a descrição.");
             const qty = parseInt(quantidadeAfetada) || 1;
-            addMut.mutate({ bikeId, tamanhoBikeId, quantidadeAfetada: qty, descricao: desc, custo: custo || undefined, dataPrevistaRetorno: dataPrevista || undefined, status });
+            // Append serial number to description if provided
+            const descFinal = serialAfetado.trim()
+              ? `${desc} [Série: ${serialAfetado.trim()}]`
+              : desc;
+            addMut.mutate({ bikeId, tamanhoBikeId, quantidadeAfetada: qty, descricao: descFinal, custo: custo || undefined, dataPrevistaRetorno: dataPrevista || undefined, status });
           }} disabled={addMut.isPending} className="flex-1">Salvar</Button>
             <Button size="sm" variant="ghost" onClick={() => setShowForm(false)}>Cancelar</Button>
           </div>
