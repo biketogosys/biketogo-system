@@ -1082,6 +1082,28 @@ const rentalsRouter = router({
           await createRevenue({ categoryId: 1, description: `Contrato #${input.contractId} confirmado`, amount: totalAmt.toFixed(2), date: today } as any);
         }
       } catch (err) { console.warn("[confirmAll] Revenue error:", err); }
+      // Mark accessory units as 'alugado' for this contract
+      try {
+        const { contractAccessories: caTable, accessoryUnits: auTable } = await import("../drizzle/schema");
+        const { eq: eqOp2, and: andOp2 } = await import("drizzle-orm");
+        const caRows = await db.select().from(caTable).where(eqOp2(caTable.contractId, input.contractId));
+        for (const ca of caRows) {
+          if (ca.unitId) {
+            // Update the specific linked unit
+            await db.update(auTable).set({ status: "alugado" }).where(eqOp2(auTable.id, ca.unitId));
+          } else {
+            // No specific unit linked — mark first available unit of this accessory
+            const [availUnit] = await db.select().from(auTable)
+              .where(andOp2(eqOp2(auTable.accessoryId, ca.accessoryId), eqOp2(auTable.status, "disponivel")))
+              .limit(1);
+            if (availUnit) {
+              await db.update(auTable).set({ status: "alugado" }).where(eqOp2(auTable.id, availUnit.id));
+              // Link the unit to the contract_accessory for future tracking
+              await db.update(caTable).set({ unitId: availUnit.id }).where(eqOp2(caTable.id, ca.id));
+            }
+          }
+        }
+      } catch (err) { console.warn("[confirmAll] Unit marking error:", err); }
       await createAuditLog({ adminId: (ctx as any).adminUser?.id ?? null, acao: "confirmou_reserva", tabela: "contracts", registroId: input.contractId });
       return { success: true, confirmed: pendingRentals.length };
     }),
@@ -1189,6 +1211,16 @@ const accessoriesRouter = router({
         notes: sanitize(input.notes),
       };
       const id = await createAccessory(sanitizedAcc);
+      // Auto-create N units in accessory_units
+      const qty = sanitizedAcc.quantidadeTotal ?? sanitizedAcc.quantity ?? 1;
+      if (qty > 0) {
+        const { accessoryUnits } = await import("../drizzle/schema");
+        const db = await (await import("./db")).getDb();
+        if (db) {
+          const unitRows = Array.from({ length: qty }, () => ({ accessoryId: id, status: "disponivel" as const }));
+          await db.insert(accessoryUnits).values(unitRows);
+        }
+      }
       return { id };
     }),
 
@@ -1217,6 +1249,32 @@ const accessoriesRouter = router({
         notes: data.notes !== undefined ? sanitize(data.notes) : undefined,
       };
       await updateAccessory(id, sanitizedAcc);
+      // Handle quantidadeTotal change: create additional units or warn on decrease
+      if (sanitizedAcc.quantidadeTotal !== undefined || sanitizedAcc.quantity !== undefined) {
+        const newTotal = sanitizedAcc.quantidadeTotal ?? sanitizedAcc.quantity;
+        if (newTotal !== undefined) {
+          const { accessoryUnits } = await import("../drizzle/schema");
+          const { eq: eqOp, count: countFn } = await import("drizzle-orm");
+          const db = await (await import("./db")).getDb();
+          if (db) {
+            const [{ value: existingCount }] = await db
+              .select({ value: countFn(accessoryUnits.id) })
+              .from(accessoryUnits)
+              .where(eqOp(accessoryUnits.accessoryId, id));
+            const existing = Number(existingCount ?? 0);
+            if (newTotal > existing) {
+              // Create additional units
+              const diff = newTotal - existing;
+              const unitRows = Array.from({ length: diff }, () => ({ accessoryId: id, status: "disponivel" as const }));
+              await db.insert(accessoryUnits).values(unitRows);
+              return { success: true, unitsCreated: diff };
+            } else if (newTotal < existing) {
+              // Warn but do NOT delete existing units
+              return { success: true, warning: `Existem ${existing} unidades cadastradas, mas quantidadeTotal foi definida como ${newTotal}. Nenhuma unidade foi removida.` };
+            }
+          }
+        }
+      }
       return { success: true };
     }),
 
@@ -2173,9 +2231,12 @@ const contractsRouter = router({
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
-      // Update accessories checklist
+      // Update accessories checklist and sync unit status
       if (input.accessories && input.accessories.length > 0) {
+        const { accessoryUnits } = await import("../drizzle/schema");
         for (const acc of input.accessories) {
+          // Get the contract_accessory row to find linked unitId
+          const [caRow] = await db.select().from(contractAccessories).where(eq(contractAccessories.id, acc.id)).limit(1);
           await db.update(contractAccessories)
             .set({
               status: acc.status,
@@ -2183,6 +2244,15 @@ const contractsRouter = router({
               fotoUrl: acc.fotoUrl ?? null,
             })
             .where(eq(contractAccessories.id, acc.id));
+          // Sync accessory unit status
+          if (caRow?.unitId) {
+            let unitStatus: "disponivel" | "perdido" | "manutencao" | "roubado" = "disponivel";
+            if (acc.status === "perdido") unitStatus = "perdido";
+            else if (acc.status === "roubado") unitStatus = "roubado";
+            else if (acc.status === "danificado") unitStatus = "manutencao";
+            // else ok → disponivel
+            await db.update(accessoryUnits).set({ status: unitStatus }).where(eq(accessoryUnits.id, caRow.unitId));
+          }
         }
       }
       // Check for accessory pendencies

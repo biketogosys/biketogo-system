@@ -210,6 +210,7 @@ export const rentalAccessories = pgTable("rental_accessories", {
   accessoryId: integer("accessoryId").notNull(),
   quantity: integer("quantity").default(1).notNull(),
   dailyRate: numeric("dailyRate", { precision: 10, scale: 2 }),
+  unitId: integer("unitId"),  // FK → accessory_units (nullable)
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 export type RentalAccessory = typeof rentalAccessories.$inferSelect;
@@ -303,6 +304,7 @@ export const contractAccessories = pgTable("contract_accessories", {
   status: accessoryReturnStatusEnum("status").default("ok").notNull(),
   observacao: text("observacao"),
   fotoUrl: text("fotoUrl"),
+  unitId: integer("unitId"),  // FK → accessory_units (nullable)
 });
 export type ContractAccessory = typeof contractAccessories.$inferSelect;
 export type InsertContractAccessory = typeof contractAccessories.$inferInsert;
