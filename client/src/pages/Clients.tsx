@@ -59,7 +59,7 @@ function emptyForm() {
     name: "",
     birthDate: "",
     nacionalidade: "" as "" | "brasileiro" | "estrangeiro",
-    tipoDocumento: "" as "" | "cpf" | "passaporte",
+    tipoDocumento: "cnh" as "cnh" | "rg" | "passaporte", // cnh ou rg para brasileiro, passaporte para estrangeiro
     cpf: "",
     rg: "",
     numeroPassaporte: "",
@@ -168,12 +168,12 @@ function NewClientModal({ open, onClose, onSuccess }: NewClientModalProps) {
 
     createMutation.mutate({
       name: form.name,
-      cpf: form.cpf || undefined,
-      rg: form.rg || undefined,
+      cpf: form.tipoDocumento === "cnh" ? (form.cpf || undefined) : undefined,
+      rg: form.tipoDocumento === "rg" ? (form.rg || undefined) : undefined,
       birthDate: form.birthDate ? dateDisplayToISO(form.birthDate) : undefined,
       nacionalidade: (form.nacionalidade || undefined) as "brasileiro" | "estrangeiro" | undefined,
-      tipoDocumento: (form.tipoDocumento || undefined) as "cpf" | "passaporte" | undefined,
-      numeroPassaporte: form.numeroPassaporte || undefined,
+      tipoDocumento: (form.tipoDocumento || undefined) as "cnh" | "rg" | "passaporte" | undefined,
+      numeroPassaporte: form.tipoDocumento === "passaporte" ? (form.numeroPassaporte || undefined) : undefined,
       phone: phone || undefined,
       email: form.email || undefined,
       instagram: form.instagram || undefined,
@@ -263,62 +263,69 @@ function NewClientModal({ open, onClose, onSuccess }: NewClientModalProps) {
                     </Select>
                   </div>
                 </div>
-                <div>
-                  <Label className={labelCls}>Tipo de documento</Label>
-                  <Select value={form.tipoDocumento} onValueChange={(v) => set("tipoDocumento", v as "cpf" | "passaporte")}>
-                    <SelectTrigger className={inputCls}>
-                      <SelectValue placeholder="Selecionar..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="cpf">CPF</SelectItem>
-                      <SelectItem value="passaporte">Passaporte</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                {form.tipoDocumento !== "passaporte" && (
-                  <div className="grid grid-cols-2 gap-3">
+                {/* Tipo de documento: condicional por nacionalidade */}
+                {form.nacionalidade !== "estrangeiro" ? (
+                  <div className="space-y-3">
                     <div>
-                      <Label className={labelCls}>
-                        CPF {form.nacionalidade === "brasileiro" ? "*" : ""}
-                        {form.cpf.replace(/\D/g, "").length === 11 && (
-                          isValidCPF(form.cpf)
-                            ? <CheckCircle2 className="inline w-3 h-3 ml-1 text-green-500" />
-                            : <AlertCircle className="inline w-3 h-3 ml-1 text-destructive" />
-                        )}
-                      </Label>
-                      <Input
-                        value={form.cpf}
-                        onChange={(e) => set("cpf", maskCPF(e.target.value))}
-                        placeholder="000.000.000-00"
-                        className={inputCls}
-                        maxLength={14}
-                      />
+                      <Label className={labelCls}>Tipo de documento *</Label>
+                      <div className="flex gap-5 mt-1">
+                        {(["cnh", "rg"] as const).map(dt => (
+                          <label key={dt} className="flex items-center gap-2 cursor-pointer">
+                            <input
+                              type="radio"
+                              name="tipoDocClients"
+                              value={dt}
+                              checked={form.tipoDocumento === dt}
+                              onChange={() => { set("tipoDocumento", dt); set("cpf", ""); set("rg", ""); }}
+                              className="accent-primary w-4 h-4"
+                            />
+                            <span className="text-sm">{dt === "cnh" ? "CNH" : "RG"}</span>
+                          </label>
+                        ))}
+                      </div>
                     </div>
-                    <div>
-                      <Label className={labelCls}>
-                        RG
-                        {form.rg.replace(/[.\-\s]/g, "").length >= 8 && (
-                          isValidRG(form.rg)
-                            ? <CheckCircle2 className="inline w-3 h-3 ml-1 text-green-500" />
-                            : <AlertCircle className="inline w-3 h-3 ml-1 text-destructive" />
-                        )}
-                      </Label>
-                      <Input
-                        value={form.rg}
-                        onChange={(e) => set("rg", maskRG(e.target.value))}
-                        placeholder="00.000.000-0"
-                        className={inputCls}
-                        maxLength={12}
-                      />
-                    </div>
+                    {form.tipoDocumento === "cnh" ? (
+                      <div>
+                        <Label className={labelCls}>
+                          Número da CNH *
+                          {form.cpf.replace(/\D/g, "").length === 11 && (
+                            <CheckCircle2 className="inline w-3 h-3 ml-1 text-green-500" />
+                          )}
+                        </Label>
+                        <Input
+                          value={form.cpf}
+                          onChange={(e) => set("cpf", e.target.value.replace(/\D/g, "").slice(0, 11))}
+                          placeholder="00000000000"
+                          className={inputCls}
+                          maxLength={11}
+                        />
+                      </div>
+                    ) : (
+                      <div>
+                        <Label className={labelCls}>
+                          Número do RG *
+                          {form.rg.replace(/[.\-\s]/g, "").length >= 8 && (
+                            isValidRG(form.rg)
+                              ? <CheckCircle2 className="inline w-3 h-3 ml-1 text-green-500" />
+                              : <AlertCircle className="inline w-3 h-3 ml-1 text-destructive" />
+                          )}
+                        </Label>
+                        <Input
+                          value={form.rg}
+                          onChange={(e) => set("rg", maskRG(e.target.value))}
+                          placeholder="00.000.000-0"
+                          className={inputCls}
+                          maxLength={12}
+                        />
+                      </div>
+                    )}
                   </div>
-                )}
-                {form.tipoDocumento === "passaporte" && (
+                ) : (
                   <div>
-                    <Label className={labelCls}>Número do passaporte {form.nacionalidade === "estrangeiro" ? "*" : ""}</Label>
+                    <Label className={labelCls}>Número do Passaporte *</Label>
                     <Input
                       value={form.numeroPassaporte}
-                      onChange={(e) => set("numeroPassaporte", e.target.value.toUpperCase())}
+                      onChange={(e) => { set("numeroPassaporte", e.target.value.toUpperCase()); set("tipoDocumento", "passaporte"); }}
                       placeholder="AB123456"
                       className={inputCls}
                       maxLength={50}

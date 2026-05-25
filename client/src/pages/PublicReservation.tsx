@@ -168,6 +168,7 @@ export default function PublicReservation() {
   const [cepLoading, setCepLoading] = useState(false);
 
   // Step 3 — Documentos
+  const [docType, setDocType] = useState<"cnh" | "rg">("cnh"); // apenas para brasileiros
   const [docFrontPreview, setDocFrontPreview] = useState<string | null>(null);
   const [docBackPreview, setDocBackPreview] = useState<string | null>(null);
   const [docFrontBase64, setDocFrontBase64] = useState<string | null>(null);
@@ -339,7 +340,25 @@ export default function PublicReservation() {
     if (s === 0) {
       if (!name.trim() || name.trim().length < 3) errs.name = t.required;
       if (isBrazilian) {
-        if (!cpf || !validateCPF(cpf)) errs.cpf = t.invalidCpf;
+        if (docType === "cnh") {
+          if (!cpf || cpf.replace(/\D/g, "").length < 11) errs.cpf = lang === "pt" ? "Número da CNH obrigatório (11 dígitos)" : "Driver's license required (11 digits)";
+        } else {
+          // RG: valida módulo 11
+          const rgDigits = rg.replace(/[.\-\s]/g, "");
+          if (!rgDigits || rgDigits.length < 7) {
+            errs.rg = lang === "pt" ? "RG obrigatório" : "RG required";
+          } else {
+            // Módulo 11 simples: soma ponderada dos primeiros N-1 dígitos
+            const digits = rgDigits.toUpperCase();
+            const body = digits.slice(0, -1);
+            const lastChar = digits[digits.length - 1];
+            let sum = 0;
+            for (let i = 0; i < body.length; i++) sum += parseInt(body[i], 10) * (body.length + 1 - i);
+            const rem = sum % 11;
+            const expected = rem < 2 ? "0" : String(11 - rem);
+            if (lastChar !== "X" && lastChar !== expected) errs.rg = lang === "pt" ? "Dígito verificador do RG inválido" : "Invalid RG check digit";
+          }
+        }
       } else {
         if (!passport.trim() || passport.trim().length < 5) errs.passport = lang === "pt" ? "Passaporte obrigatório (mínimo 5 caracteres)" : lang === "en" ? "Passport required (min. 5 characters)" : "Pasaporte obligatorio (mín. 5 caracteres)";
       }
@@ -360,8 +379,8 @@ export default function PublicReservation() {
       if (!stateUF) errs.state = t.required;
     }
     if (s === 3) {
+      // Frente é sempre obrigatória; verso é opcional
       if (!docFrontBase64) errs.docFront = t.required;
-      if (!docBackBase64) errs.docBack = t.required;
     }
     if (s === 4) {
       if (cart.length === 0) {
@@ -419,7 +438,10 @@ export default function PublicReservation() {
         : undefined;
 
       const result = await submitMutation.mutateAsync({
-        name, cpf: isBrazilian ? cpf : "", rg: isBrazilian ? rg : passport, docOrigin, birthDate, gender, height: String(parseFloat(height) || 0),
+        name,
+        cpf: (isBrazilian && docType === "cnh") ? cpf : "",
+        rg: isBrazilian ? (docType === "rg" ? rg : "") : passport,
+        docOrigin, birthDate, gender, height: String(parseFloat(height) || 0),
         pedalFreq, howFound: origin, phone, email, instagram, accommodation,
         zipCode, street, number, complement, neighborhood, city, state: stateUF, country,
         lgpdConsent,
@@ -611,8 +633,10 @@ export default function PublicReservation() {
               <Field label={t.docOrigin}>
                 <select className={selectBase} value={docOrigin} onChange={e => {
                   setDocOrigin(e.target.value);
-                  // Limpar erros de documento ao trocar
-                  setErrors(prev => { const n = { ...prev }; delete n.cpf; delete n.rg; delete n.passport; return n; });
+                  // Limpar erros e uploads ao trocar nacionalidade
+                  setErrors(prev => { const n = { ...prev }; delete n.cpf; delete n.rg; delete n.passport; delete n.docFront; delete n.docBack; return n; });
+                  setDocFrontBase64(null); setDocFrontPreview(null);
+                  setDocBackBase64(null); setDocBackPreview(null);
                 }}>
                   <option value="Brasil (+55)">{t.docOriginBrazil}</option>
                   <option value="Estrangeiro">{t.docOriginForeign}</option>
@@ -623,17 +647,45 @@ export default function PublicReservation() {
                   value={birthDate} onChange={e => setBirthDate(maskDate(e.target.value))} />
               </Field>
             </div>
-            {/* CPF + RG (Brasil) ou Passaporte (Estrangeiro) */}
+            {/* CNH ou RG (Brasil) ou Passaporte (Estrangeiro) */}
             {isBrazilian ? (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <Field label={t.cpf} required error={errors.cpf}>
-                  <input className={errors.cpf ? inputError : inputNormal} placeholder={t.cpfPlaceholder}
-                    value={cpf} onChange={e => setCpf(maskCPF(e.target.value))} />
-                </Field>
-                <Field label={t.rg} hint={t.rgHint}>
-                  <input className={inputNormal} placeholder={t.rgPlaceholder}
-                    value={rg} onChange={e => setRg(maskRG(e.target.value))} maxLength={12} />
-                </Field>
+              <div className="space-y-3">
+                {/* Radio: CNH ou RG */}
+                <div className="flex gap-4">
+                  {(["cnh", "rg"] as const).map(dt => (
+                    <label key={dt} className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="docType"
+                        value={dt}
+                        checked={docType === dt}
+                        onChange={() => {
+                          setDocType(dt);
+                          setRg(""); setCpf("");
+                          setErrors(prev => { const n = { ...prev }; delete n.cpf; delete n.rg; return n; });
+                        }}
+                        className="accent-[#C8920A] w-4 h-4"
+                      />
+                      <span className={`text-sm font-medium ${textPrimary}`}>
+                        {dt === "cnh" ? (lang === "pt" ? "CNH" : lang === "en" ? "Driver's License" : "Licencia") : "RG"}
+                      </span>
+                    </label>
+                  ))}
+                </div>
+                {/* Campo do documento escolhido */}
+                {docType === "cnh" ? (
+                  <Field label={lang === "pt" ? "Número da CNH" : lang === "en" ? "Driver's License Number" : "Número de Licencia"} required error={errors.cpf}>
+                    <input className={errors.cpf ? inputError : inputNormal}
+                      placeholder={lang === "pt" ? "Ex: 00000000000" : "e.g. 00000000000"}
+                      value={cpf} onChange={e => setCpf(e.target.value.replace(/\D/g, "").slice(0, 11))} maxLength={11} />
+                  </Field>
+                ) : (
+                  <Field label="RG" required error={errors.rg} hint={lang === "pt" ? "Dígito verificador módulo 11" : "Mod-11 check digit"}>
+                    <input className={errors.rg ? inputError : inputNormal}
+                      placeholder="00.000.000-0"
+                      value={rg} onChange={e => setRg(maskRG(e.target.value))} maxLength={12} />
+                  </Field>
+                )}
               </div>
             ) : (
               <Field
@@ -779,18 +831,30 @@ export default function PublicReservation() {
             <div className={`flex items-center gap-2 pb-3 border-b ${sectionBorder}`}>
               <span className="text-[#C8920A] text-sm font-bold uppercase tracking-widest">📄 {t.sectionDocumentPhotos}</span>
             </div>
-            <p className={`text-sm ${textSecondary} leading-relaxed`}>{t.docPhotosDescription}</p>
+            {/* Indicador do tipo de documento */}
+            <div className={`text-sm ${textSecondary} leading-relaxed`}>
+              {isBrazilian
+                ? (lang === "pt"
+                    ? `Envie a foto da ${docType === "cnh" ? "CNH" : "RG"} (frente obrigatória, verso opcional).`
+                    : `Upload your ${docType === "cnh" ? "driver's license" : "ID"} photo (front required, back optional).`)
+                : (lang === "pt" ? "Envie a foto do Passaporte (frente obrigatória, verso opcional)." : "Upload your Passport photo (front required, back optional).")}
+            </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
               {(["front", "back"] as const).map(side => {
                 const preview = side === "front" ? docFrontPreview : docBackPreview;
                 const err = side === "front" ? errors.docFront : errors.docBack;
                 const uploading = side === "front" ? docFrontUploading : docBackUploading;
                 const ref = side === "front" ? frontRef : backRef;
-                const label = side === "front" ? t.docFront : t.docBack;
+                // Label dinâmico baseado em tipo de doc e nacionalidade
+                const docName = isBrazilian ? (docType === "cnh" ? "CNH" : "RG") : (lang === "pt" ? "Passaporte" : "Passport");
+                const label = side === "front"
+                  ? (lang === "pt" ? `Frente do ${docName}` : `${docName} Front`)
+                  : (lang === "pt" ? `Verso do ${docName} (opcional)` : `${docName} Back (optional)`);
+                const isRequired = side === "front";
                 return (
                   <div key={side} className="flex flex-col gap-1.5">
                     <label className={`text-xs font-semibold ${isDark ? "text-[#aaa]" : "text-gray-600"}`}>
-                      {label}<span className="text-red-400 ml-0.5">*</span>
+                      {label}{isRequired && <span className="text-red-400 ml-0.5">*</span>}
                     </label>
                     <div
                       onClick={() => ref.current?.click()}

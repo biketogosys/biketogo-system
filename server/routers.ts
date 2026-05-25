@@ -343,7 +343,7 @@ const clientsRouter = router({
       status: z.enum(["lead", "verified", "blocked"]).default("lead"),
       // Bloco B — nacionalidade e documento
       nacionalidade: z.enum(["brasileiro", "estrangeiro"]).optional(),
-      tipoDocumento: z.enum(["cpf", "passaporte"]).optional(),
+      tipoDocumento: z.enum(["cnh", "rg", "passaporte"]).optional(),
       numeroPassaporte: z.string().max(50).optional(),
       complement: z.string().optional(),
       lgpdConsent: z.boolean().optional(),
@@ -416,7 +416,7 @@ const clientsRouter = router({
       blocked: z.boolean().optional(),
       // Bloco B — nacionalidade e documento
       nacionalidade: z.enum(["brasileiro", "estrangeiro"]).optional(),
-      tipoDocumento: z.enum(["cpf", "passaporte"]).optional(),
+      tipoDocumento: z.enum(["cnh", "rg", "passaporte"]).optional(),
       numeroPassaporte: z.string().max(50).optional(),
       complement: z.string().optional(),
       lgpdConsent: z.boolean().optional(),

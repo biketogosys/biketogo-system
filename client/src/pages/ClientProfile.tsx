@@ -276,8 +276,20 @@ export default function ClientProfile() {
                   </h3>
                   <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                     <InfoRow label="Nome" value={client.name} />
-                    <InfoRow label="CPF" value={client.cpf} />
-                    <InfoRow label="RG / Passaporte" value={client.rg} />
+                    <InfoRow
+                      label={
+                        (client as any).tipoDocumento === "cnh" ? "CNH" :
+                        (client as any).tipoDocumento === "rg" ? "RG" :
+                        (client as any).tipoDocumento === "passaporte" ? "Passaporte" :
+                        (client as any).cpf ? "CPF" : "Documento"
+                      }
+                      value={
+                        (client as any).tipoDocumento === "cnh" ? (client as any).cpf :
+                        (client as any).tipoDocumento === "rg" ? (client as any).rg :
+                        (client as any).tipoDocumento === "passaporte" ? (client as any).numeroPassaporte :
+                        (client as any).cpf || (client as any).rg
+                      }
+                    />
                     <InfoRow label="Data de nascimento" value={client.birthDate} />
                     <InfoRow label="Gênero" value={client.gender} />
                     <InfoRow label="Altura" value={client.height ? `${client.height} m` : null} />
@@ -398,7 +410,14 @@ export default function ClientProfile() {
                         <div className="p-3 flex items-center justify-between">
                           <div>
                             <p className="text-xs font-medium text-foreground capitalize">
-                              {doc.type === "rg_front" ? "RG — Frente" : doc.type === "rg_back" ? "RG — Verso" : "Documento"}
+                              {(() => {
+                                    const td = (client as any).tipoDocumento as string | undefined;
+                                    const docName = td === "cnh" ? "CNH" : td === "rg" ? "RG" : td === "passaporte" ? "Passaporte" : "Documento";
+                                    const dt = doc.type as string;
+                                    if (dt === "rg_front" || dt === "doc_front") return `${docName} — Frente`;
+                                    if (dt === "rg_back" || dt === "doc_back") return `${docName} — Verso`;
+                                    return "Documento";
+                                  })()}
                             </p>
                             <p className="text-xs text-muted-foreground">
                               {new Date(doc.createdAt).toLocaleDateString("pt-BR")}
