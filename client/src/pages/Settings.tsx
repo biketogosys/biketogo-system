@@ -87,6 +87,9 @@ export default function Settings() {
   // Notifications
   const [whatsappNumber, setWhatsappNumber] = useState("");
   const [notificationEmail, setNotificationEmail] = useState("");
+  const [adminNotificationEmail, setAdminNotificationEmail] = useState("");
+  // Archive retention
+  const [archiveRetentionDays, setArchiveRetentionDays] = useState("5");
   // Email (Resend)
   const [resendApiKey, setResendApiKey] = useState("");
   // WhatsApp Z-API
@@ -108,6 +111,8 @@ export default function Settings() {
       setClosingTime(map["closing_time"] || "19:00");
       setWhatsappNumber(map["whatsapp_number"] || "");
       setNotificationEmail(map["notification_email"] || "");
+      setAdminNotificationEmail(map["admin_notification_email"] || "");
+      setArchiveRetentionDays(map["archive_retention_days"] || "5");
       setResendApiKey(map["resend_api_key"] || "");
       setZapiInstanceId(map["zapi_instance_id"] || "");
       setZapiToken(map["zapi_token"] || "");
@@ -224,7 +229,16 @@ export default function Settings() {
               onSave={() => save("notification_email", notificationEmail)}
               saving={saving}
               placeholder="biketogo.floripa@gmail.com"
-              hint="Email usado como remetente nas confirmações de reserva"
+              hint="Email usado como remetente nas confirmações de reserva para clientes"
+            />
+            <SettingField
+              label="E-mail de notificação do admin"
+              value={adminNotificationEmail}
+              onChange={setAdminNotificationEmail}
+              onSave={() => save("admin_notification_email", adminNotificationEmail)}
+              saving={saving}
+              placeholder="admin@empresa.com"
+              hint="Receba alertas de novas reservas pendentes neste e-mail"
             />
           </div>
         </div>
@@ -371,7 +385,50 @@ export default function Settings() {
           </div>
         </div>
 
-        {/* ─── Public form link ─────────────────────────────────────────────── */}
+        {/* ─── Archive Retention ─────────────────────────────────────────────── */}
+        <div className="bg-card border border-border rounded-xl p-6">
+          <div className="flex items-center gap-2 mb-4">
+            <SettingsIcon className="w-5 h-5 text-primary" />
+            <h2 className="text-base font-semibold text-foreground">Arquivamento de Registros</h2>
+          </div>
+          <p className="text-xs text-muted-foreground mb-4">
+            Registros arquivados (clientes e aluguéis) são excluídos automaticamente após o prazo configurado.
+            Um job automático roda a cada 24h e remove os registros expirados.
+          </p>
+          <div>
+            <Label className="text-xs text-muted-foreground mb-1.5 block">Excluir registros arquivados após X dias</Label>
+            <div className="flex gap-2 items-center">
+              <Input
+                type="number"
+                min={3}
+                max={30}
+                value={archiveRetentionDays}
+                onChange={(e) => {
+                  const v = parseInt(e.target.value);
+                  if (!isNaN(v)) setArchiveRetentionDays(String(Math.min(30, Math.max(3, v))));
+                }}
+                className="bg-secondary border-border w-24"
+              />
+              <span className="text-sm text-muted-foreground">dias (mín. 3, máx. 30)</span>
+              <SaveBtn
+                onClick={() => {
+                  const v = parseInt(archiveRetentionDays);
+                  if (isNaN(v) || v < 3 || v > 30) {
+                    toast.error("Informe um valor entre 3 e 30 dias.");
+                    return;
+                  }
+                  save("archive_retention_days", archiveRetentionDays);
+                }}
+                disabled={saving}
+              />
+            </div>
+            <p className="text-xs text-muted-foreground mt-1.5">
+              Padrão: 5 dias. Badges de expiração aparecem nas abas Arquivados de Clientes e Aluguéis.
+            </p>
+          </div>
+        </div>
+
+        {/* ─── Public form link ───────────────────────────────────────────────────── */}
         <div className="bg-primary/5 border border-primary/20 rounded-xl p-6">
           <div className="flex items-center gap-2 mb-3">
             <Link className="w-5 h-5 text-primary" />

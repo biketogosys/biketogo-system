@@ -8,7 +8,9 @@ import { registerOAuthRoutes } from "./oauth";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
-import { createClient, updateRental } from "../db";
+import { createClient, updateRental, getDb, getSetting, createAuditLog } from "../db";
+import { clients as clientsTable, rentals as rentalsTable } from "../../drizzle/schema";
+import { isNotNull, lt, and as andOp } from "drizzle-orm";
 import { notifyOwner } from "./notification";
 import { constructStripeEvent } from "../stripe";
 import {
@@ -176,3 +178,56 @@ async function startServer() {
 }
 
 startServer().catch(console.error);
+
+// ─── Job de limpeza automática de arquivados (a cada 24h) ──────────────────
+async function runArchiveCleanup() {
+  try {
+    const db = await getDb();
+    if (!db) return;
+
+    const retentionStr = await getSetting("archive_retention_days");
+    const retentionDays = Math.max(3, Math.min(30, parseInt(retentionStr || "5") || 5));
+
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - retentionDays);
+
+    // Deletar clientes arquivados expirados
+    const deletedClients = await db
+      .delete(clientsTable)
+      .where(andOp(isNotNull(clientsTable.deletedAt), lt(clientsTable.deletedAt, cutoff)))
+      .returning({ id: clientsTable.id });
+
+    // Deletar rentals arquivados expirados
+    const deletedRentals = await db
+      .delete(rentalsTable)
+      .where(andOp(isNotNull(rentalsTable.deletedAt), lt(rentalsTable.deletedAt, cutoff)))
+      .returning({ id: rentalsTable.id });
+
+    const totalDeleted = deletedClients.length + deletedRentals.length;
+
+    if (totalDeleted > 0) {
+      console.log(`[ArchiveCleanup] Removed ${deletedClients.length} clients and ${deletedRentals.length} rentals (retention: ${retentionDays} days)`);
+      await createAuditLog({
+        adminId: null,
+        acao: "limpeza_automatica",
+        tabela: "clients,rentals",
+        dadosDepois: {
+          clientsRemoved: deletedClients.length,
+          rentalsRemoved: deletedRentals.length,
+          retentionDays,
+          cutoff: cutoff.toISOString(),
+        },
+      });
+    } else {
+      console.log(`[ArchiveCleanup] No expired archived records found (retention: ${retentionDays} days)`);
+    }
+  } catch (err) {
+    console.error("[ArchiveCleanup] Error during cleanup:", err);
+  }
+}
+
+// Rodar imediatamente ao iniciar e depois a cada 24h
+setTimeout(() => {
+  runArchiveCleanup();
+  setInterval(runArchiveCleanup, 24 * 60 * 60 * 1000);
+}, 10_000); // aguardar 10s para o servidor estar pronto

@@ -634,6 +634,25 @@ export default function Clients() {
   const [archivedPage, setArchivedPage] = useState(1);
   const utils = trpc.useUtils();
 
+  const { data: settingsData } = trpc.settings.getAll.useQuery();
+  const retentionDays = (() => {
+    if (!settingsData) return 5;
+    const map: Record<string, string> = {};
+    (settingsData as any[]).forEach((s: any) => { map[s.key] = s.value; });
+    return Math.max(3, Math.min(30, parseInt(map["archive_retention_days"] || "5") || 5));
+  })();
+
+  function calcRetentionBadge(deletedAt: string | Date | null | undefined): { label: string; cls: string } | null {
+    if (!deletedAt) return null;
+    const archived = new Date(deletedAt);
+    const now = new Date();
+    const daysSince = Math.floor((now.getTime() - archived.getTime()) / (1000 * 60 * 60 * 24));
+    const daysLeft = retentionDays - daysSince;
+    if (daysLeft < 0) return { label: "Expirado", cls: "bg-red-900/40 text-red-300 border-red-800" };
+    if (daysLeft <= 2) return { label: daysLeft === 0 ? "Expira hoje" : "Expira amanhã", cls: "bg-red-500/20 text-red-400 border-red-500/40" };
+    return { label: `${daysLeft} dias restantes`, cls: "bg-amber-500/15 text-amber-400 border-amber-500/30" };
+  }
+
   const { data, isLoading } = trpc.clients.list.useQuery({
     search: search || undefined,
     status,
@@ -785,7 +804,10 @@ export default function Clients() {
                         </div>
                       </td>
                       <td className="px-4 py-3 text-xs text-muted-foreground">
-                        {client.deletedAt ? new Date(client.deletedAt).toLocaleDateString("pt-BR") : "—"}
+                        <div className="flex flex-col gap-1">
+                          <span>{client.deletedAt ? new Date(client.deletedAt).toLocaleDateString("pt-BR") : "—"}</span>
+                          {(() => { const b = calcRetentionBadge(client.deletedAt); return b ? <span className={`inline-flex px-1.5 py-0.5 rounded text-[10px] font-medium border ${b.cls}`}>{b.label}</span> : null; })()}
+                        </div>
                       </td>
                       <td className="px-4 py-3">
                         <Button
@@ -812,6 +834,7 @@ export default function Clients() {
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium text-foreground truncate">{client.name}</p>
                       <p className="text-xs text-muted-foreground">Arquivado em {client.deletedAt ? new Date(client.deletedAt).toLocaleDateString("pt-BR") : "—"}</p>
+                      {(() => { const b = calcRetentionBadge(client.deletedAt); return b ? <span className={`inline-flex px-1.5 py-0.5 rounded text-[10px] font-medium border ${b.cls} mt-0.5`}>{b.label}</span> : null; })()}
                     </div>
                     <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={() => restoreMutation.mutate({ id: client.id })} disabled={restoreMutation.isPending}>
                       <RotateCcw className="w-3 h-3" /> Restaurar
