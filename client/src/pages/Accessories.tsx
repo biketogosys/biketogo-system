@@ -31,9 +31,187 @@ import {
   Layers,
   CheckCircle2,
   XCircle,
+  List,
+  ChevronDown,
+  ChevronUp,
+  AlertTriangle,
+  Loader2,
 } from "lucide-react";
 
 type AccessoryStatus = "available" | "rented" | "maintenance" | "lost";
+type UnitStatus = "disponivel" | "alugado" | "perdido" | "manutencao" | "roubado";
+
+const UNIT_STATUS_LABELS: Record<UnitStatus, string> = {
+  disponivel: "Disponível",
+  alugado: "Alugado",
+  perdido: "Perdido",
+  manutencao: "Manutenção",
+  roubado: "Roubado",
+};
+
+const UNIT_STATUS_COLORS: Record<UnitStatus, string> = {
+  disponivel: "bg-emerald-500/20 text-emerald-600 border-emerald-500/30",
+  alugado: "bg-blue-500/20 text-blue-600 border-blue-500/30",
+  perdido: "bg-red-500/20 text-red-600 border-red-500/30",
+  manutencao: "bg-amber-500/20 text-amber-600 border-amber-500/30",
+  roubado: "bg-red-700/20 text-red-700 border-red-700/30",
+};
+
+// ─── Accessory Units Panel ──────────────────────────────────────────────────────────────────────
+function AccessoryUnitsPanel({ accessoryId, onClose }: { accessoryId: number; onClose: () => void }) {
+  const utils = trpc.useUtils();
+  const { data: units = [], isLoading } = trpc.accessories.getUnits.useQuery({ accessoryId });
+  const [editingUnitId, setEditingUnitId] = useState<number | null>(null);
+  const [editStatus, setEditStatus] = useState<UnitStatus>("disponivel");
+  const [editObs, setEditObs] = useState("");
+  const [newSerial, setNewSerial] = useState("");
+  const [showAddForm, setShowAddForm] = useState(false);
+
+  const updateMut = trpc.accessories.updateUnitStatus.useMutation({
+    onSuccess: () => {
+      utils.accessories.getUnits.invalidate();
+      setEditingUnitId(null);
+      toast.success("Status atualizado!");
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const createMut = trpc.accessories.createUnit.useMutation({
+    onSuccess: () => {
+      utils.accessories.getUnits.invalidate();
+      setNewSerial("");
+      setShowAddForm(false);
+      toast.success("Unidade adicionada!");
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  function startEdit(unit: any) {
+    setEditingUnitId(unit.id);
+    setEditStatus(unit.status as UnitStatus);
+    setEditObs(unit.observacao ?? "");
+  }
+
+  return (
+    <Dialog open onOpenChange={onClose}>
+      <DialogContent className="bg-card border-border max-w-lg max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <List className="w-4 h-4 text-primary" />
+            Unidades do Acessório
+          </DialogTitle>
+        </DialogHeader>
+
+        {isLoading ? (
+          <div className="flex justify-center py-8">
+            <Loader2 className="w-5 h-5 animate-spin text-primary" />
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {(units as any[]).length === 0 && (
+              <p className="text-sm text-muted-foreground text-center py-4">Nenhuma unidade cadastrada.</p>
+            )}
+            {(units as any[]).map((unit: any) => (
+              <div key={unit.id} className="border border-border rounded-lg overflow-hidden">
+                <div className="flex items-center justify-between p-3">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-mono text-muted-foreground">#{unit.id}</span>
+                    {unit.serialNumber && (
+                      <span className="text-xs text-foreground font-medium">{unit.serialNumber}</span>
+                    )}
+                    <Badge
+                      variant="outline"
+                      className={`text-xs border ${UNIT_STATUS_COLORS[unit.status as UnitStatus]}`}
+                    >
+                      {UNIT_STATUS_LABELS[unit.status as UnitStatus] ?? unit.status}
+                    </Badge>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 text-xs gap-1"
+                    onClick={() => editingUnitId === unit.id ? setEditingUnitId(null) : startEdit(unit)}
+                  >
+                    <Edit className="w-3 h-3" />
+                    {editingUnitId === unit.id ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                  </Button>
+                </div>
+                {editingUnitId === unit.id && (
+                  <div className="p-3 pt-0 border-t border-border bg-secondary/20 space-y-2">
+                    {unit.observacao && editingUnitId !== unit.id && (
+                      <p className="text-xs text-muted-foreground">{unit.observacao}</p>
+                    )}
+                    <div>
+                      <Label className="text-xs">Novo status</Label>
+                      <Select value={editStatus} onValueChange={(v) => setEditStatus(v as UnitStatus)}>
+                        <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          {(Object.keys(UNIT_STATUS_LABELS) as UnitStatus[]).map((s) => (
+                            <SelectItem key={s} value={s}>{UNIT_STATUS_LABELS[s]}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <Label className="text-xs">Observação</Label>
+                      <Textarea
+                        value={editObs}
+                        onChange={(e) => setEditObs(e.target.value)}
+                        placeholder="Observação opcional..."
+                        className="text-sm min-h-[50px] resize-none"
+                      />
+                    </div>
+                    <div className="flex gap-2">
+                      <Button
+                        size="sm"
+                        className="flex-1 bg-[#C8920A] hover:bg-[#A87608] text-white"
+                        onClick={() => updateMut.mutate({ unitId: unit.id, status: editStatus, observacao: editObs || undefined })}
+                        disabled={updateMut.isPending}
+                      >
+                        Salvar
+                      </Button>
+                      <Button size="sm" variant="ghost" onClick={() => setEditingUnitId(null)}>Cancelar</Button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Add unit form */}
+        <div className="border-t border-border pt-3 mt-2">
+          {showAddForm ? (
+            <div className="space-y-2">
+              <Label className="text-xs">Número de série (opcional)</Label>
+              <Input
+                value={newSerial}
+                onChange={(e) => setNewSerial(e.target.value)}
+                placeholder="Ex: CAP-007"
+                className="h-8 text-sm"
+              />
+              <div className="flex gap-2">
+                <Button
+                  size="sm"
+                  className="flex-1 bg-[#C8920A] hover:bg-[#A87608] text-white"
+                  onClick={() => createMut.mutate({ accessoryId, serialNumber: newSerial || undefined })}
+                  disabled={createMut.isPending}
+                >
+                  <Plus className="w-3.5 h-3.5 mr-1" />Adicionar
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => setShowAddForm(false)}>Cancelar</Button>
+              </div>
+            </div>
+          ) : (
+            <Button size="sm" variant="outline" onClick={() => setShowAddForm(true)} className="w-full gap-1">
+              <Plus className="w-3.5 h-3.5" />Adicionar Unidade
+            </Button>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
 
 const STATUS_LABELS: Record<AccessoryStatus, string> = {
   available: "Disponível",
@@ -96,6 +274,7 @@ export default function Accessories() {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [form, setForm] = useState<AccessoryForm>(emptyForm);
   const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null);
+  const [unitsAccessoryId, setUnitsAccessoryId] = useState<number | null>(null);
 
   const utils = trpc.useUtils();
 
@@ -363,10 +542,18 @@ export default function Accessories() {
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="flex-1 gap-1 text-xs h-8 text-red-400 hover:text-red-300 hover:bg-red-500/10"
+                    className="flex-1 gap-1 text-xs h-8 text-primary hover:text-primary hover:bg-primary/10"
+                    onClick={() => setUnitsAccessoryId(item.id)}
+                  >
+                    <List className="w-3 h-3" /> Unidades
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="gap-1 text-xs h-8 text-red-400 hover:text-red-300 hover:bg-red-500/10"
                     onClick={() => setDeleteConfirmId(item.id)}
                   >
-                    <Trash2 className="w-3 h-3" /> Remover
+                    <Trash2 className="w-3 h-3" />
                   </Button>
                 </div>
               </div>
@@ -492,6 +679,14 @@ export default function Accessories() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Accessory Units Panel */}
+      {unitsAccessoryId !== null && (
+        <AccessoryUnitsPanel
+          accessoryId={unitsAccessoryId}
+          onClose={() => setUnitsAccessoryId(null)}
+        />
+      )}
 
       {/* Delete Confirm */}
       <Dialog open={!!deleteConfirmId} onOpenChange={() => setDeleteConfirmId(null)}>

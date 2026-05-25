@@ -182,18 +182,28 @@ function BikeSizesTab({ bikeId }: { bikeId: number }) {
 function MaintenanceTab({ bikeId }: { bikeId: number }) {
   const utils = trpc.useUtils();
   const { data: logs = [], isLoading } = trpc.bikes.listMaintenance.useQuery({ bikeId });
+  const { data: sizes = [] } = trpc.bikes.listSizes.useQuery({ bikeId });
   const [showForm, setShowForm] = useState(false);
   const [desc, setDesc] = useState("");
   const [custo, setCusto] = useState("");
   const [dataPrevista, setDataPrevista] = useState("");
   const [status, setStatus] = useState<"em_andamento" | "concluida">("em_andamento");
   const [expandedId, setExpandedId] = useState<number | null>(null);
+  // Tamanho afetado: null = todos os tamanhos
+  const [tamanhoBikeId, setTamanhoBikeId] = useState<number | null>(null);
+  const [quantidadeAfetada, setQuantidadeAfetada] = useState("1");
+
+  const selectedSize = (sizes as any[]).find((s: any) => s.id === tamanhoBikeId);
+  const maxQty = selectedSize ? (selectedSize.quantidadeDisponivel ?? selectedSize.quantidadeTotal ?? 99) : 99;
 
   const addMut = trpc.bikes.addMaintenance.useMutation({
     onSuccess: () => {
       utils.bikes.listMaintenance.invalidate();
       utils.bikes.list.invalidate();
-      setShowForm(false); setDesc(""); setCusto(""); setDataPrevista(""); setStatus("em_andamento");
+      utils.bikes.listSizes.invalidate();
+      setShowForm(false);
+      setDesc(""); setCusto(""); setDataPrevista(""); setStatus("em_andamento");
+      setTamanhoBikeId(null); setQuantidadeAfetada("1");
       toast.success("Manutenção registrada!");
     },
     onError: (e) => toast.error(e.message),
@@ -242,6 +252,25 @@ function MaintenanceTab({ bikeId }: { bikeId: number }) {
         <div className="border border-border rounded-lg p-3 space-y-3 bg-secondary/20">
           <Label className="text-sm font-medium">Novo registro de manutenção</Label>
           <div><Label className="text-xs">Descrição *</Label><Textarea value={desc} onChange={e => setDesc(e.target.value)} placeholder="Descreva o problema ou serviço..." className="text-sm min-h-[60px]" /></div>
+          <div>
+            <Label className="text-xs">Tamanho afetado *</Label>
+            <Select value={tamanhoBikeId === null ? "__todos__" : String(tamanhoBikeId)} onValueChange={(v) => { setTamanhoBikeId(v === "__todos__" ? null : parseInt(v)); setQuantidadeAfetada("1"); }}>
+              <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Selecionar tamanho..." /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__todos__">Todos os tamanhos</SelectItem>
+                {(sizes as any[]).map((s: any) => (
+                  <SelectItem key={s.id} value={String(s.id)}>
+                    {s.tamanho} — {s.quantidadeDisponivel ?? s.quantidadeTotal} disp.
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <Label className="text-xs">Quantidade em manutenção</Label>
+            <Input type="number" min={1} max={maxQty} value={quantidadeAfetada} onChange={e => setQuantidadeAfetada(e.target.value)} className="h-8 text-sm" />
+            {selectedSize && <p className="text-xs text-muted-foreground mt-0.5">Máx. disponível: {maxQty}</p>}
+          </div>
           <div className="grid grid-cols-2 gap-2">
             <div><Label className="text-xs">Custo (R$)</Label><Input value={custo} onChange={e => setCusto(e.target.value)} placeholder="0,00" className="h-8 text-sm" /></div>
             <div><Label className="text-xs">Prev. retorno</Label><Input type="date" value={dataPrevista} onChange={e => setDataPrevista(e.target.value)} className="h-8 text-sm" /></div>
@@ -257,7 +286,11 @@ function MaintenanceTab({ bikeId }: { bikeId: number }) {
             </Select>
           </div>
           <div className="flex gap-2">
-            <Button size="sm" onClick={() => { if (!desc) return toast.error("Informe a descrição."); addMut.mutate({ bikeId, descricao: desc, custo: custo || undefined, dataPrevistaRetorno: dataPrevista || undefined, status }); }} disabled={addMut.isPending} className="flex-1">Salvar</Button>
+            <Button size="sm" onClick={() => {
+            if (!desc) return toast.error("Informe a descrição.");
+            const qty = parseInt(quantidadeAfetada) || 1;
+            addMut.mutate({ bikeId, tamanhoBikeId, quantidadeAfetada: qty, descricao: desc, custo: custo || undefined, dataPrevistaRetorno: dataPrevista || undefined, status });
+          }} disabled={addMut.isPending} className="flex-1">Salvar</Button>
             <Button size="sm" variant="ghost" onClick={() => setShowForm(false)}>Cancelar</Button>
           </div>
         </div>

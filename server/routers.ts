@@ -732,6 +732,8 @@ const bikesRouter = router({
   addMaintenance: adminAuthProcedure
     .input(z.object({
       bikeId: z.number(),
+      tamanhoBikeId: z.number().nullable().optional(), // null = todos os tamanhos
+      quantidadeAfetada: z.number().min(1).default(1),
       descricao: z.string().min(1),
       custo: z.string().optional(),
       dataEntrada: z.string().optional(),
@@ -740,12 +742,14 @@ const bikesRouter = router({
       fotos: z.array(z.string()).optional(),
     }))
     .mutation(async ({ input }) => {
-      const { bikeMaintenanceLogs, bikes } = await import("../drizzle/schema");
-      const { eq } = await import("drizzle-orm");
+      const { bikeMaintenanceLogs, bikes, bikeSizes } = await import("../drizzle/schema");
+      const { eq, sql } = await import("drizzle-orm");
       const db = await (await import("./db")).getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
       const [row] = await db.insert(bikeMaintenanceLogs).values({
         bikeId: input.bikeId,
+        tamanhoBikeId: input.tamanhoBikeId ?? null,
+        quantidadeAfetada: input.quantidadeAfetada,
         descricao: input.descricao,
         custo: sanitize(input.custo) as string | null,
         dataEntrada: input.dataEntrada ? new Date(input.dataEntrada) : new Date(),
@@ -754,6 +758,19 @@ const bikesRouter = router({
         fotos: input.fotos ?? null,
       }).returning();
       if (input.status === "em_andamento") {
+        // Decrement quantidadeDisponivel for affected sizes
+        if (input.tamanhoBikeId) {
+          // Specific size: decrement by quantidadeAfetada
+          await db.update(bikeSizes)
+            .set({ quantidadeDisponivel: sql`GREATEST(0, ${bikeSizes.quantidadeDisponivel} - ${input.quantidadeAfetada})` })
+            .where(eq(bikeSizes.id, input.tamanhoBikeId));
+        } else {
+          // All sizes of this bike: decrement each by quantidadeAfetada
+          const { eq: eqOp } = await import("drizzle-orm");
+          await db.update(bikeSizes)
+            .set({ quantidadeDisponivel: sql`GREATEST(0, ${bikeSizes.quantidadeDisponivel} - ${input.quantidadeAfetada})` })
+            .where(eqOp(bikeSizes.bikeId, input.bikeId));
+        }
         await db.update(bikes).set({ status: "maintenance" }).where(eq(bikes.id, input.bikeId));
       }
       return row;
@@ -769,11 +786,13 @@ const bikesRouter = router({
       fotos: z.array(z.string()).optional(),
     }))
     .mutation(async ({ input }) => {
-      const { bikeMaintenanceLogs, bikes } = await import("../drizzle/schema");
-      const { eq } = await import("drizzle-orm");
+      const { bikeMaintenanceLogs, bikes, bikeSizes } = await import("../drizzle/schema");
+      const { eq, sql } = await import("drizzle-orm");
       const db = await (await import("./db")).getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
       const { id, bikeId, ...data } = input;
+      // Fetch current log to know tamanhoBikeId and quantidadeAfetada before updating
+      const [currentLog] = await db.select().from(bikeMaintenanceLogs).where(eq(bikeMaintenanceLogs.id, id));
       await db.update(bikeMaintenanceLogs).set({
         ...(data.descricao !== undefined ? { descricao: data.descricao } : {}),
         custo: data.custo !== undefined ? (sanitize(data.custo) as string | null) : undefined,
@@ -782,7 +801,23 @@ const bikesRouter = router({
         ...(data.fotos !== undefined ? { fotos: data.fotos } : {}),
         updatedAt: new Date(),
       }).where(eq(bikeMaintenanceLogs.id, id));
-      if (data.status === "concluida") {
+      if (data.status === "concluida" && currentLog) {
+        // Restore quantidadeDisponivel for the affected sizes
+        const qty = currentLog.quantidadeAfetada ?? 1;
+        if (currentLog.tamanhoBikeId) {
+          // Restore specific size
+          const sizeRow = await db.select({ total: bikeSizes.quantidadeTotal })
+            .from(bikeSizes).where(eq(bikeSizes.id, currentLog.tamanhoBikeId));
+          const maxQty = sizeRow[0]?.total ?? qty;
+          await db.update(bikeSizes)
+            .set({ quantidadeDisponivel: sql`LEAST(${maxQty}, ${bikeSizes.quantidadeDisponivel} + ${qty})` })
+            .where(eq(bikeSizes.id, currentLog.tamanhoBikeId));
+        } else {
+          // Restore all sizes of this bike
+          await db.update(bikeSizes)
+            .set({ quantidadeDisponivel: sql`LEAST(${bikeSizes.quantidadeTotal}, ${bikeSizes.quantidadeDisponivel} + ${qty})` })
+            .where(eq(bikeSizes.bikeId, bikeId));
+        }
         const remaining = await db.select({ id: bikeMaintenanceLogs.id, status: bikeMaintenanceLogs.status })
           .from(bikeMaintenanceLogs)
           .where(eq(bikeMaintenanceLogs.bikeId, bikeId));
@@ -1189,6 +1224,54 @@ const accessoriesRouter = router({
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {
       await deleteAccessory(input.id);
+      return { success: true };
+    }),
+
+  // ─── Unit-level endpoints ─────────────────────────────────────────────────
+  getUnits: adminAuthProcedure
+    .input(z.object({ accessoryId: z.number() }))
+    .query(async ({ input }) => {
+      const { accessoryUnits } = await import("../drizzle/schema");
+      const { eq, asc } = await import("drizzle-orm");
+      const db = await (await import("./db")).getDb();
+      if (!db) return [];
+      return db.select().from(accessoryUnits)
+        .where(eq(accessoryUnits.accessoryId, input.accessoryId))
+        .orderBy(asc(accessoryUnits.id));
+    }),
+
+  createUnit: adminAuthProcedure
+    .input(z.object({
+      accessoryId: z.number(),
+      serialNumber: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const { accessoryUnits } = await import("../drizzle/schema");
+      const db = await (await import("./db")).getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      const [row] = await db.insert(accessoryUnits).values({
+        accessoryId: input.accessoryId,
+        serialNumber: input.serialNumber ?? null,
+        status: "disponivel",
+      }).returning();
+      return row;
+    }),
+
+  updateUnitStatus: adminAuthProcedure
+    .input(z.object({
+      unitId: z.number(),
+      status: z.enum(["disponivel", "alugado", "perdido", "manutencao", "roubado"]),
+      observacao: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const { accessoryUnits } = await import("../drizzle/schema");
+      const { eq } = await import("drizzle-orm");
+      const db = await (await import("./db")).getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      await db.update(accessoryUnits).set({
+        status: input.status,
+        observacao: input.observacao ?? null,
+      }).where(eq(accessoryUnits.id, input.unitId));
       return { success: true };
     }),
 });

@@ -30,6 +30,7 @@ export const accessoryStatusEnum = pgEnum("accessory_status", ["available", "ren
 export const contractStatusEnum = pgEnum("contract_status", ["pendente", "ativo", "parcialmente_devolvido", "encerrado", "cancelado"]);
 export const accessoryReturnStatusEnum = pgEnum("accessory_return_status", ["ok", "danificado", "perdido", "roubado"]);
 export const maintenanceStatusEnum = pgEnum("maintenance_status", ["em_andamento", "concluida"]);
+export const accessoryUnitStatusEnum = pgEnum("accessory_unit_status", ["disponivel", "alugado", "perdido", "manutencao", "roubado"]);
 export const nacionalidadeEnum = pgEnum("nacionalidade", ["brasileiro", "estrangeiro"]);
 export const tipoDocumentoEnum = pgEnum("tipo_documento", ["cpf", "passaporte"]);
 
@@ -323,6 +324,8 @@ export type InsertBikeSize = typeof bikeSizes.$inferInsert;
 export const bikeMaintenanceLogs = pgTable("bike_maintenance_logs", {
   id: serial("id").primaryKey(),
   bikeId: integer("bikeId").notNull(),
+  tamanhoBikeId: integer("tamanhoBikeId"),  // FK → bike_sizes (null = todos os tamanhos)
+  quantidadeAfetada: integer("quantidadeAfetada").default(1).notNull(),
   descricao: text("descricao").notNull(),
   custo: numeric("custo", { precision: 10, scale: 2 }),
   dataEntrada: timestamp("dataEntrada").defaultNow().notNull(),
@@ -359,3 +362,15 @@ export const auditLogs = pgTable("audit_logs", {
 });
 export type AuditLog = typeof auditLogs.$inferSelect;
 export type InsertAuditLog = typeof auditLogs.$inferInsert;
+
+// ─── Accessory Units (unidades individuais de acessório) ──────────────────────
+export const accessoryUnits = pgTable("accessory_units", {
+  id: serial("id").primaryKey(),
+  accessoryId: integer("accessoryId").notNull(),
+  serialNumber: varchar("serialNumber", { length: 50 }),
+  status: accessoryUnitStatusEnum("status").default("disponivel").notNull(),
+  observacao: text("observacao"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type AccessoryUnit = typeof accessoryUnits.$inferSelect;
+export type InsertAccessoryUnit = typeof accessoryUnits.$inferInsert;
