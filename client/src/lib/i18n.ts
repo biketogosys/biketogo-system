@@ -175,6 +175,14 @@ export const translations = {
     mustSelectTime: "Selecione o horário de entrega",
     mustSelectPayment: "Selecione a forma de pagamento",
     mustUploadDocs: "Envie as fotos do documento",
+    // Cart (multi-bike)
+    addToCart: "Adicionar ao carrinho",
+    removeFromCart: "Remover",
+    cartTitle: "Carrinho de Bikes",
+    cartEmpty: "Nenhuma bike no carrinho. Selecione uma bike, tamanho e datas acima.",
+    cartItemSummary: "bike(s) no carrinho",
+    cartTotal: "Total do Carrinho",
+    mustAddToCart: "Adicione pelo menos uma bike ao carrinho",
   },
 
   en: {
@@ -330,6 +338,14 @@ export const translations = {
     mustSelectTime: "Please select a delivery time",
     mustSelectPayment: "Please select a payment method",
     mustUploadDocs: "Please upload document photos",
+    // Cart (multi-bike)
+    addToCart: "Add to cart",
+    removeFromCart: "Remove",
+    cartTitle: "Bike Cart",
+    cartEmpty: "No bikes in cart. Select a bike, size and dates above.",
+    cartItemSummary: "bike(s) in cart",
+    cartTotal: "Cart Total",
+    mustAddToCart: "Add at least one bike to the cart",
   },
 
   es: {
@@ -485,6 +501,14 @@ export const translations = {
     mustSelectTime: "Selecciona la hora de entrega",
     mustSelectPayment: "Selecciona una forma de pago",
     mustUploadDocs: "Sube las fotos del documento",
+    // Cart (multi-bike)
+    addToCart: "Agregar al carrito",
+    removeFromCart: "Quitar",
+    cartTitle: "Carrito de Bicis",
+    cartEmpty: "Ninguna bici en el carrito. Selecciona una bici, talla y fechas arriba.",
+    cartItemSummary: "bici(s) en el carrito",
+    cartTotal: "Total del Carrito",
+    mustAddToCart: "Agrega al menos una bici al carrito",
   },
 } as const;
 

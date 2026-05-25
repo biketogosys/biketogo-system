@@ -836,7 +836,7 @@ const rentalsRouter = router({
     .input(z.object({
       clientId: z.number().optional(),
       bikeId: z.number().optional(),
-      status: z.enum(["active", "returned", "overdue", "cancelled"]).optional(),
+      status: z.enum(["pending", "active", "returned", "overdue", "cancelled"]).optional(),
       page: z.number().min(1).default(1),
       limit: z.number().min(1).max(100).default(20),
     }))
@@ -920,7 +920,7 @@ const rentalsRouter = router({
       discountPercent: z.string().optional(),
       paymentMethod: z.enum(["pix", "credit_card", "debit_card", "cash", "stripe", "other"]).optional(),
       paymentStatus: z.enum(["pending", "paid", "partial", "refunded"]).optional(),
-      status: z.enum(["active", "returned", "overdue", "cancelled"]).optional(),
+      status: z.enum(["pending", "active", "returned", "overdue", "cancelled"]).optional(),
       bikeCondition: z.enum(["ok", "damaged"]).optional(),
       returnNotes: z.string().optional(),
       notes: z.string().optional(),
@@ -1020,9 +1020,61 @@ const rentalsRouter = router({
       await createAuditLog({ adminId: (ctx as any).adminUser?.id ?? null, acao: "restaurou_aluguel", tabela: "rentals", registroId: input.id });
       return { success: true };
     }),
-});
 
-// ─── Accessories router ─────────────────────────────────────────────────────
+  // Confirm all pending rentals in a contract
+  confirmAll: adminOnlyProcedure
+    .input(z.object({ contractId: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await (await import("./db")).getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+      const { rentals: rentalsTable } = await import("../drizzle/schema");
+      const { eq: eqOp, and: andOp, isNull: isNullOp } = await import("drizzle-orm");
+      // Get all pending rentals for this contract
+      const pendingRentals = await db.select().from(rentalsTable).where(
+        andOp(eqOp(rentalsTable.contractId, input.contractId), eqOp(rentalsTable.status, "pending"), isNullOp(rentalsTable.deletedAt))
+      );
+      if (pendingRentals.length === 0) throw new TRPCError({ code: "NOT_FOUND", message: "Nenhuma reserva pendente encontrada." });
+      // Confirm each rental: set status to active, mark bike as rented
+      for (const rental of pendingRentals) {
+        await updateRental(rental.id, { status: "active" } as any);
+        await updateBike(rental.bikeId, { status: "rented" });
+      }
+      // Register revenue for the contract total
+      try {
+        const today = new Date().toISOString().split("T")[0];
+        const totalAmt = pendingRentals.reduce((sum, r) => sum + parseFloat(r.totalAmount || "0"), 0);
+        if (totalAmt > 0) {
+          await createRevenue({ categoryId: 1, description: `Contrato #${input.contractId} confirmado`, amount: totalAmt.toFixed(2), date: today } as any);
+        }
+      } catch (err) { console.warn("[confirmAll] Revenue error:", err); }
+      await createAuditLog({ adminId: (ctx as any).adminUser?.id ?? null, acao: "confirmou_reserva", tabela: "contracts", registroId: input.contractId });
+      return { success: true, confirmed: pendingRentals.length };
+    }),
+
+  // Reject all pending rentals in a contract
+  rejectAll: adminOnlyProcedure
+    .input(z.object({ contractId: z.number(), motivo: z.string().optional() }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await (await import("./db")).getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+      const { rentals: rentalsTable, contracts: contractsTable } = await import("../drizzle/schema");
+      const { eq: eqOp, and: andOp, isNull: isNullOp } = await import("drizzle-orm");
+      // Get all pending rentals for this contract
+      const pendingRentals = await db.select().from(rentalsTable).where(
+        andOp(eqOp(rentalsTable.contractId, input.contractId), eqOp(rentalsTable.status, "pending"), isNullOp(rentalsTable.deletedAt))
+      );
+      if (pendingRentals.length === 0) throw new TRPCError({ code: "NOT_FOUND", message: "Nenhuma reserva pendente encontrada." });
+      // Cancel each rental
+      for (const rental of pendingRentals) {
+        await updateRental(rental.id, { status: "cancelled", notes: input.motivo || "Reserva recusada pelo admin" } as any);
+      }
+      // Cancel the contract
+      await db.update(contractsTable).set({ status: "cancelado" }).where(eqOp(contractsTable.id, input.contractId));
+      await createAuditLog({ adminId: (ctx as any).adminUser?.id ?? null, acao: "recusou_reserva", tabela: "contracts", registroId: input.contractId });
+      return { success: true, rejected: pendingRentals.length };
+    }),
+});
+// ─── Accessories routerr ─────────────────────────────────────────────────────
 const accessoriesRouter = router({
   list: adminAuthProcedure
     .input(z.object({
@@ -1484,12 +1536,24 @@ const publicApiRouter = router({
       pedalFreq: z.string().optional(),
       howFound: z.string().optional(),
       lgpdConsent: z.boolean().optional(),
-      // Rental data
-      bikeId: z.number(),
+      // Cart: array of bikes (multi-bike support)
+      cart: z.array(z.object({
+        bikeId: z.number(),
+        bikeSizeId: z.number().optional(),
+        bikeQuantity: z.number().min(1).default(1),
+        startDate: z.string(),
+        endDate: z.string(),
+        deliveryTime: z.string().optional(),
+        totalAmount: z.string().optional(),
+        discountPercent: z.string().optional(),
+        deliveryFee: z.string().optional(),
+      })).optional(),
+      // Legacy single-bike fields (backward compat)
+      bikeId: z.number().optional(),
       bikeSizeId: z.number().optional(),
       bikeQuantity: z.number().min(1).default(1).optional(),
-      startDate: z.string(),
-      endDate: z.string(),
+      startDate: z.string().optional(),
+      endDate: z.string().optional(),
       deliveryTime: z.string().optional(),
       totalAmount: z.string().optional(),
       discountPercent: z.string().optional(),
@@ -1521,10 +1585,26 @@ const publicApiRouter = router({
           throw new TRPCError({ code: "BAD_REQUEST", message: "RG inválido." });
         }
       }
-      // Check bike availability
-      const available = await checkBikeAvailability(input.bikeId, input.startDate, input.endDate);
-      if (!available) {
-        throw new TRPCError({ code: "CONFLICT", message: "Bicicleta não disponível para o período selecionado." });
+
+      // Build cart items (support legacy single-bike or new multi-bike)
+      const cartItems = input.cart && input.cart.length > 0
+        ? input.cart
+        : input.bikeId
+          ? [{
+              bikeId: input.bikeId,
+              bikeSizeId: input.bikeSizeId,
+              bikeQuantity: input.bikeQuantity || 1,
+              startDate: input.startDate!,
+              endDate: input.endDate!,
+              deliveryTime: input.deliveryTime,
+              totalAmount: input.totalAmount,
+              discountPercent: input.discountPercent,
+              deliveryFee: input.deliveryFee,
+            }]
+          : [];
+
+      if (cartItems.length === 0) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Nenhuma bike selecionada." });
       }
 
       // Create client
@@ -1553,34 +1633,59 @@ const publicApiRouter = router({
         status: "lead",
       } as any);
 
-      // Create rental
-      const rentalId = await createRental({
-        clientId,
-        bikeId: input.bikeId,
-        bikeSizeId: input.bikeSizeId || null,
-        quantity: input.bikeQuantity || 1,
-        startDate: sanitizeDateString(input.startDate) as string,
-        endDate: sanitizeDateString(input.endDate),
-        deliveryTime: sanitize(input.deliveryTime) as string | null,
-        totalAmount: sanitizeNumeric(input.totalAmount),
-        discountPercent: sanitizeNumeric(input.discountPercent),
-        deliveryFee: sanitizeNumeric(input.deliveryFee),
-        paymentMethod: input.paymentMethod || null,
-        paymentStatus: "pending",
-        status: "active",
-        source: "shopify",
-        notes: sanitize(input.notes) as string | null,
-      } as any);
+      // Calculate grand total for contract
+      const grandTotal = cartItems.reduce((sum, item) => {
+        const amt = parseFloat(item.totalAmount || "0") || 0;
+        return sum + amt;
+      }, 0);
 
-      // Mark bike as rented
-      await updateBike(input.bikeId, { status: "rented" });
+      // Create contract first (all rentals link to same contract)
+      let contractId: number | null = null;
+      try {
+        const db = await (await import("./db")).getDb();
+        if (db) {
+          const { contracts: contractsSchema } = await import("../drizzle/schema");
+          const [newContract] = await db.insert(contractsSchema).values({
+            clientId,
+            valorTotal: grandTotal > 0 ? grandTotal.toFixed(2) : null,
+            status: "ativo",
+          }).returning({ id: contractsSchema.id });
+          contractId = newContract.id;
+        }
+      } catch (err) {
+        console.warn("[submitReservation] Failed to create contract:", err);
+      }
 
-      // Add accessories
+      // Create one rental per cart item, all with status 'pending'
+      const rentalIds: number[] = [];
+      for (const item of cartItems) {
+        const rentalId = await createRental({
+          clientId,
+          bikeId: item.bikeId,
+          bikeSizeId: item.bikeSizeId || null,
+          quantity: item.bikeQuantity || 1,
+          startDate: sanitizeDateString(item.startDate) as string,
+          endDate: sanitizeDateString(item.endDate),
+          deliveryTime: sanitize(item.deliveryTime) as string | null,
+          totalAmount: sanitizeNumeric(item.totalAmount),
+          discountPercent: sanitizeNumeric(item.discountPercent),
+          deliveryFee: sanitizeNumeric(item.deliveryFee),
+          paymentMethod: input.paymentMethod || null,
+          paymentStatus: "pending",
+          status: "pending",
+          source: "shopify",
+          notes: sanitize(input.notes) as string | null,
+          contractId,
+        } as any);
+        rentalIds.push(rentalId);
+      }
+
+      // Add accessories (linked to first rental for simplicity)
       if (input.accessories && input.accessories.length > 0) {
         for (const acc of input.accessories) {
           const accessory = await getAccessoryById(acc.accessoryId);
           await createRentalAccessory({
-            rentalId,
+            rentalId: rentalIds[0],
             accessoryId: acc.accessoryId,
             quantity: acc.quantity,
             dailyRate: accessory?.dailyRate || null,
@@ -1588,63 +1693,31 @@ const publicApiRouter = router({
         }
       }
 
-      // BUG 4 FIX: Create contract automatically and link rental to it
-      let contractId: number | null = null;
-      try {
-        const db = await (await import("./db")).getDb();
-        if (db) {
-          const { contracts: contractsSchema } = await import("../drizzle/schema");
-          const { rentals: rentalsSchema } = await import("../drizzle/schema");
-          const { eq: eqOp } = await import("drizzle-orm");
-          const [newContract] = await db.insert(contractsSchema).values({
-            clientId,
-            valorTotal: sanitizeNumeric(input.totalAmount),
-            status: "ativo",
-          }).returning({ id: contractsSchema.id });
-          contractId = newContract.id;
-          // Link rental to contract
-          await db.update(rentalsSchema).set({ contractId }).where(eqOp(rentalsSchema.id, rentalId));
-        }
-      } catch (err) {
-        console.warn("[submitReservation] Failed to create contract:", err);
-      }
-
-      // BUG 3 FIX: Register revenue entry for this rental
-      try {
-        const today = new Date().toISOString().split("T")[0];
-        const totalAmt = sanitizeNumeric(input.totalAmount);
-        if (totalAmt && parseFloat(totalAmt) > 0) {
-          await createRevenue({
-            categoryId: 1, // "Alguel" category
-            description: `Reserva #${rentalId} — ${input.name}`,
-            amount: totalAmt,
-            date: today,
-          } as any);
-        }
-      } catch (err) {
-        console.warn("[submitReservation] Failed to create revenue:", err);
-      }
-
       // Notify owner via all channels
       try {
-        const bike = await getBikeById(input.bikeId);
-        const bikeModel = bike?.model || "N/A";
+        const bikeNames: string[] = [];
+        for (const item of cartItems) {
+          const bike = await getBikeById(item.bikeId);
+          bikeNames.push(bike?.model || "N/A");
+        }
+        const bikeSummary = bikeNames.join(", ");
+        const firstItem = cartItems[0];
 
         // 1. Manus built-in notification
         await notifyOwner({
           title: "Nova Reserva pelo Site!",
-          content: `Cliente: ${input.name}\nBike: ${bikeModel}\nPeríodo: ${input.startDate} a ${input.endDate}\nValor: R$ ${input.totalAmount || "N/A"}\nPagamento: ${input.paymentMethod || "N/A"}`,
+          content: `Cliente: ${input.name}\nBikes: ${bikeSummary}\nPeríodo: ${firstItem.startDate} a ${firstItem.endDate}\nValor Total: R$ ${grandTotal.toFixed(2)}\nPagamento: ${input.paymentMethod || "N/A"}\n\n⚠️ Reserva PENDENTE — verificar e confirmar no painel.`,
         });
 
         // 2. WhatsApp notification to owner
         const waMessage = buildOwnerReservationMessage({
           clientName: input.name,
           clientPhone: input.phone,
-          bikeModel,
-          startDate: input.startDate,
-          endDate: input.endDate,
-          deliveryTime: input.deliveryTime,
-          totalAmount: input.totalAmount,
+          bikeModel: bikeSummary,
+          startDate: firstItem.startDate,
+          endDate: firstItem.endDate,
+          deliveryTime: firstItem.deliveryTime,
+          totalAmount: grandTotal.toFixed(2),
         });
         await sendWhatsApp({ text: waMessage });
 
@@ -1652,15 +1725,15 @@ const publicApiRouter = router({
         if (input.email) {
           const emailHtml = buildReservationEmailHtml({
             clientName: input.name,
-            bikeModel,
-            startDate: input.startDate,
-            endDate: input.endDate,
-            deliveryTime: input.deliveryTime,
-            totalAmount: input.totalAmount,
+            bikeModel: bikeSummary,
+            startDate: firstItem.startDate,
+            endDate: firstItem.endDate,
+            deliveryTime: firstItem.deliveryTime,
+            totalAmount: grandTotal.toFixed(2),
           });
           await sendEmail({
             to: input.email,
-            subject: `Reserva Confirmada — ${bikeModel} | Bike To Go`,
+            subject: `Reserva Recebida — ${bikeSummary} | Bike To Go`,
             html: emailHtml,
           });
         }
@@ -1668,7 +1741,7 @@ const publicApiRouter = router({
         console.warn("[Notification] Error sending notifications:", err);
       }
 
-      return { clientId, rentalId, success: true };
+      return { clientId, rentalIds, contractId, success: true };
     }),
 
   // ─── Create Stripe Checkout Session ────────────────────────────────────────

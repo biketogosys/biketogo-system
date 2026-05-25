@@ -6,9 +6,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
-type RentalStatus = "active" | "returned" | "overdue" | "cancelled";
+type RentalStatus = "pending" | "active" | "returned" | "overdue" | "cancelled";
 
 const rentalStatusConfig: Record<RentalStatus, { cls: string; label: string }> = {
+  pending: { cls: "badge-lead", label: "Pendente" },
   active: { cls: "badge-rented", label: "Ativo" },
   returned: { cls: "badge-available", label: "Devolvido" },
   overdue: { cls: "badge-blocked", label: "Atrasado" },
@@ -786,7 +787,7 @@ export default function Rentals() {
           />
         </div>
         <div className="flex gap-2 flex-wrap">
-          {([undefined, "active", "returned", "overdue", "cancelled"] as (RentalStatus | undefined)[]).map((s) => (
+          {([undefined, "pending", "active", "returned", "overdue", "cancelled"] as (RentalStatus | undefined)[]).map((s) => (
             <button
               key={String(s)}
               onClick={() => setStatusFilter(s)}
@@ -942,6 +943,14 @@ export default function Rentals() {
                           Devolver
                         </button>
                       )}
+                      {rental.status === "pending" && rental.contractId && (
+                        <a
+                          href={`/contratos?contractId=${rental.contractId}`}
+                          className="text-xs text-blue-400 hover:underline"
+                        >
+                          Ver contrato
+                        </a>
+                      )}
                       <button
                         onClick={() => {
                           if (confirm("Remover este aluguél?"))
@@ -992,6 +1001,14 @@ export default function Rentals() {
                     >
                       Registrar devolução
                     </button>
+                  )}
+                  {rental.status === "pending" && rental.contractId && (
+                    <a
+                      href={`/contratos?contractId=${rental.contractId}`}
+                      className="text-xs text-blue-400 hover:underline"
+                    >
+                      Ver contrato
+                    </a>
                   )}
                   <button
                     onClick={() => {

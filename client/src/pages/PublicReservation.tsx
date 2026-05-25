@@ -12,7 +12,7 @@
  */
 import { useState, useMemo, useRef, useCallback } from "react";
 import { trpc } from "@/lib/trpc";
-import { Loader2, ChevronRight, ChevronLeft, Check, Upload, X, Sun, Moon, Bike } from "lucide-react";
+import { Loader2, ChevronRight, ChevronLeft, Check, Upload, X, Sun, Moon, Bike, ShoppingCart, Trash2, Plus } from "lucide-react";
 import { translations, languages, type Language } from "@/lib/i18n";
 import { maskCPF, maskRG, maskCEP, maskPhone, maskDate, isValidCPF } from "@/hooks/useMask";
 
@@ -177,7 +177,21 @@ export default function PublicReservation() {
   const frontRef = useRef<HTMLInputElement>(null);
   const backRef = useRef<HTMLInputElement>(null);
 
-  // Step 4 — Bike + Período + Acessórios
+  // Step 4 — Bike + Período + Acessórios (carrinho multi-bike)
+  type CartItem = {
+    bikeId: number;
+    bikeSizeId: number | null;
+    quantity: number;
+    startDate: string;
+    endDate: string;
+    deliveryTime: string;
+    bikeModel: string;
+    bikeBrand: string;
+    tamanho: string;
+    dailyRate: number;
+    numDays: number;
+  };
+  const [cart, setCart] = useState<CartItem[]>([]);
   const [selectedBikeId, setSelectedBikeId] = useState<number | null>(null);
   const [selectedBikeSizeId, setSelectedBikeSizeId] = useState<number | null>(null);
   const [bikeQuantity, setBikeQuantity] = useState(1);
@@ -219,7 +233,7 @@ export default function PublicReservation() {
   // ─── Active accessory category (default to first) ────────────────────────────
   const effectiveAccCategory = activeAccCategory ?? (accByCategory[0]?.category ?? null);
 
-  // ─── Pricing ─────────────────────────────────────────────────────────────────
+  // ─── Pricing ─────────────────────────────────────────────────────────────────────
   const selectedBike = bikes.find(b => b.id === selectedBikeId);
   const numDays = startDate && endDate ? daysBetween(startDate, endDate) : 0;
   const dailyRate = parseFloat(selectedBike?.dailyRate || "0");
@@ -233,15 +247,58 @@ export default function PublicReservation() {
   const discountAmount = bikeSubtotal * (applicableDiscount / 100);
   const accTotal = useMemo(() => {
     let total = 0;
+    const refDays = cart.length > 0 ? Math.max(...cart.map(c => c.numDays), 1) : numDays;
     for (const [id, qty] of Object.entries(selectedAccessories)) {
       if ((qty as number) <= 0) continue;
       const acc = accessories.find((a: any) => a.id === Number(id));
-      if (acc) total += parseFloat(acc.dailyRate || "0") * numDays * (qty as number);
+      if (acc) total += parseFloat(acc.dailyRate || "0") * refDays * (qty as number);
     }
     return total;
-  }, [selectedAccessories, accessories, numDays]);
-  const grandTotal = bikeSubtotal - discountAmount + accTotal + (selectedBikeId ? deliveryFee : 0);
+  }, [selectedAccessories, accessories, numDays, cart]);
 
+  // Cart total calculation
+  const cartSubtotal = useMemo(() => {
+    return cart.reduce((sum, item) => sum + item.dailyRate * item.numDays * item.quantity, 0);
+  }, [cart]);
+  const grandTotal = cart.length > 0
+    ? cartSubtotal + accTotal + deliveryFee
+    : bikeSubtotal - discountAmount + accTotal + (selectedBikeId ? deliveryFee : 0);
+
+  // Add to cart handler
+  const handleAddToCart = () => {
+    if (!selectedBikeId || !selectedBikeSizeId || !startDate || !endDate || !deliveryTime) return;
+    const bike = bikes.find((b: any) => b.id === selectedBikeId);
+    const sizeObj = bikeSizesRaw?.find((s: any) => s.id === selectedBikeSizeId);
+    if (!bike || !sizeObj) return;
+    const days = daysBetween(startDate, endDate);
+    if (days <= 0) return;
+    const newItem: CartItem = {
+      bikeId: selectedBikeId,
+      bikeSizeId: selectedBikeSizeId,
+      quantity: bikeQuantity,
+      startDate,
+      endDate,
+      deliveryTime,
+      bikeModel: bike.model,
+      bikeBrand: bike.brand || "",
+      tamanho: sizeObj.tamanho,
+      dailyRate: parseFloat(bike.dailyRate || "0"),
+      numDays: days,
+    };
+    setCart(prev => [...prev, newItem]);
+    // Reset selection for next item
+    setSelectedBikeId(null);
+    setSelectedBikeSizeId(null);
+    setBikeQuantity(1);
+    setStartDate("");
+    setEndDate("");
+    setDeliveryTime("");
+    setErrors(prev => { const n = { ...prev }; delete n.bike; delete n.bikeSize; delete n.dates; delete n.deliveryTime; delete n.cart; return n; });
+  };
+
+  const handleRemoveFromCart = (index: number) => {
+    setCart(prev => prev.filter((_, i) => i !== index));
+  };
   // ─── CEP autocomplete ─────────────────────────────────────────────────────────
   const fetchCEP = useCallback(async (cep: string) => {
     const clean = cep.replace(/\D/g, "");
@@ -307,11 +364,16 @@ export default function PublicReservation() {
       if (!docBackBase64) errs.docBack = t.required;
     }
     if (s === 4) {
-      if (!selectedBikeId) errs.bike = t.mustSelectBike;
-      if (selectedBikeId && !selectedBikeSizeId) errs.bikeSize = "Selecione um tamanho de bicicleta";
-      if (!startDate || !endDate) errs.dates = t.mustSelectDates;
-      if (!deliveryTime) errs.deliveryTime = t.mustSelectTime;
-      if (selectedBikeId && startDate && endDate && !isAvailable) errs.bike = t.bikeUnavailable;
+      if (cart.length === 0) {
+        // Se não tem nada no carrinho, precisa ter uma seleção ativa para adicionar
+        if (!selectedBikeId) errs.cart = t.mustAddToCart;
+        else {
+          if (!selectedBikeSizeId) errs.bikeSize = "Selecione um tamanho de bicicleta";
+          if (!startDate || !endDate) errs.dates = t.mustSelectDates;
+          if (!deliveryTime) errs.deliveryTime = t.mustSelectTime;
+          if (selectedBikeId && startDate && endDate && !isAvailable) errs.bike = t.bikeUnavailable;
+        }
+      }
     }
     if (s === 5) {
       if (!paymentMethod) errs.payment = t.mustSelectPayment;
@@ -321,7 +383,16 @@ export default function PublicReservation() {
     return Object.keys(errs).length === 0;
   };
 
-  const nextStep = () => { if (validate(step)) setStep(s => s + 1); };
+  const nextStep = () => {
+    // Se estiver no step 4 e tiver seleção completa mas não adicionou ao carrinho, adicionar automaticamente
+    if (step === 4 && cart.length === 0 && selectedBikeId && selectedBikeSizeId && startDate && endDate && deliveryTime) {
+      handleAddToCart();
+      // Após adicionar, validar novamente
+      setTimeout(() => setStep(s => s + 1), 0);
+      return;
+    }
+    if (validate(step)) setStep(s => s + 1);
+  };
   const prevStep = () => setStep(s => s - 1);
 
   // ─── Submit ───────────────────────────────────────────────────────────────────
@@ -332,13 +403,35 @@ export default function PublicReservation() {
       const rentalAccessories = Object.entries(selectedAccessories)
         .filter(([, qty]) => (qty as number) > 0)
         .map(([id, qty]) => ({ accessoryId: Number(id), quantity: qty as number }));
+
+      // Build cart for submission
+      const cartForSubmit = cart.length > 0
+        ? cart.map(item => ({
+            bikeId: item.bikeId,
+            bikeSizeId: item.bikeSizeId ?? undefined,
+            bikeQuantity: item.quantity,
+            startDate: item.startDate,
+            endDate: item.endDate,
+            deliveryTime: item.deliveryTime,
+            totalAmount: String(item.dailyRate * item.numDays * item.quantity),
+            deliveryFee: String(deliveryFee / (cart.length || 1)),
+          }))
+        : undefined;
+
       const result = await submitMutation.mutateAsync({
         name, cpf: isBrazilian ? cpf : "", rg: isBrazilian ? rg : passport, docOrigin, birthDate, gender, height: String(parseFloat(height) || 0),
         pedalFreq, howFound: origin, phone, email, instagram, accommodation,
         zipCode, street, number, complement, neighborhood, city, state: stateUF, country,
         lgpdConsent,
-        bikeId: selectedBikeId!, bikeSizeId: selectedBikeSizeId ?? undefined, bikeQuantity, startDate, endDate,
-        deliveryTime,
+        // Multi-bike cart
+        cart: cartForSubmit,
+        // Legacy single-bike fallback (when cart is empty but shouldn't be)
+        bikeId: cart.length === 0 ? selectedBikeId! : undefined,
+        bikeSizeId: cart.length === 0 ? (selectedBikeSizeId ?? undefined) : undefined,
+        bikeQuantity: cart.length === 0 ? bikeQuantity : undefined,
+        startDate: cart.length === 0 ? startDate : undefined,
+        endDate: cart.length === 0 ? endDate : undefined,
+        deliveryTime: cart.length === 0 ? deliveryTime : undefined,
         deliveryFee: String(deliveryFee),
         paymentMethod: paymentMethod === "card" ? "stripe" : paymentMethod as "pix" | "cash" | "stripe",
         totalAmount: String(grandTotal), accessories: rentalAccessories,
@@ -358,10 +451,11 @@ export default function PublicReservation() {
         }
       }
       void docFrontUrl; void docBackUrl;
-      if (paymentMethod !== "cash" && result.clientId && result.rentalId) {
+      const firstRentalId = result.rentalIds?.[0];
+      if (paymentMethod !== "cash" && result.clientId && firstRentalId) {
         try {
           const checkout = await checkoutMutation.mutateAsync({
-            rentalId: result.rentalId, clientId: result.clientId,
+            rentalId: firstRentalId, clientId: result.clientId,
             clientName: name,
             clientEmail: email || undefined,
             bikeModel: selectedBike?.model || "N/A",
@@ -892,7 +986,70 @@ export default function PublicReservation() {
                   {TIMES.map(time => <option key={time} value={time}>{time}</option>)}
                 </select>
               </Field>
+
+              {/* Botão Adicionar ao Carrinho */}
+              {selectedBikeId && selectedBikeSizeId && startDate && endDate && numDays > 0 && deliveryTime && (
+                <button
+                  type="button"
+                  onClick={handleAddToCart}
+                  className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl font-semibold text-sm transition-all bg-[#C8920A] text-[#0a0a0f] hover:bg-[#d9a020]"
+                >
+                  <Plus className="w-4 h-4" />
+                  {t.addToCart}
+                </button>
+              )}
             </div>
+
+            {/* Carrinho de bikes */}
+            {cart.length > 0 && (
+              <div className={`${cardBg} border rounded-2xl p-6 space-y-4`}>
+                <div className={`flex items-center gap-2 pb-3 border-b ${sectionBorder}`}>
+                  <ShoppingCart className="w-4 h-4 text-[#C8920A]" />
+                  <span className="text-[#C8920A] text-sm font-bold uppercase tracking-widest">{t.cartTitle}</span>
+                  <span className={`ml-auto text-xs font-semibold px-2 py-0.5 rounded-full bg-[#C8920A]/20 text-[#C8920A]`}>
+                    {cart.length} {t.cartItemSummary}
+                  </span>
+                </div>
+                {errors.cart && <p className="text-red-400 text-sm">{errors.cart}</p>}
+                <div className="space-y-3">
+                  {cart.map((item, idx) => (
+                    <div key={idx} className={`flex items-center justify-between p-3 border rounded-lg ${isDark ? "border-[#2a2a3a] bg-[#141420]" : "border-gray-200 bg-gray-50"}`}>
+                      <div className="min-w-0 flex-1">
+                        <p className={`text-sm font-medium ${textPrimary}`}>{item.bikeModel}</p>
+                        <p className={`text-xs ${textMuted}`}>
+                          {item.tamanho} · {item.quantity}x · {item.numDays} {item.numDays === 1 ? t.day : t.days}
+                        </p>
+                        <p className={`text-xs ${textMuted}`}>
+                          {item.startDate} → {item.endDate} · {item.deliveryTime}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-3 flex-shrink-0">
+                        <span className="text-sm font-bold text-[#C8920A]">
+                          R$ {formatCurrency(item.dailyRate * item.numDays * item.quantity)}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveFromCart(idx)}
+                          className="w-7 h-7 rounded-full flex items-center justify-center text-red-400 hover:bg-red-500/20 transition-all"
+                          title={t.removeFromCart}
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div className={`flex justify-between font-bold text-sm pt-2 border-t ${sectionBorder}`}>
+                  <span className={textPrimary}>{t.cartTotal}</span>
+                  <span className="text-[#C8920A]">R$ {formatCurrency(cartSubtotal)}</span>
+                </div>
+              </div>
+            )}
+
+            {/* Erro de carrinho vazio */}
+            {errors.cart && cart.length === 0 && (
+              <p className="text-red-400 text-sm text-center">{errors.cart}</p>
+            )}
 
             {/* Accessories — abas por categoria */}
             {accByCategory.length > 0 && (
@@ -968,19 +1125,32 @@ export default function PublicReservation() {
             )}
 
             {/* Price summary */}
-            {selectedBikeId && numDays > 0 && (
+            {(cart.length > 0 || (selectedBikeId && numDays > 0)) && (
               <div className={`${summaryBg} border rounded-2xl p-5`}>
                 <p className={`text-sm font-bold ${textPrimary} mb-3`}>{t.summaryTitle}</p>
                 <div className="space-y-2 text-sm">
-                  <div className="flex justify-between">
-                    <span className={textSecondary}>{t.summaryBike} ({numDays} {numDays === 1 ? t.day : t.days})</span>
-                    <span className={textPrimary}>R$ {formatCurrency(bikeSubtotal)}</span>
-                  </div>
-                  {discountAmount > 0 && (
-                    <div className="flex justify-between text-green-400">
-                      <span>{t.summaryDiscount} ({applicableDiscount}%)</span>
-                      <span>−R$ {formatCurrency(discountAmount)}</span>
-                    </div>
+                  {cart.length > 0 ? (
+                    <>
+                      {cart.map((item, idx) => (
+                        <div key={idx} className="flex justify-between">
+                          <span className={textSecondary}>{item.bikeModel} ({item.numDays} {item.numDays === 1 ? t.day : t.days} × {item.quantity})</span>
+                          <span className={textPrimary}>R$ {formatCurrency(item.dailyRate * item.numDays * item.quantity)}</span>
+                        </div>
+                      ))}
+                    </>
+                  ) : (
+                    <>
+                      <div className="flex justify-between">
+                        <span className={textSecondary}>{t.summaryBike} ({numDays} {numDays === 1 ? t.day : t.days})</span>
+                        <span className={textPrimary}>R$ {formatCurrency(bikeSubtotal)}</span>
+                      </div>
+                      {discountAmount > 0 && (
+                        <div className="flex justify-between text-green-400">
+                          <span>{t.summaryDiscount} ({applicableDiscount}%)</span>
+                          <span>−R$ {formatCurrency(discountAmount)}</span>
+                        </div>
+                      )}
+                    </>
                   )}
                   {accTotal > 0 && (
                     <div className="flex justify-between">

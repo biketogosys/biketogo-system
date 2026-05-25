@@ -1,5 +1,5 @@
 import { trpc } from "@/lib/trpc";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { toast } from "sonner";
 import {
   FileText,
@@ -43,13 +43,14 @@ import {
 } from "@/components/ui/table";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
-type ContractStatus = "ativo" | "parcialmente_devolvido" | "encerrado";
+type ContractStatus = "pendente" | "ativo" | "parcialmente_devolvido" | "encerrado" | "cancelado";
 type AccessoryReturnStatus = "ok" | "danificado" | "perdido" | "roubado";
 
 const contractStatusConfig: Record<
   ContractStatus,
   { label: string; variant: "default" | "secondary" | "destructive" | "outline"; cls: string }
 > = {
+  pendente: { label: "Pendente", variant: "secondary", cls: "bg-yellow-100 text-yellow-800 border-yellow-200" },
   ativo: { label: "Ativo", variant: "default", cls: "bg-green-100 text-green-800 border-green-200" },
   parcialmente_devolvido: {
     label: "Parcialmente Devolvido",
@@ -57,6 +58,7 @@ const contractStatusConfig: Record<
     cls: "bg-amber-100 text-amber-800 border-amber-200",
   },
   encerrado: { label: "Encerrado", variant: "outline", cls: "bg-gray-100 text-gray-600 border-gray-200" },
+  cancelado: { label: "Cancelado", variant: "destructive", cls: "bg-red-100 text-red-800 border-red-200" },
 };
 
 const accessoryStatusConfig: Record<
@@ -74,6 +76,7 @@ const accessoryStatusConfig: Record<
 };
 
 const rentalStatusLabels: Record<string, string> = {
+  pending: "Pendente",
   active: "Ativo",
   returned: "Devolvido",
   overdue: "Atrasado",
@@ -374,6 +377,24 @@ function ContractDetail({
     onError: (e) => toast.error("Erro: " + e.message),
   });
 
+  const confirmAllMutation = trpc.rentals.confirmAll.useMutation({
+    onSuccess: (res) => {
+      toast.success(`${res.confirmed} aluguéis confirmados!`);
+      utils.contracts.getById.invalidate({ id: contractId });
+      utils.contracts.list.invalidate();
+    },
+    onError: (e) => toast.error("Erro ao confirmar: " + e.message),
+  });
+
+  const rejectAllMutation = trpc.rentals.rejectAll.useMutation({
+    onSuccess: (res) => {
+      toast.success(`${res.rejected} aluguéis recusados.`);
+      utils.contracts.getById.invalidate({ id: contractId });
+      utils.contracts.list.invalidate();
+    },
+    onError: (e) => toast.error("Erro ao recusar: " + e.message),
+  });
+
   if (isLoading) {
     return (
       <div className="flex justify-center items-center h-64">
@@ -408,8 +429,33 @@ function ContractDetail({
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <ContractStatusBadge status={data.status as ContractStatus} />
+          {(data.status === "pendente" || data.rentals?.some((r: any) => r.status === "pending")) && (
+            <>
+              <Button
+                size="sm"
+                className="bg-green-600 hover:bg-green-700 text-white"
+                onClick={() => confirmAllMutation.mutate({ contractId })}
+                disabled={confirmAllMutation.isPending}
+              >
+                <CheckCircle2 className="h-4 w-4 mr-1" />
+                {confirmAllMutation.isPending ? "Confirmando..." : "Confirmar Reserva"}
+              </Button>
+              <Button
+                size="sm"
+                variant="destructive"
+                onClick={() => {
+                  if (confirm("Tem certeza que deseja recusar esta reserva? Todos os aluguéis pendentes serão cancelados."))
+                    rejectAllMutation.mutate({ contractId });
+                }}
+                disabled={rejectAllMutation.isPending}
+              >
+                <XCircle className="h-4 w-4 mr-1" />
+                {rejectAllMutation.isPending ? "Recusando..." : "Recusar Reserva"}
+              </Button>
+            </>
+          )}
           <Button
             variant="outline"
             size="sm"
@@ -419,7 +465,7 @@ function ContractDetail({
             <RefreshCw className={`h-4 w-4 mr-1 ${recalcMutation.isPending ? "animate-spin" : ""}`} />
             Recalcular
           </Button>
-          {data.status !== "encerrado" && (
+          {data.status !== "encerrado" && data.status !== "cancelado" && data.status !== "pendente" && (
             <Button
               size="sm"
               className="bg-green-600 hover:bg-green-700 text-white"
@@ -575,6 +621,17 @@ export default function Contracts() {
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [page, setPage] = useState(1);
   const limit = 20;
+
+  // Deep-link: open contract from ?contractId=N
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const cid = params.get("contractId");
+    if (cid) {
+      setSelectedId(Number(cid));
+      // Clean URL without reload
+      window.history.replaceState({}, "", window.location.pathname);
+    }
+  }, []);
 
   const { data, isLoading, refetch } = trpc.contracts.list.useQuery({
     limit,
