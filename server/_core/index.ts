@@ -8,7 +8,7 @@ import { registerOAuthRoutes } from "./oauth";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
-import { createClient, updateRental, getDb, getSetting, createAuditLog } from "../db";
+import { createClient, updateRental, getDb, getSetting, createAuditLog, getBikeById } from "../db";
 import { clients as clientsTable, rentals as rentalsTable } from "../../drizzle/schema";
 import { isNotNull, lt, and as andOp } from "drizzle-orm";
 import { notifyOwner } from "./notification";
@@ -124,6 +124,72 @@ async function startServer() {
       } catch (error) {
         console.error("[Shopify Precadastro]", error);
         res.status(500).json({ success: false, error: "Erro ao salvar cadastro." });
+      }
+    }
+  );
+
+  // ─── Public endpoint: Shopify bike availability ─────────────────────────
+  app.get(
+    "/api/shopify/bike-availability/:bikeId",
+    shopifyCorsMiddleware,
+    async (req, res) => {
+      try {
+        const bikeId = parseInt(req.params.bikeId);
+        if (!bikeId || isNaN(bikeId)) return res.status(400).json({ error: "bikeId inválido" });
+
+        const db = await getDb();
+        if (!db) return res.status(503).json({ error: "DB unavailable" });
+
+        const bike = await getBikeById(bikeId);
+        if (!bike) return res.status(404).json({ error: "Bike não encontrada" });
+
+        // Se em manutenção, retornar imediatamente
+        if (bike.status === "maintenance") {
+          return res.json({ disponivel: false, status: "manutencao", tamanhos: [] });
+        }
+
+        // Buscar tamanhos com disponibilidade real
+        const { bikeSizes: bs, rentals: rt } = await import("../../drizzle/schema");
+        const { eq, inArray, isNull: isNullOp, and: andOp2 } = await import("drizzle-orm");
+
+        const allSizes = await db.select().from(bs).where(eq(bs.bikeId, bikeId));
+
+        const tamanhos = await Promise.all(
+          allSizes.map(async (size) => {
+            const activeRentals = await db
+              .select({ id: rt.id })
+              .from(rt)
+              .where(andOp2(
+                eq(rt.bikeSizeId, size.id),
+                inArray(rt.status, ["active", "overdue"]),
+                isNullOp(rt.deletedAt),
+              ));
+            const disponivel = Math.max(0, (size.quantidadeDisponivel ?? 0) - activeRentals.length);
+            return { tamanho: size.tamanho, quantidadeDisponivel: disponivel };
+          })
+        );
+
+        let statusBike: "disponivel" | "parcialmente" | "indisponivel" | "manutencao";
+        if (tamanhos.length === 0) {
+          // Sem tamanhos cadastrados — usar status da bike diretamente
+          statusBike = bike.status === "available" ? "disponivel" : "indisponivel";
+        } else {
+          const totalDisp = tamanhos.reduce((s, t) => s + t.quantidadeDisponivel, 0);
+          const totalTotal = tamanhos.length;
+          const dispCount = tamanhos.filter((t) => t.quantidadeDisponivel > 0).length;
+          if (totalDisp === 0) statusBike = "indisponivel";
+          else if (dispCount < totalTotal) statusBike = "parcialmente";
+          else statusBike = "disponivel";
+        }
+
+        return res.json({
+          disponivel: statusBike === "disponivel" || statusBike === "parcialmente",
+          status: statusBike,
+          tamanhos,
+        });
+      } catch (error) {
+        console.error("[Shopify Availability]", error);
+        res.status(500).json({ error: "Erro interno" });
       }
     }
   );

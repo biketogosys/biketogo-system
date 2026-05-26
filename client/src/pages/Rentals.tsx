@@ -309,7 +309,7 @@ function NewRentalDialog({ onClose, onSuccess }: { onClose: () => void; onSucces
   // Auto-fill daily rate from selected bike
   const selectedBike = useMemo(() => {
     if (!form.bikeId) return null;
-    return (bikesData ?? []).find((b: any) => b.id === parseInt(form.bikeId));
+    return (bikesData?.data ?? []).find((b: any) => b.id === parseInt(form.bikeId));
   }, [form.bikeId, bikesData]);
 
   // Discount rules for selected bike
@@ -359,7 +359,7 @@ function NewRentalDialog({ onClose, onSuccess }: { onClose: () => void; onSucces
 
     const accessoryNote = accessoryList.length > 0
       ? `Acessórios: ${accessoryList.map((a) => {
-          const acc = (accessoriesData ?? []).find((x: any) => x.id === a.id);
+          const acc = (accessoriesData?.data ?? []).find((x: any) => x.id === a.id);
           return `${acc?.name ?? `#${a.id}`} (x${a.quantity})`;
         }).join(", ")}`
       : "";
@@ -404,8 +404,8 @@ function NewRentalDialog({ onClose, onSuccess }: { onClose: () => void; onSucces
     setSelectedAccessories((prev) => ({ ...prev, [id]: qty }));
   }
 
-  const bikes = bikesData ?? [];
-  const accessories = accessoriesData ?? [];
+  const bikes = bikesData?.data ?? [];
+  const accessories = accessoriesData?.data ?? [];
   const selectedCount = Object.keys(selectedAccessories).length;
 
   return (
@@ -727,7 +727,7 @@ export default function Rentals() {
   const { data: allClients } = trpc.clients.list.useQuery({ limit: 100, page: 1 });
   const { data: allBikes } = trpc.bikes.list.useQuery({});
   const clientMap = Object.fromEntries((allClients?.items ?? []).map((c: any) => [c.id, c.name]));
-  const bikeMap = Object.fromEntries((allBikes ?? []).map((b: any) => [b.id, `${b.model} #${b.serialNumber}`]));
+  const bikeMap = Object.fromEntries((allBikes?.data ?? []).map((b: any) => [b.id, `${b.model} #${b.serialNumber}`]));
 
   const deleteMutation = trpc.rentals.delete.useMutation({
     onSuccess: () => { toast.success("Aluguel arquivado."); utils.rentals.list.invalidate(); },

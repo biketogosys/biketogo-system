@@ -1,14 +1,58 @@
+import { useState, useMemo } from "react";
 import { trpc } from "@/lib/trpc";
 import { Link } from "wouter";
 import {
   Users, Bike, FileText, DollarSign, Loader2,
   TrendingUp, AlertCircle, ArrowRight, Wrench,
-  TrendingDown, Minus,
+  TrendingDown, Minus, ChevronDown,
 } from "lucide-react";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, Legend,
 } from "recharts";
+
+// ─── Tipos de período ─────────────────────────────────────────────────────────
+type PeriodKey = "mes_atual" | "mes_anterior" | "ultimos_3_meses" | "este_ano";
+
+interface PeriodOption {
+  key: PeriodKey;
+  label: string;
+}
+
+const PERIOD_OPTIONS: PeriodOption[] = [
+  { key: "mes_atual", label: "Mês atual" },
+  { key: "mes_anterior", label: "Mês anterior" },
+  { key: "ultimos_3_meses", label: "Últimos 3 meses" },
+  { key: "este_ano", label: "Este ano" },
+];
+
+function getPeriodDates(key: PeriodKey): { startDate: string; endDate: string } {
+  const now = new Date();
+  const fmt = (d: Date) => d.toISOString().split("T")[0];
+
+  switch (key) {
+    case "mes_atual": {
+      const start = new Date(now.getFullYear(), now.getMonth(), 1);
+      const end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+      return { startDate: fmt(start), endDate: fmt(end) };
+    }
+    case "mes_anterior": {
+      const start = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      const end = new Date(now.getFullYear(), now.getMonth(), 0);
+      return { startDate: fmt(start), endDate: fmt(end) };
+    }
+    case "ultimos_3_meses": {
+      const start = new Date(now.getFullYear(), now.getMonth() - 2, 1);
+      const end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+      return { startDate: fmt(start), endDate: fmt(end) };
+    }
+    case "este_ano": {
+      const start = new Date(now.getFullYear(), 0, 1);
+      const end = new Date(now.getFullYear(), 11, 31);
+      return { startDate: fmt(start), endDate: fmt(end) };
+    }
+  }
+}
 
 // ─── Stat Card ────────────────────────────────────────────────────────────────
 function StatCard({
@@ -79,8 +123,14 @@ function GroupedTooltip({ active, payload, label }: any) {
 
 // ─── Dashboard ────────────────────────────────────────────────────────────────
 export default function Dashboard() {
-  const { data, isLoading } = trpc.dashboard.summary.useQuery();
-  const { data: weeklyData, isLoading: weeklyLoading } = trpc.dashboard.weeklyRevenue.useQuery();
+  const [period, setPeriod] = useState<PeriodKey>("mes_atual");
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+
+  const periodDates = useMemo(() => getPeriodDates(period), [period]);
+  const periodLabel = PERIOD_OPTIONS.find((o) => o.key === period)?.label ?? "Mês atual";
+
+  const { data, isLoading } = trpc.dashboard.summary.useQuery(periodDates);
+  const { data: weeklyData, isLoading: weeklyLoading } = trpc.dashboard.weeklyRevenue.useQuery(periodDates);
 
   if (isLoading) {
     return (
@@ -108,13 +158,39 @@ export default function Dashboard() {
   return (
     <div className="p-4 md:p-6 max-w-6xl mx-auto">
       {/* Header */}
-      <div className="mb-5 md:mb-8">
-        <h1 className="text-xl md:text-2xl font-bold text-foreground" style={{ fontFamily: "'Montserrat', sans-serif" }}>
-          Dashboard
-        </h1>
-        <p className="text-xs md:text-sm text-muted-foreground mt-1">
-          Visão geral do sistema — Bike To Go Floripa
-        </p>
+      <div className="mb-5 md:mb-8 flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-xl md:text-2xl font-bold text-foreground" style={{ fontFamily: "'Montserrat', sans-serif" }}>
+            Dashboard
+          </h1>
+          <p className="text-xs md:text-sm text-muted-foreground mt-1">
+            Visão geral do sistema — Bike To Go Floripa
+          </p>
+        </div>
+
+        {/* Period dropdown */}
+        <div className="relative">
+          <button
+            onClick={() => setDropdownOpen((v) => !v)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border bg-card text-xs font-medium text-foreground hover:border-primary/40 transition-colors"
+          >
+            {periodLabel}
+            <ChevronDown className={`w-3.5 h-3.5 text-muted-foreground transition-transform ${dropdownOpen ? "rotate-180" : ""}`} />
+          </button>
+          {dropdownOpen && (
+            <div className="absolute right-0 top-full mt-1 z-20 bg-card border border-border rounded-lg shadow-lg py-1 min-w-[160px]">
+              {PERIOD_OPTIONS.map((opt) => (
+                <button
+                  key={opt.key}
+                  onClick={() => { setPeriod(opt.key); setDropdownOpen(false); }}
+                  className={`w-full text-left px-3 py-1.5 text-xs transition-colors hover:bg-accent/50 ${period === opt.key ? "text-primary font-semibold" : "text-foreground"}`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Operational stats */}
@@ -158,7 +234,7 @@ export default function Dashboard() {
         <StatCard
           title="Receita Aluguéis"
           value={fmt(fin.receitaAlugueis)}
-          subtitle="Mês atual — pagos"
+          subtitle={`${periodLabel} — pagos`}
           icon={DollarSign}
           color="oklch(0.68 0.12 65)"
           href="/financeiro"
@@ -166,7 +242,7 @@ export default function Dashboard() {
         <StatCard
           title="Receitas Extras"
           value={fmt(fin.receitasExtras)}
-          subtitle="Mês atual"
+          subtitle={periodLabel}
           icon={TrendingUp}
           color="oklch(0.60 0.18 145)"
           href="/financeiro"
@@ -174,7 +250,7 @@ export default function Dashboard() {
         <StatCard
           title="Despesas"
           value={fmt(fin.despesas)}
-          subtitle="Mês atual"
+          subtitle={periodLabel}
           icon={TrendingDown}
           color="oklch(0.55 0.20 25)"
           href="/financeiro"
@@ -196,7 +272,7 @@ export default function Dashboard() {
         <div className="flex items-center justify-between mb-5">
           <div>
             <h2 className="text-sm font-semibold text-foreground uppercase tracking-wider">
-              Receitas &amp; Despesas — Últimas 8 Semanas
+              Receitas &amp; Despesas — {periodLabel}
             </h2>
             <p className="text-xs text-muted-foreground mt-0.5">
               Aluguéis confirmados, receitas extras e despesas por semana
@@ -211,7 +287,7 @@ export default function Dashboard() {
         ) : !hasChartData ? (
           <div className="flex flex-col items-center justify-center h-48 text-muted-foreground">
             <TrendingUp className="w-8 h-8 mb-2 opacity-20" />
-            <p className="text-sm">Nenhum dado financeiro nas últimas 8 semanas</p>
+            <p className="text-sm">Nenhum dado financeiro para o período selecionado</p>
           </div>
         ) : (
           <ResponsiveContainer width="100%" height={180} className="md:!h-[220px]">

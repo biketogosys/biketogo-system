@@ -94,7 +94,7 @@ function AccessoryUnitsPanel({ accessoryId, onClose }: { accessoryId: number; on
 
   return (
     <Dialog open onOpenChange={onClose}>
-      <DialogContent className="bg-card border-border max-w-lg max-h-[90vh] overflow-y-auto">
+      <DialogContent className="bg-card border-border max-w-lg max-h-[90vh] overflow-y-auto dialog-mobile">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <List className="w-4 h-4 text-primary" />
@@ -277,15 +277,22 @@ export default function Accessories() {
   const [unitsAccessoryId, setUnitsAccessoryId] = useState<number | null>(null);
 
   const utils = trpc.useUtils();
+  const [page, setPage] = useState(1);
+  const LIMIT = 20;
 
-  const { data: accessories, isLoading } = trpc.accessories.list.useQuery({
+  const { data: accessoriesResult, isLoading } = trpc.accessories.list.useQuery({
     search: search || undefined,
     status: statusFilter !== "all" ? statusFilter : undefined,
+    page,
+    limit: LIMIT,
   });
+  const allItems: any[] = accessoriesResult?.data ?? [];
+  const totalAccessories = accessoriesResult?.total ?? 0;
+  const totalPages = accessoriesResult?.totalPages ?? 1;
 
   // Categorias únicas derivadas da lista atual
   const uniqueCategories = Array.from(
-    new Set((accessories ?? []).map((i: any) => i.category).filter(Boolean))
+    new Set(allItems.map((i: any) => i.category).filter(Boolean))
   ) as string[];
 
   const createMutation = trpc.accessories.create.useMutation({
@@ -361,16 +368,15 @@ export default function Accessories() {
     }
   }
 
-  const allItems = accessories ?? [];
-  const items = categoryFilter === "all"
+  const items: any[] = categoryFilter === "all"
     ? allItems
     : allItems.filter((i: any) => i.category === categoryFilter);
   const counts = {
-    all: items.length,
-    available: items.filter((i) => i.status === "available").length,
-    rented: items.filter((i) => i.status === "rented").length,
-    maintenance: items.filter((i) => i.status === "maintenance").length,
-    lost: items.filter((i) => i.status === "lost").length,
+    all: totalAccessories,
+    available: items.filter((i: any) => i.status === "available").length,
+    rented: items.filter((i: any) => i.status === "rented").length,
+    maintenance: items.filter((i: any) => i.status === "maintenance").length,
+    lost: items.filter((i: any) => i.status === "lost").length,
   };
 
   return (
@@ -486,8 +492,8 @@ export default function Accessories() {
 
             {/* Mobile cards */}
             <div className="md:hidden space-y-2">
-              {items.map((item) => {
-                const dispQty = (item as any).quantidadeDisponivel ?? (item as any).quantidadeTotal ?? item.quantity ?? 0;
+              {items.map((item: any) => {
+                const dispQty = item.quantidadeDisponivel ?? item.quantidadeTotal ?? item.quantity ?? 0;
                 return (
                   <div key={item.id} className="bg-card border border-border rounded-lg p-3 active:bg-accent/40 transition-colors">
                     <div className="flex items-center gap-3">
@@ -496,7 +502,7 @@ export default function Accessories() {
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-medium text-foreground truncate">{item.name}</p>
-                        <p className="text-xs text-muted-foreground">{item.category || 'Sem categoria'} • {dispQty}/{(item as any).quantidadeTotal ?? item.quantity} disp.</p>
+                        <p className="text-xs text-muted-foreground">{item.category || 'Sem categoria'} • {dispQty}/{item.quantidadeTotal ?? item.quantity} disp.</p>
                       </div>
                       <Badge className={`text-[10px] px-2 py-0.5 border flex-shrink-0 ${STATUS_COLORS[item.status as AccessoryStatus]}`} variant="outline">
                         {STATUS_LABELS[item.status as AccessoryStatus]}
@@ -511,13 +517,25 @@ export default function Accessories() {
                 );
               })}
             </div>
+            {/* Pagination footer */}
+            {totalPages > 1 && (
+              <div className="flex items-center justify-between px-3 py-2.5 border-t border-border bg-muted/20">
+                <p className="text-xs text-muted-foreground">
+                  Mostrando {Math.min((page - 1) * LIMIT + 1, totalAccessories)}–{Math.min(page * LIMIT, totalAccessories)} de {totalAccessories}
+                </p>
+                <div className="flex gap-1.5">
+                  <button disabled={page <= 1} onClick={() => setPage(p => p - 1)} className="px-2.5 py-1 rounded text-xs border border-border bg-card text-muted-foreground hover:text-foreground disabled:opacity-40 disabled:cursor-not-allowed">Anterior</button>
+                  <button disabled={page >= totalPages} onClick={() => setPage(p => p + 1)} className="px-2.5 py-1 rounded text-xs border border-border bg-card text-muted-foreground hover:text-foreground disabled:opacity-40 disabled:cursor-not-allowed">Próxima</button>
+                </div>
+              </div>
+            )}
           </>
         )}
       </div>
 
       {/* Create / Edit Dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="bg-card border-border max-w-lg max-h-[90vh] overflow-y-auto">
+        <DialogContent className="bg-card border-border max-w-lg max-h-[90vh] overflow-y-auto dialog-mobile">
           <DialogHeader>
             <DialogTitle>{editingId ? "Editar Acessório" : "Novo Acessório"}</DialogTitle>
           </DialogHeader>
@@ -643,7 +661,7 @@ export default function Accessories() {
 
       {/* Delete Confirm */}
       <Dialog open={!!deleteConfirmId} onOpenChange={() => setDeleteConfirmId(null)}>
-        <DialogContent className="bg-card border-border max-w-sm">
+        <DialogContent className="bg-card border-border max-w-sm dialog-mobile">
           <DialogHeader>
             <DialogTitle>Remover Acessório</DialogTitle>
           </DialogHeader>

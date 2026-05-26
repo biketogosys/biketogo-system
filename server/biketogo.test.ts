@@ -23,6 +23,17 @@ vi.mock("./db", () => ({
   updateRental: vi.fn().mockResolvedValue(undefined),
   getClientStats: vi.fn().mockResolvedValue({ total: 0, leads: 0, verified: 0, blocked: 0 }),
   getRentalStats: vi.fn().mockResolvedValue({ active: 0, monthRevenue: "0" }),
+  getFinancialReport: vi.fn().mockResolvedValue({
+    rentalRevenue: "0",
+    extraRevenue: "0",
+    totalExpenses: "0",
+    weeklyData: [],
+  }),
+  archiveClient: vi.fn().mockResolvedValue(undefined),
+  archiveRental: vi.fn().mockResolvedValue(undefined),
+  createAuditLog: vi.fn().mockResolvedValue(undefined),
+  getArchivedClients: vi.fn().mockResolvedValue({ items: [], total: 0, totalPages: 1 }),
+  getArchivedRentals: vi.fn().mockResolvedValue({ items: [], total: 0, totalPages: 1 }),
 }));
 
 vi.mock("./_core/notification", () => ({
@@ -129,10 +140,12 @@ describe("clients.byId", () => {
 
 // ─── Bikes ────────────────────────────────────────────────────────────────────
 describe("bikes.list", () => {
-  it("returns bike list for authenticated users", async () => {
+  it("returns paginated bike list for authenticated users", async () => {
     const caller = appRouter.createCaller(makeAdminCtx());
     const result = await caller.bikes.list({});
-    expect(Array.isArray(result)).toBe(true);
+    expect(result).toHaveProperty("data");
+    expect(result).toHaveProperty("total");
+    expect(Array.isArray(result.data)).toBe(true);
   });
 });
 

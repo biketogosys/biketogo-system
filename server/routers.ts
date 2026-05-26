@@ -510,6 +510,11 @@ const clientsRouter = router({
       const { eq: eqOp } = await import("drizzle-orm");
       await db.update(clientsTable).set({ deletedAt: null }).where(eqOp(clientsTable.id, input.id));
       await createAuditLog({ adminId: (ctx as any).adminUser?.id ?? null, acao: "restaurou_cliente", tabela: "clients", registroId: input.id });
+      const adminName = (ctx as any).adminUser?.name ?? (ctx as any).user?.name ?? "Admin";
+      await notifyOwner({
+        title: `Cliente #${input.id} restaurado`,
+        content: `O registro do cliente #${input.id} foi restaurado do arquivo por ${adminName}.`,
+      });
       return { success: true };
     }),
 
@@ -544,8 +549,18 @@ const bikesRouter = router({
       status: z.enum(["available", "rented", "maintenance"]).optional(),
       search: z.string().optional(),
       category: z.string().optional(),
+      page: z.number().min(1).default(1),
+      limit: z.number().min(1).max(100).default(20),
     }))
-    .query(({ input }) => getBikes(input)),
+    .query(async ({ input }) => {
+      const { page, limit, ...filters } = input;
+      const allBikes = await getBikes(filters);
+      const total = allBikes.length;
+      const totalPages = Math.ceil(total / limit);
+      const offset = (page - 1) * limit;
+      const data = allBikes.slice(offset, offset + limit);
+      return { data, total, totalPages, page };
+    }),
 
   byId: adminAuthProcedure
     .input(z.object({ id: z.number() }))
@@ -1056,6 +1071,11 @@ const rentalsRouter = router({
       const { eq: eqOp } = await import("drizzle-orm");
       await db.update(rentalsTable).set({ deletedAt: null }).where(eqOp(rentalsTable.id, input.id));
       await createAuditLog({ adminId: (ctx as any).adminUser?.id ?? null, acao: "restaurou_aluguel", tabela: "rentals", registroId: input.id });
+      const adminName = (ctx as any).adminUser?.name ?? (ctx as any).user?.name ?? "Admin";
+      await notifyOwner({
+        title: `Aluguel #${input.id} restaurado`,
+        content: `O registro do aluguel #${input.id} foi restaurado do arquivo por ${adminName}.`,
+      });
       return { success: true };
     }),
 
@@ -1141,29 +1161,39 @@ const accessoriesRouter = router({
       status: z.enum(["available", "rented", "maintenance", "lost"]).optional(),
       search: z.string().optional(),
       category: z.string().optional(),
+      page: z.number().min(1).default(1),
+      limit: z.number().min(1).max(100).default(20),
     }))
     .query(async ({ input }) => {
-      const items = await getAccessories(input);
+      const { page, limit, ...filters } = input;
+      const allItems = await getAccessories(filters);
       // Calculate quantidadeDisponivel in real time based on active rentals
       const db = await (await import("./db")).getDb();
-      if (!db) return items;
-      const { rentalAccessories: ra, rentals: rt } = await import("../drizzle/schema");
-      const { eq, inArray, and: andOp } = await import("drizzle-orm");
-      const ids = items.map((i) => i.id);
-      if (ids.length === 0) return items;
-      const activeUsage = await db
-        .select({ accessoryId: ra.accessoryId, qty: ra.quantity })
-        .from(ra)
-        .innerJoin(rt, eq(ra.rentalId, rt.id))
-        .where(andOp(inArray(ra.accessoryId, ids), inArray(rt.status, ["active", "overdue"])));
-      const usageMap: Record<number, number> = {};
-      for (const row of activeUsage) {
-        usageMap[row.accessoryId] = (usageMap[row.accessoryId] ?? 0) + (row.qty ?? 1);
-      }
-      return items.map((item) => ({
-        ...item,
-        quantidadeDisponivel: Math.max(0, (item.quantidadeTotal ?? item.quantity) - (usageMap[item.id] ?? 0)),
-      }));
+      const enriched = await (async () => {
+        if (!db) return allItems;
+        const { rentalAccessories: ra, rentals: rt } = await import("../drizzle/schema");
+        const { eq, inArray, and: andOp } = await import("drizzle-orm");
+        const ids = allItems.map((i) => i.id);
+        if (ids.length === 0) return allItems;
+        const activeUsage = await db
+          .select({ accessoryId: ra.accessoryId, qty: ra.quantity })
+          .from(ra)
+          .innerJoin(rt, eq(ra.rentalId, rt.id))
+          .where(andOp(inArray(ra.accessoryId, ids), inArray(rt.status, ["active", "overdue"])));
+        const usageMap: Record<number, number> = {};
+        for (const row of activeUsage) {
+          usageMap[row.accessoryId] = (usageMap[row.accessoryId] ?? 0) + (row.qty ?? 1);
+        }
+        return allItems.map((item) => ({
+          ...item,
+          quantidadeDisponivel: Math.max(0, (item.quantidadeTotal ?? item.quantity) - (usageMap[item.id] ?? 0)),
+        }));
+      })();
+      const total = enriched.length;
+      const totalPages = Math.ceil(total / limit);
+      const offset = (page - 1) * limit;
+      const data = enriched.slice(offset, offset + limit);
+      return { data, total, totalPages, page };
     }),
   listByCategory: adminAuthProcedure
     .query(async () => {
@@ -1970,16 +2000,23 @@ const publicApiRouter = router({
 
 // ─── Dashboard router ────────────────────────────────────────────────────────
 const dashboardRouter = router({
-  summary: adminAuthProcedure.query(async () => {
+  summary: adminAuthProcedure
+    .input(z.object({
+      startDate: z.string().optional(),
+      endDate: z.string().optional(),
+    }).optional())
+    .query(async ({ input }) => {
     const now = new Date();
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
     const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
     const fmt = (d: Date) => d.toISOString().split("T")[0];
+    const periodStart = input?.startDate ?? fmt(startOfMonth);
+    const periodEnd = input?.endDate ?? fmt(endOfMonth);
     const [clientStats, bikeStats, rentalStats, financialReport] = await Promise.all([
       getClientStats(),
       getBikeStats(),
       getRentalStats(),
-      getFinancialReport(fmt(startOfMonth), fmt(endOfMonth)),
+      getFinancialReport(periodStart, periodEnd),
     ]);
     const receitaAlugueis = parseFloat(financialReport.rentalRevenue ?? "0");
     const receitasExtras = parseFloat(financialReport.extraRevenue ?? "0");
@@ -1998,7 +2035,12 @@ const dashboardRouter = router({
     };
   }),
 
-  weeklyRevenue: adminAuthProcedure.query(async () => {
+  weeklyRevenue: adminAuthProcedure
+    .input(z.object({
+      startDate: z.string().optional(),
+      endDate: z.string().optional(),
+    }).optional())
+    .query(async ({ input }) => {
     const db = await getDb();
     if (!db) return [];
     const { rentals: rentalsSchema, expenses: expensesSchema, revenues: revenuesSchema } = await import("../drizzle/schema");

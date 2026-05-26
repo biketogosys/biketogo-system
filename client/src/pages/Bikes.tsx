@@ -75,7 +75,7 @@ function DiscountRulesEditor({ bikeId, onClose }: { bikeId: number; onClose: () 
 
   return (
     <Dialog open onOpenChange={onClose}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-w-md dialog-mobile">
         <DialogHeader><DialogTitle className="flex items-center gap-2"><Percent className="w-4 h-4 text-primary" />Desconto Progressivo</DialogTitle></DialogHeader>
         {isLoading ? <div className="flex justify-center py-4"><Loader2 className="w-5 h-5 animate-spin text-primary" /></div> : (
           <div className="space-y-3">
@@ -398,7 +398,7 @@ function BikeFormDialog({ bike, onClose, onSuccess }: { bike: any | null; onClos
 
   return (
     <Dialog open onOpenChange={onClose}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto dialog-mobile">
         <DialogHeader><DialogTitle>{isEdit ? "Editar Bicicleta" : "Nova Bicicleta"}</DialogTitle></DialogHeader>
         <Tabs defaultValue="dados">
           <TabsList className="grid w-full grid-cols-4">
@@ -493,8 +493,13 @@ export default function Bikes() {
   const [showForm, setShowForm] = useState(false);
   const [editBike, setEditBike] = useState<any | null>(null);
   const [discountBikeId, setDiscountBikeId] = useState<number | null>(null);
+  const [page, setPage] = useState(1);
+  const LIMIT = 20;
 
-  const { data: bikes = [], isLoading } = trpc.bikes.list.useQuery({ status: statusFilter, category: categoryFilter, search: search || undefined });
+  const { data: bikesResult, isLoading } = trpc.bikes.list.useQuery({ status: statusFilter, category: categoryFilter, search: search || undefined, page, limit: LIMIT });
+  const bikes: any[] = bikesResult?.data ?? [];
+  const totalBikes = bikesResult?.total ?? 0;
+  const totalPages = bikesResult?.totalPages ?? 1;
 
   const deleteMutation = trpc.bikes.delete.useMutation({
     onSuccess: () => { utils.bikes.list.invalidate(); toast.success("Bicicleta removida!"); },
@@ -535,7 +540,7 @@ export default function Bikes() {
             </button>
           ))}
           {(search || statusFilter || categoryFilter) && (
-            <button onClick={() => { setSearch(""); setStatusFilter(undefined); setCategoryFilter(undefined); }} className="px-2.5 py-1 rounded text-xs font-medium text-muted-foreground hover:text-foreground border border-border bg-card">
+            <button onClick={() => { setSearch(""); setStatusFilter(undefined); setCategoryFilter(undefined); setPage(1); }} className="px-2.5 py-1 rounded text-xs font-medium text-muted-foreground hover:text-foreground border border-border bg-card">
               Limpar
             </button>
           )}
@@ -545,7 +550,7 @@ export default function Bikes() {
       {/* Content */}
       {isLoading ? (
         <div className="flex items-center justify-center h-48"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div>
-      ) : (bikes as any[]).length === 0 ? (
+      ) : bikes.length === 0 ? (
         <div className="flex flex-col items-center justify-center h-48 text-muted-foreground">
           <BikeIcon className="w-10 h-10 mb-3 opacity-30" />
           <p className="text-sm">Nenhuma bicicleta encontrada</p>
@@ -565,7 +570,7 @@ export default function Bikes() {
                 </tr>
               </thead>
               <tbody>
-                {(bikes as any[]).map((bike: any) => (
+                {bikes.map((bike: any) => (
                   <tr key={bike.id} className="group border-b border-border/40 last:border-b-0">
                     <td className="px-3 py-2.5">
                       <div className="flex items-center gap-2.5">
@@ -608,7 +613,7 @@ export default function Bikes() {
 
           {/* Mobile cards */}
           <div className="md:hidden space-y-2">
-            {(bikes as any[]).map((bike: any) => (
+            {bikes.map((bike: any) => (
               <div key={bike.id} className="bg-card border border-border rounded-lg p-3 active:bg-accent/40 transition-colors">
                 <div className="flex items-center gap-3">
                   <div className="w-12 h-12 rounded-md overflow-hidden bg-secondary flex-shrink-0 border border-border">
@@ -635,6 +640,18 @@ export default function Bikes() {
               </div>
             ))}
           </div>
+          {/* Pagination footer */}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between px-3 py-2.5 border-t border-border bg-muted/20">
+              <p className="text-xs text-muted-foreground">
+                Mostrando {Math.min((page - 1) * LIMIT + 1, totalBikes)}–{Math.min(page * LIMIT, totalBikes)} de {totalBikes}
+              </p>
+              <div className="flex gap-1.5">
+                <button disabled={page <= 1} onClick={() => setPage(p => p - 1)} className="px-2.5 py-1 rounded text-xs border border-border bg-card text-muted-foreground hover:text-foreground disabled:opacity-40 disabled:cursor-not-allowed">Anterior</button>
+                <button disabled={page >= totalPages} onClick={() => setPage(p => p + 1)} className="px-2.5 py-1 rounded text-xs border border-border bg-card text-muted-foreground hover:text-foreground disabled:opacity-40 disabled:cursor-not-allowed">Próxima</button>
+              </div>
+            </div>
+          )}
         </>
       )}
 

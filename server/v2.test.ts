@@ -171,12 +171,15 @@ describe("clients.list", () => {
 
 // ─── Bikes list test ─────────────────────────────────────────────────────────
 describe("bikes.list", () => {
-  it("returns an array for authenticated admin", async () => {
+  it("returns paginated data for authenticated admin", async () => {
     const { ctx } = createAdminContext();
     const caller = appRouter.createCaller(ctx);
 
     const result = await caller.bikes.list({});
-    expect(Array.isArray(result)).toBe(true);
+    expect(result).toHaveProperty("data");
+    expect(result).toHaveProperty("total");
+    expect(result).toHaveProperty("totalPages");
+    expect(Array.isArray(result.data)).toBe(true);
   });
 });
 
