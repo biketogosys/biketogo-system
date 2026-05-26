@@ -79,6 +79,12 @@ export default function PublicReservation() {
     return localStorage.getItem("btg_form_theme") === "dark";
   });
 
+  // ─── Lightbox ────────────────────────────────────────────────────────────────
+  const [lbSrc, setLbSrc] = useState<string | null>(null);
+  const [lbAlt, setLbAlt] = useState("");
+  const openLb = (src: string, alt: string) => { setLbSrc(src); setLbAlt(alt); };
+  const closeLb = () => setLbSrc(null);
+
   const t = translations[lang];
 
   const changeLang = (l: Language) => {
@@ -532,7 +538,35 @@ export default function PublicReservation() {
 
   return (
     <div className={`min-h-screen ${bg} ${textPrimary}`}>
-      {/* ─── Header ─────────────────────────────────────────────────────────── */}
+      {/* ─── Lightbox overlay ──────────────────────────────────────────────────────────────────────── */}
+      {lbSrc && (
+        <div
+          role="dialog"
+          aria-modal
+          tabIndex={0}
+          onClick={closeLb}
+          onKeyDown={e => e.key === "Escape" && closeLb()}
+          className="fixed inset-0 z-[200] flex items-center justify-center bg-black/80 backdrop-blur-sm"
+          style={{ outline: "none" }}
+          ref={el => el?.focus()}
+        >
+          <button
+            onClick={closeLb}
+            className="absolute top-4 right-4 w-9 h-9 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors"
+            aria-label="Fechar"
+          >
+            <span className="text-xl leading-none">×</span>
+          </button>
+          <img
+            src={lbSrc}
+            alt={lbAlt}
+            onClick={e => e.stopPropagation()}
+            className="max-w-[90vw] max-h-[90vh] rounded-lg shadow-2xl"
+            style={{ objectFit: "contain" }}
+          />
+        </div>
+      )}
+      {/* ─── Header ───────────────────────────────────────────────────────────────────────────────── */}
       <header className={`border-b ${headerBg} backdrop-blur sticky top-0 z-50`}>
         <div className="max-w-2xl mx-auto px-4 py-3 flex items-center justify-between gap-3">
           <div className="flex items-center gap-3">
@@ -875,7 +909,14 @@ export default function PublicReservation() {
                         <><Loader2 className="w-8 h-8 animate-spin text-[#C8920A]" /><span className={`text-sm ${textSecondary}`}>{t.docUploading}</span></>
                       ) : preview ? (
                         <>
-                          <img src={preview} alt={label} className="max-h-28 max-w-full rounded-lg object-cover" />
+                          <img
+                            src={preview}
+                            alt={label}
+                            className="rounded-lg object-cover cursor-zoom-in"
+                            style={{ width: 280, height: 180, objectFit: "cover" }}
+                            onClick={e => { e.stopPropagation(); openLb(preview, label); }}
+                            title="Clique para ampliar"
+                          />
                           <button onClick={e => {
                             e.stopPropagation();
                             if (side === "front") { setDocFrontBase64(null); setDocFrontPreview(null); }

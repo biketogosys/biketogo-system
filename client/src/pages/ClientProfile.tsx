@@ -14,6 +14,39 @@ import { Label } from "@/components/ui/label";
 
 type Tab = "cadastro" | "documentacao" | "alugueis" | "historico";
 
+// ─── Lightbox ────────────────────────────────────────────────────────────────
+function Lightbox({ src, alt, onClose }: { src: string; alt: string; onClose: () => void }) {
+  // Fechar com ESC
+  const handleKey = (e: React.KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+  return (
+    <div
+      role="dialog"
+      aria-modal
+      tabIndex={0}
+      onKeyDown={handleKey}
+      onClick={onClose}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm"
+      style={{ outline: "none" }}
+      ref={el => el?.focus()}
+    >
+      <button
+        onClick={onClose}
+        className="absolute top-4 right-4 w-9 h-9 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors z-10"
+        aria-label="Fechar"
+      >
+        <span className="text-xl leading-none">×</span>
+      </button>
+      <img
+        src={src}
+        alt={alt}
+        onClick={e => e.stopPropagation()}
+        className="max-w-[90vw] max-h-[90vh] rounded-lg shadow-2xl"
+        style={{ objectFit: "contain" }}
+      />
+    </div>
+  );
+}
+
 function StatusBadge({ status }: { status: string }) {
   const map: Record<string, { cls: string; label: string }> = {
     lead: { cls: "badge-lead", label: "Lead" },
@@ -39,7 +72,12 @@ export default function ClientProfile() {
   const [, navigate] = useLocation();
   const clientId = parseInt(params.id ?? "0");
   const [activeTab, setActiveTab] = useState<Tab>("cadastro");
+  const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
+  const [lightboxAlt, setLightboxAlt] = useState("");
   const utils = trpc.useUtils();
+
+  const openLightbox = (src: string, alt: string) => { setLightboxSrc(src); setLightboxAlt(alt); };
+  const closeLightbox = () => setLightboxSrc(null);
 
   const { data: client, isLoading } = trpc.clients.byId.useQuery({ id: clientId });
   const { data: docs } = trpc.clients.documents.useQuery({ clientId });
@@ -83,6 +121,9 @@ export default function ClientProfile() {
     );
   }
 
+  // Lightbox overlay
+  const lightboxEl = lightboxSrc ? <Lightbox src={lightboxSrc} alt={lightboxAlt} onClose={closeLightbox} /> : null;
+
   const tabs: { id: Tab; label: string; icon: React.ElementType }[] = [
     { id: "cadastro", label: "Cadastro", icon: User },
     { id: "documentacao", label: "Documentação", icon: FileText },
@@ -94,6 +135,7 @@ export default function ClientProfile() {
 
   return (
     <div className="p-4 md:p-6 max-w-6xl mx-auto">
+      {lightboxEl}
       {/* Back button */}
       <button
         onClick={() => navigate("/clientes")}
@@ -357,21 +399,31 @@ export default function ClientProfile() {
                 {((client as any).docFrontUrl || (client as any).docBackUrl) && (
                   <div>
                     <h3 className="text-xs font-semibold text-primary uppercase tracking-wider mb-3">
-                      Fotos do Documento (Formul\u00e1rio P\u00fablico)
+                      Fotos do Documento (Formulário Público)
                     </h3>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       {(client as any).docFrontUrl && (
                         <div className="bg-secondary border border-border rounded-lg overflow-hidden">
-                          <div className="aspect-video bg-muted flex items-center justify-center">
-                            <img src={(client as any).docFrontUrl} alt="Frente do documento" className="w-full h-full object-cover" />
+                          <div
+                            className="bg-muted flex items-center justify-center cursor-zoom-in overflow-hidden"
+                            style={{ width: "100%", height: 180 }}
+                            onClick={() => openLightbox((client as any).docFrontUrl, "Frente do Documento")}
+                            title="Clique para ampliar"
+                          >
+                            <img src={(client as any).docFrontUrl} alt="Frente do documento" style={{ width: 280, height: 180, objectFit: "cover", display: "block" }} />
                           </div>
                           <div className="p-3"><p className="text-xs font-medium text-foreground">Frente do Documento</p></div>
                         </div>
                       )}
                       {(client as any).docBackUrl && (
                         <div className="bg-secondary border border-border rounded-lg overflow-hidden">
-                          <div className="aspect-video bg-muted flex items-center justify-center">
-                            <img src={(client as any).docBackUrl} alt="Verso do documento" className="w-full h-full object-cover" />
+                          <div
+                            className="bg-muted flex items-center justify-center cursor-zoom-in overflow-hidden"
+                            style={{ width: "100%", height: 180 }}
+                            onClick={() => openLightbox((client as any).docBackUrl, "Verso do Documento")}
+                            title="Clique para ampliar"
+                          >
+                            <img src={(client as any).docBackUrl} alt="Verso do documento" style={{ width: 280, height: 180, objectFit: "cover", display: "block" }} />
                           </div>
                           <div className="p-3"><p className="text-xs font-medium text-foreground">Verso do Documento</p></div>
                         </div>
@@ -394,11 +446,16 @@ export default function ClientProfile() {
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     {docs.map((doc) => (
                       <div key={doc.id} className="bg-secondary border border-border rounded-lg overflow-hidden">
-                        <div className="aspect-video bg-muted flex items-center justify-center">
+                        <div
+                          className="bg-muted flex items-center justify-center cursor-zoom-in overflow-hidden"
+                          style={{ width: "100%", height: 180 }}
+                          onClick={() => openLightbox(doc.url, doc.type)}
+                          title="Clique para ampliar"
+                        >
                           <img
                             src={doc.url}
                             alt={doc.type}
-                            className="w-full h-full object-cover"
+                            style={{ width: 280, height: 180, objectFit: "cover", display: "block" }}
                             onError={(e) => {
                               (e.target as HTMLImageElement).style.display = "none";
                             }}

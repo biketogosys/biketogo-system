@@ -319,6 +319,7 @@ function MaintenanceTab({ bikeId }: { bikeId: number }) {
 // ─── Bike Photo Upload ────────────────────────────────────────────────────────
 function BikePhotoUpload({ bikeId, currentUrl, onUploaded }: { bikeId: number; currentUrl?: string | null; onUploaded: (url: string) => void }) {
   const fileRef = useRef<HTMLInputElement>(null);
+  const [sizeWarning, setSizeWarning] = useState(false);
   const uploadMut = trpc.bikes.uploadBikePhoto.useMutation({
     onSuccess: (data) => { onUploaded(data.url); toast.success("Foto atualizada!"); },
     onError: (e) => toast.error(e.message),
@@ -328,6 +329,7 @@ function BikePhotoUpload({ bikeId, currentUrl, onUploaded }: { bikeId: number; c
     const file = e.target.files?.[0];
     if (!file) return;
     if (file.size > 5 * 1024 * 1024) return toast.error("Foto deve ter no máximo 5MB.");
+    setSizeWarning(file.size > 2 * 1024 * 1024);
     const reader = new FileReader();
     reader.onload = () => uploadMut.mutate({ bikeId, base64: reader.result as string, mimeType: file.type });
     reader.readAsDataURL(file);
@@ -335,21 +337,32 @@ function BikePhotoUpload({ bikeId, currentUrl, onUploaded }: { bikeId: number; c
 
   return (
     <div className="space-y-3">
+      {/* Preview na proporção 4:3 */}
       {currentUrl ? (
-        <div className="relative w-full aspect-video rounded-lg overflow-hidden bg-secondary border border-border">
+        <div className="relative w-full rounded-lg overflow-hidden bg-secondary border border-border" style={{ aspectRatio: "4/3" }}>
           <img src={currentUrl} alt="Foto da bicicleta" className="w-full h-full object-cover" />
           <button onClick={() => fileRef.current?.click()} className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 hover:opacity-100 transition-opacity text-white text-sm font-medium">
             <Camera className="w-5 h-5 mr-1" />Trocar foto
           </button>
         </div>
       ) : (
-        <button onClick={() => fileRef.current?.click()} className="w-full aspect-video rounded-lg border-2 border-dashed border-border flex flex-col items-center justify-center gap-2 text-muted-foreground hover:border-primary/50 hover:text-primary transition-colors">
+        <button onClick={() => fileRef.current?.click()} className="w-full rounded-lg border-2 border-dashed border-border flex flex-col items-center justify-center gap-2 text-muted-foreground hover:border-primary/50 hover:text-primary transition-colors" style={{ aspectRatio: "4/3" }}>
           <Upload className="w-8 h-8" />
           <span className="text-sm">Clique para adicionar foto</span>
           <span className="text-xs">JPG, PNG ou WEBP — máx. 5MB</span>
         </button>
       )}
       <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleFile} />
+      {/* Guia de tamanho */}
+      <p className="text-xs text-muted-foreground">
+        Recomendado: 800×600px, proporção 4:3, máximo 2MB
+      </p>
+      {/* Aviso > 2MB */}
+      {sizeWarning && (
+        <p className="text-xs text-amber-500 bg-amber-500/10 border border-amber-500/30 rounded-md px-3 py-2">
+          ⚠️ Foto muito grande — pode deixar o formulário lento
+        </p>
+      )}
       {uploadMut.isPending && <p className="text-xs text-muted-foreground text-center animate-pulse">Enviando foto...</p>}
     </div>
   );
