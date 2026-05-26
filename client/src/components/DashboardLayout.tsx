@@ -21,7 +21,7 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { useIsMobile } from "@/hooks/useMobile";
-import { LayoutDashboard, LogOut, PanelLeft, Users, Bike, ClipboardList, Package, DollarSign, Settings, UserCog, Sun, Moon, FileText, Shield } from "lucide-react";
+import { LayoutDashboard, LogOut, PanelLeft, Users, Bike, ClipboardList, Package, DollarSign, Settings, UserCog, Sun, Moon, FileText, Shield, Menu, X } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
@@ -57,9 +57,9 @@ const menuItems = [
 const LOGO_URL = "https://d2xsxph8kpxj0f.cloudfront.net/310419663031602743/9oQjN6PX9fNMedgfErUfQE/biketogo-logo_71a6645b.png";
 
 const SIDEBAR_WIDTH_KEY = "sidebar-width";
-const DEFAULT_WIDTH = 280;
+const DEFAULT_WIDTH = 260;
 const MIN_WIDTH = 200;
-const MAX_WIDTH = 480;
+const MAX_WIDTH = 400;
 
 export default function DashboardLayout({
   children,
@@ -177,13 +177,13 @@ function DashboardLayoutContent({
 
   return (
     <>
-      <div className="relative" ref={sidebarRef}>
+      <div className="relative hidden md:block" ref={sidebarRef}>
         <Sidebar
           collapsible="icon"
           className="border-r-0"
           disableTransition={isResizing}
         >
-          <SidebarHeader className="h-16 justify-center">
+          <SidebarHeader className="h-14 justify-center">
             <div className="flex items-center gap-3 px-2 transition-all w-full">
               <button
                 onClick={toggleSidebar}
@@ -197,8 +197,8 @@ function DashboardLayoutContent({
                   <img
                     src={LOGO_URL}
                     alt="Bike To Go"
-                    className="h-10 w-auto object-contain shrink-0"
-                    style={{ maxWidth: "140px" }}
+                    className="h-9 w-auto object-contain shrink-0"
+                    style={{ maxWidth: "130px" }}
                   />
                 </div>
               ) : (
@@ -221,7 +221,7 @@ function DashboardLayoutContent({
                       isActive={isActive}
                       onClick={() => setLocation(item.path)}
                       tooltip={item.label}
-                      className={`h-10 transition-all font-normal`}
+                      className={`h-9 transition-all font-normal text-[13px]`}
                     >
                       <item.icon
                         className={`h-4 w-4 ${isActive ? "text-primary" : ""}`}
@@ -238,7 +238,7 @@ function DashboardLayoutContent({
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button className="flex items-center gap-3 rounded-lg px-1 py-1 hover:bg-accent/50 transition-colors w-full text-left group-data-[collapsible=icon]:justify-center focus:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-                  <Avatar className="h-9 w-9 border shrink-0">
+                  <Avatar className="h-8 w-8 border shrink-0">
                     <AvatarFallback className="text-xs font-medium">
                       {user?.name?.charAt(0).toUpperCase()}
                     </AvatarFallback>
@@ -247,7 +247,7 @@ function DashboardLayoutContent({
                     <p className="text-sm font-medium truncate leading-none">
                       {user?.name || "-"}
                     </p>
-                    <p className="text-xs text-muted-foreground truncate mt-1.5">
+                    <p className="text-xs text-muted-foreground truncate mt-1">
                       {user?.email || "-"}
                     </p>
                   </div>
@@ -266,6 +266,7 @@ function DashboardLayoutContent({
             </DropdownMenu>
           </SidebarFooter>
         </Sidebar>
+        {/* Resize handle */}
         <div
           className={`absolute top-0 right-0 w-1 h-full cursor-col-resize hover:bg-primary/20 transition-colors ${isCollapsed ? "hidden" : ""}`}
           onMouseDown={() => {
@@ -277,21 +278,23 @@ function DashboardLayoutContent({
       </div>
 
       <SidebarInset>
+        {/* Mobile top bar */}
         {isMobile && (
-          <div className="flex border-b h-14 items-center justify-between bg-background/95 px-2 backdrop-blur supports-[backdrop-filter]:backdrop-blur sticky top-0 z-40">
-            <div className="flex items-center gap-2">
+          <div className="flex md:hidden border-b h-14 items-center justify-between bg-background/95 px-3 backdrop-blur supports-[backdrop-filter]:backdrop-blur sticky top-0 z-40">
+            <div className="flex items-center gap-3">
               <SidebarTrigger className="h-9 w-9 rounded-lg bg-background" />
-              <div className="flex items-center gap-3">
-                <div className="flex flex-col gap-1">
-                  <span className="tracking-tight text-foreground">
-                    {activeMenuItem?.label ?? "Menu"}
-                  </span>
-                </div>
-              </div>
+              <img
+                src={LOGO_URL}
+                alt="Bike To Go"
+                className="h-7 w-auto object-contain"
+              />
             </div>
+            <span className="text-sm font-medium text-foreground">
+              {activeMenuItem?.label ?? "Menu"}
+            </span>
           </div>
         )}
-        <main className="flex-1 p-4">{children}</main>
+        <main className="flex-1 p-3 md:p-4 lg:p-6 overflow-x-hidden">{children}</main>
       </SidebarInset>
     </>
   );

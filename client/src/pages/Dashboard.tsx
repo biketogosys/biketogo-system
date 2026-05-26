@@ -29,20 +29,20 @@ function StatCard({
   negative?: boolean;
 }) {
   const content = (
-    <div className="bg-card border border-border rounded-xl p-5 hover:border-primary/30 transition-colors group">
-      <div className="flex items-start justify-between mb-4">
+    <div className="bg-card border border-border rounded-xl p-3 md:p-5 hover:border-primary/30 transition-colors group">
+      <div className="flex items-start justify-between mb-2 md:mb-4">
         <div
-          className="w-10 h-10 rounded-lg flex items-center justify-center"
+          className="w-8 h-8 md:w-10 md:h-10 rounded-lg flex items-center justify-center"
           style={{ backgroundColor: `${color}20`, border: `1px solid ${color}35` }}
         >
-          <Icon className="w-5 h-5" style={{ color }} />
+          <Icon className="w-4 h-4 md:w-5 md:h-5" style={{ color }} />
         </div>
         {href && (
-          <ArrowRight className="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors" />
+          <ArrowRight className="w-3.5 h-3.5 md:w-4 md:h-4 text-muted-foreground group-hover:text-primary transition-colors" />
         )}
       </div>
       <p
-        className="text-2xl font-bold"
+        className="text-lg md:text-2xl font-bold"
         style={{
           fontFamily: "'Montserrat', sans-serif",
           color: negative ? "oklch(0.55 0.20 25)" : "inherit",
@@ -50,8 +50,8 @@ function StatCard({
       >
         {value}
       </p>
-      <p className="text-sm text-muted-foreground mt-1">{title}</p>
-      {subtitle && <p className="text-xs text-muted-foreground/70 mt-0.5">{subtitle}</p>}
+      <p className="text-xs md:text-sm text-muted-foreground mt-0.5 md:mt-1">{title}</p>
+      {subtitle && <p className="text-[10px] md:text-xs text-muted-foreground/70 mt-0.5 hidden sm:block">{subtitle}</p>}
     </div>
   );
 
@@ -106,19 +106,19 @@ export default function Dashboard() {
   );
 
   return (
-    <div className="p-6 max-w-6xl mx-auto">
+    <div className="p-4 md:p-6 max-w-6xl mx-auto">
       {/* Header */}
-      <div className="mb-8">
-        <h1 className="text-2xl font-bold text-foreground" style={{ fontFamily: "'Montserrat', sans-serif" }}>
+      <div className="mb-5 md:mb-8">
+        <h1 className="text-xl md:text-2xl font-bold text-foreground" style={{ fontFamily: "'Montserrat', sans-serif" }}>
           Dashboard
         </h1>
-        <p className="text-sm text-muted-foreground mt-1">
+        <p className="text-xs md:text-sm text-muted-foreground mt-1">
           Visão geral do sistema — Bike To Go Floripa
         </p>
       </div>
 
       {/* Operational stats */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4 mb-4 md:mb-6">
         <StatCard
           title="Total de clientes"
           value={clientStats.total}
@@ -154,7 +154,7 @@ export default function Dashboard() {
       </div>
 
       {/* Financial cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4 mb-5 md:mb-8">
         <StatCard
           title="Receita Aluguéis"
           value={fmt(fin.receitaAlugueis)}
@@ -214,7 +214,7 @@ export default function Dashboard() {
             <p className="text-sm">Nenhum dado financeiro nas últimas 8 semanas</p>
           </div>
         ) : (
-          <ResponsiveContainer width="100%" height={220}>
+          <ResponsiveContainer width="100%" height={180} className="md:!h-[220px]">
             <BarChart data={chartData} margin={{ top: 4, right: 4, left: 0, bottom: 0 }} barCategoryGap="30%">
               <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.3 0 0 / 0.12)" vertical={false} />
               <XAxis
@@ -260,7 +260,7 @@ export default function Dashboard() {
       </div>
 
       {/* Status panels */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-8">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 md:gap-4 mb-5 md:mb-8">
         {/* Bikes status */}
         <div className="bg-card border border-border rounded-xl p-5">
           <h2 className="text-sm font-semibold text-foreground mb-4 uppercase tracking-wider">

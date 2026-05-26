@@ -502,35 +502,47 @@ export default function Bikes() {
   });
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-foreground">Bicicletas</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">Gerencie a frota, tamanhos e manutenções</p>
+          <h1 className="text-xl md:text-2xl font-bold text-foreground">Bicicletas</h1>
+          <p className="text-xs md:text-sm text-muted-foreground mt-0.5">Gerencie a frota, tamanhos e manutenções</p>
         </div>
-        <Button onClick={() => { setEditBike(null); setShowForm(true); }} className="gap-1.5"><Plus className="w-4 h-4" />Nova Bicicleta</Button>
+        <Button onClick={() => { setEditBike(null); setShowForm(true); }} className="gap-1.5 h-9 text-xs md:text-sm">
+          <Plus className="w-4 h-4" />
+          <span className="hidden sm:inline">Nova Bicicleta</span>
+          <span className="sm:hidden">Nova</span>
+        </Button>
       </div>
 
-      {/* Filters */}
-      <div className="flex flex-wrap gap-2 items-center">
-        <div className="relative">
+      {/* Filters — horizontal compact */}
+      <div className="flex flex-col sm:flex-row gap-2 items-stretch sm:items-center">
+        <div className="relative flex-1 max-w-xs">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
-          <Input placeholder="Buscar por modelo, série..." value={search} onChange={e => setSearch(e.target.value)} className="h-8 text-sm pl-8 max-w-xs" />
+          <Input placeholder="Buscar por modelo, série..." value={search} onChange={e => setSearch(e.target.value)} className="h-9 text-sm pl-8 bg-card border-border" />
         </div>
-        {([undefined, "available", "rented", "maintenance"] as (BikeStatus | undefined)[]).map(s => (
-          <button key={String(s)} onClick={() => setStatusFilter(s)} className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all border ${statusFilter === s ? "bg-primary/15 border-primary/40 text-primary" : "bg-card border-border text-muted-foreground hover:text-foreground"}`}>
-            {s === undefined ? "Todos" : statusConfig[s]?.label}
-          </button>
-        ))}
-        {([undefined, "mtb", "speed", "gravel"] as (string | undefined)[]).map(c => (
-          <button key={String(c)} onClick={() => setCategoryFilter(c)} className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all border ${categoryFilter === c ? "bg-primary/15 border-primary/40 text-primary" : "bg-card border-border text-muted-foreground hover:text-foreground"}`}>
-            {c === undefined ? "Todas categorias" : categoryLabels[c as BikeCategory] || c}
-          </button>
-        ))}
+        <div className="flex gap-1.5 flex-wrap">
+          {([undefined, "available", "rented", "maintenance"] as (BikeStatus | undefined)[]).map(s => (
+            <button key={String(s)} onClick={() => setStatusFilter(s)} className={`px-2.5 py-1 rounded text-xs font-medium transition-all border ${statusFilter === s ? "bg-primary/15 border-primary/40 text-primary" : "bg-card border-border text-muted-foreground hover:text-foreground"}`}>
+              {s === undefined ? "Todos" : statusConfig[s]?.label}
+            </button>
+          ))}
+          <span className="hidden sm:inline text-border">|</span>
+          {([undefined, "mtb", "speed", "gravel"] as (string | undefined)[]).map(c => (
+            <button key={String(c)} onClick={() => setCategoryFilter(c)} className={`px-2.5 py-1 rounded text-xs font-medium transition-all border ${categoryFilter === c ? "bg-primary/15 border-primary/40 text-primary" : "bg-card border-border text-muted-foreground hover:text-foreground"}`}>
+              {c === undefined ? "Todas" : categoryLabels[c as BikeCategory] || c}
+            </button>
+          ))}
+          {(search || statusFilter || categoryFilter) && (
+            <button onClick={() => { setSearch(""); setStatusFilter(undefined); setCategoryFilter(undefined); }} className="px-2.5 py-1 rounded text-xs font-medium text-muted-foreground hover:text-foreground border border-border bg-card">
+              Limpar
+            </button>
+          )}
+        </div>
       </div>
 
-      {/* Grid */}
+      {/* Content */}
       {isLoading ? (
         <div className="flex items-center justify-center h-48"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div>
       ) : (bikes as any[]).length === 0 ? (
@@ -539,46 +551,91 @@ export default function Bikes() {
           <p className="text-sm">Nenhuma bicicleta encontrada</p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {(bikes as any[]).map((bike: any) => (
-            <div key={bike.id} className="bg-card border border-border rounded-xl overflow-hidden hover:border-primary/30 transition-colors">
-              {bike.photoUrl ? (
-                <div className="w-full h-36 overflow-hidden bg-secondary"><img src={bike.photoUrl} alt={bike.model} className="w-full h-full object-cover" /></div>
-              ) : (
-                <div className="w-full h-36 bg-secondary flex items-center justify-center"><BikeIcon className="w-10 h-10 text-muted-foreground/30" /></div>
-              )}
-              <div className="p-4">
-                <div className="flex items-start justify-between mb-2">
-                  <div>
-                    {bike.brand && <span className="text-[10px] text-muted-foreground uppercase tracking-wider block">{bike.brand}</span>}
-                    <h3 className="font-semibold text-foreground text-sm">{bike.model}</h3>
-                    <p className="text-xs text-muted-foreground font-mono">#{bike.serialNumber}</p>
+        <>
+          {/* Desktop table */}
+          <div className="hidden md:block bg-card border border-border rounded-lg overflow-hidden">
+            <table className="w-full table-compact">
+              <thead>
+                <tr className="border-b border-border bg-muted/30">
+                  <th className="text-left text-[11px] font-semibold text-muted-foreground uppercase tracking-wider px-3 py-2.5">Bicicleta</th>
+                  <th className="text-left text-[11px] font-semibold text-muted-foreground uppercase tracking-wider px-3 py-2.5">Categoria</th>
+                  <th className="text-left text-[11px] font-semibold text-muted-foreground uppercase tracking-wider px-3 py-2.5">Status</th>
+                  <th className="text-left text-[11px] font-semibold text-muted-foreground uppercase tracking-wider px-3 py-2.5">Diária</th>
+                  <th className="w-32 px-3 py-2.5" />
+                </tr>
+              </thead>
+              <tbody>
+                {(bikes as any[]).map((bike: any) => (
+                  <tr key={bike.id} className="group border-b border-border/40 last:border-b-0">
+                    <td className="px-3 py-2.5">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-9 h-9 rounded-md overflow-hidden bg-secondary flex-shrink-0 border border-border">
+                          {bike.photoUrl ? (
+                            <img src={bike.photoUrl} alt={bike.model} className="w-full h-full object-cover" />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center"><BikeIcon className="w-4 h-4 text-muted-foreground/30" /></div>
+                          )}
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-[13px] font-medium text-foreground truncate">{bike.model}</p>
+                          <p className="text-[11px] text-muted-foreground">{bike.brand || ''} {bike.serialNumber ? `• #${bike.serialNumber}` : ''}</p>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-3 py-2.5">
+                      {bike.category && <span className="px-1.5 py-0.5 bg-primary/10 text-primary rounded text-[10px] uppercase font-medium">{categoryLabels[bike.category as BikeCategory] || bike.category}</span>}
+                    </td>
+                    <td className="px-3 py-2.5">
+                      <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${statusConfig[bike.status as BikeStatus]?.cls ?? "bg-secondary text-secondary-foreground"}`}>
+                        {statusConfig[bike.status as BikeStatus]?.label ?? bike.status}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2.5 text-[13px] font-semibold text-primary">
+                      {bike.dailyRate ? `R$ ${parseFloat(bike.dailyRate).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}` : '—'}
+                    </td>
+                    <td className="px-3 py-2.5">
+                      <div className="flex items-center gap-2 row-actions">
+                        <button onClick={() => { setEditBike(bike); setShowForm(true); }} className="text-[12px] text-primary hover:underline font-medium">Editar</button>
+                        <button onClick={() => setDiscountBikeId(bike.id)} className="text-[12px] text-muted-foreground hover:text-primary">Descontos</button>
+                        <button onClick={() => { if (confirm("Remover?")) deleteMutation.mutate({ id: bike.id }); }} className="text-muted-foreground hover:text-destructive"><Trash2 className="w-3.5 h-3.5" /></button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Mobile cards */}
+          <div className="md:hidden space-y-2">
+            {(bikes as any[]).map((bike: any) => (
+              <div key={bike.id} className="bg-card border border-border rounded-lg p-3 active:bg-accent/40 transition-colors">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-md overflow-hidden bg-secondary flex-shrink-0 border border-border">
+                    {bike.photoUrl ? (
+                      <img src={bike.photoUrl} alt={bike.model} className="w-full h-full object-cover" />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center"><BikeIcon className="w-5 h-5 text-muted-foreground/30" /></div>
+                    )}
                   </div>
-                  <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${statusConfig[bike.status as BikeStatus]?.cls ?? "bg-secondary text-secondary-foreground"}`}>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-foreground truncate">{bike.model}</p>
+                    <p className="text-xs text-muted-foreground">{bike.brand} {bike.category && `• ${categoryLabels[bike.category as BikeCategory] || bike.category}`}</p>
+                    {bike.dailyRate && <p className="text-xs font-semibold text-primary mt-0.5">R$ {parseFloat(bike.dailyRate).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}/dia</p>}
+                  </div>
+                  <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium flex-shrink-0 ${statusConfig[bike.status as BikeStatus]?.cls ?? "bg-secondary text-secondary-foreground"}`}>
                     {statusConfig[bike.status as BikeStatus]?.label ?? bike.status}
                   </span>
                 </div>
-                <div className="flex flex-wrap gap-1.5 text-xs text-muted-foreground mb-2">
-                  {bike.category && <span className="px-1.5 py-0.5 bg-primary/10 text-primary rounded text-[10px] uppercase">{categoryLabels[bike.category as BikeCategory] || bike.category}</span>}
-                  {bike.color && <span className="px-1.5 py-0.5 bg-secondary rounded">{bike.color}</span>}
-
-                </div>
-                {bike.dailyRate && (
-                  <div className="flex items-center gap-1 mb-3">
-                    <DollarSign className="w-3 h-3 text-primary" />
-                    <span className="text-sm font-semibold text-primary">R$ {parseFloat(bike.dailyRate).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</span>
-                    <span className="text-xs text-muted-foreground">/dia</span>
-                  </div>
-                )}
-                <div className="flex gap-2 pt-2 border-t border-border">
-                  <button onClick={() => { setEditBike(bike); setShowForm(true); }} className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary transition-colors"><Pencil className="w-3 h-3" />Editar</button>
-                  <button onClick={() => setDiscountBikeId(bike.id)} className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary transition-colors"><Percent className="w-3 h-3" />Descontos</button>
-                  <button onClick={() => { if (confirm("Remover esta bicicleta?")) deleteMutation.mutate({ id: bike.id }); }} className="flex items-center gap-1 text-xs text-muted-foreground hover:text-destructive transition-colors ml-auto"><Trash2 className="w-3 h-3" />Remover</button>
+                <div className="flex gap-3 pt-2 mt-2 border-t border-border/50">
+                  <button onClick={() => { setEditBike(bike); setShowForm(true); }} className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary"><Pencil className="w-3 h-3" />Editar</button>
+                  <button onClick={() => setDiscountBikeId(bike.id)} className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary"><Percent className="w-3 h-3" />Descontos</button>
+                  <button onClick={() => { if (confirm("Remover?")) deleteMutation.mutate({ id: bike.id }); }} className="flex items-center gap-1 text-xs text-muted-foreground hover:text-destructive ml-auto"><Trash2 className="w-3 h-3" /></button>
                 </div>
               </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        </>
       )}
 
       {showForm && <BikeFormDialog bike={editBike} onClose={() => { setShowForm(false); setEditBike(null); }} onSuccess={() => { setShowForm(false); setEditBike(null); utils.bikes.list.invalidate(); }} />}

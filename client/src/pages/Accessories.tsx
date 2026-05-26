@@ -375,85 +375,53 @@ export default function Accessories() {
 
   return (
     <>
-    <div className="p-6 space-y-6">
+    <div className="p-4 md:p-6 space-y-4">
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-foreground">Acessórios</h1>
-            <p className="text-sm text-muted-foreground mt-0.5">
+            <h1 className="text-xl md:text-2xl font-bold text-foreground">Acessórios</h1>
+            <p className="text-xs md:text-sm text-muted-foreground mt-0.5">
               Gerencie capacetes, cadeados e demais equipamentos
             </p>
           </div>
-          <Button
-            onClick={openCreate}
-            className="bg-[#C8920A] hover:bg-[#A87608] text-white gap-2"
-          >
+          <Button onClick={openCreate} className="bg-[#C8920A] hover:bg-[#A87608] text-white gap-1.5 h-9 text-xs md:text-sm">
             <Plus className="w-4 h-4" />
-            Novo Acessório
+            <span className="hidden sm:inline">Novo Acessório</span>
+            <span className="sm:hidden">Novo</span>
           </Button>
         </div>
 
-        {/* Stats cards */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          {(["available", "rented", "maintenance", "lost"] as AccessoryStatus[]).map((s) => (
-            <button
-              key={s}
-              onClick={() => setStatusFilter(statusFilter === s ? "all" : s)}
-              className={`rounded-lg border p-3 text-left transition-all ${
-                statusFilter === s
-                  ? "border-[#C8920A] bg-[#C8920A]/10"
-                  : "border-border bg-card hover:border-[#C8920A]/50"
-              }`}
-            >
-              <div className="text-2xl font-bold text-foreground">{counts[s]}</div>
-              <div className={`text-xs mt-0.5 font-medium ${STATUS_COLORS[s].split(" ")[1]}`}>
-                {STATUS_LABELS[s]}
-              </div>
-            </button>
-          ))}
-        </div>
-
-        {/* Category filter */}
-        {uniqueCategories.length > 0 && (
-          <div className="flex flex-wrap gap-2">
-            <button
-              onClick={() => setCategoryFilter("all")}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
-                categoryFilter === "all"
-                  ? "bg-[#C8920A] text-white border-[#C8920A]"
-                  : "border-border text-muted-foreground hover:border-[#C8920A]/50"
-              }`}
-            >
-              Todas
-            </button>
-            {uniqueCategories.map((cat) => (
-              <button
-                key={cat}
-                onClick={() => setCategoryFilter(cat)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
-                  categoryFilter === cat
-                    ? "bg-[#C8920A] text-white border-[#C8920A]"
-                    : "border-border text-muted-foreground hover:border-[#C8920A]/50"
-                }`}
-              >
-                {cat}
+        {/* Filters — horizontal compact */}
+        <div className="flex flex-col sm:flex-row gap-2 items-stretch sm:items-center">
+          <div className="relative flex-1 max-w-xs">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+            <Input placeholder="Buscar por nome ou série..." value={search} onChange={(e) => setSearch(e.target.value)} className="h-9 text-sm pl-8 bg-card border-border" />
+          </div>
+          <div className="flex gap-1.5 flex-wrap">
+            {(["all", "available", "rented", "maintenance", "lost"] as (AccessoryStatus | "all")[]).map((s) => (
+              <button key={s} onClick={() => setStatusFilter(s)} className={`px-2.5 py-1 rounded text-xs font-medium transition-all border ${statusFilter === s ? "bg-[#C8920A]/15 border-[#C8920A]/40 text-[#C8920A]" : "bg-card border-border text-muted-foreground hover:text-foreground"}`}>
+                {s === "all" ? `Todos (${counts.all})` : `${STATUS_LABELS[s]} (${counts[s]})`}
               </button>
             ))}
+            {uniqueCategories.length > 0 && (
+              <>
+                <span className="hidden sm:inline text-border">|</span>
+                {(["all", ...uniqueCategories] as string[]).map((cat) => (
+                  <button key={cat} onClick={() => setCategoryFilter(cat)} className={`px-2.5 py-1 rounded text-xs font-medium transition-all border ${categoryFilter === cat ? "bg-[#C8920A]/15 border-[#C8920A]/40 text-[#C8920A]" : "bg-card border-border text-muted-foreground hover:text-foreground"}`}>
+                    {cat === "all" ? "Todas" : cat}
+                  </button>
+                ))}
+              </>
+            )}
+            {(search || statusFilter !== "all" || categoryFilter !== "all") && (
+              <button onClick={() => { setSearch(""); setStatusFilter("all"); setCategoryFilter("all"); }} className="px-2.5 py-1 rounded text-xs font-medium text-muted-foreground hover:text-foreground border border-border bg-card">
+                Limpar
+              </button>
+            )}
           </div>
-        )}
-
-        {/* Search */}
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <Input
-            placeholder="Buscar por nome ou número de série..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="pl-9 bg-card border-border"
-          />
         </div>
 
-        {/* List */}
+        {/* Content */}
         {isLoading ? (
           <div className="text-center py-12 text-muted-foreground">Carregando...</div>
         ) : items.length === 0 ? (
@@ -465,100 +433,85 @@ export default function Accessories() {
             </Button>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-            {items.map((item) => (
-              <div
-                key={item.id}
-                className="bg-card border border-border rounded-xl p-4 space-y-3 hover:border-[#C8920A]/40 transition-colors"
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <div className="flex-1 min-w-0">
-                    <h3 className="font-semibold text-foreground truncate">{item.name}</h3>
-                    {item.category && (
-                      <div className="flex items-center gap-1 mt-0.5">
-                        <Tag className="w-3 h-3 text-muted-foreground" />
-                        <span className="text-xs text-muted-foreground">{item.category}</span>
+          <>
+            {/* Desktop table */}
+            <div className="hidden md:block bg-card border border-border rounded-lg overflow-hidden">
+              <table className="w-full table-compact">
+                <thead>
+                  <tr className="border-b border-border bg-muted/30">
+                    <th className="text-left text-[11px] font-semibold text-muted-foreground uppercase tracking-wider px-3 py-2.5">Acessório</th>
+                    <th className="text-left text-[11px] font-semibold text-muted-foreground uppercase tracking-wider px-3 py-2.5">Categoria</th>
+                    <th className="text-left text-[11px] font-semibold text-muted-foreground uppercase tracking-wider px-3 py-2.5">Estoque</th>
+                    <th className="text-left text-[11px] font-semibold text-muted-foreground uppercase tracking-wider px-3 py-2.5">Status</th>
+                    <th className="w-36 px-3 py-2.5" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {items.map((item) => {
+                    const dispQty = (item as any).quantidadeDisponivel ?? (item as any).quantidadeTotal ?? item.quantity ?? 0;
+                    return (
+                      <tr key={item.id} className="group border-b border-border/40 last:border-b-0">
+                        <td className="px-3 py-2.5">
+                          <div className="min-w-0">
+                            <p className="text-[13px] font-medium text-foreground truncate">{item.name}</p>
+                            {item.serialNumber && <p className="text-[11px] text-muted-foreground">#{item.serialNumber}</p>}
+                          </div>
+                        </td>
+                        <td className="px-3 py-2.5">
+                          {item.category && <span className="px-1.5 py-0.5 bg-[#C8920A]/10 text-[#C8920A] rounded text-[10px] uppercase font-medium">{item.category}</span>}
+                        </td>
+                        <td className="px-3 py-2.5">
+                          <span className={`text-[12px] font-medium ${dispQty > 0 ? 'text-emerald-500' : 'text-red-500'}`}>
+                            {dispQty} / {(item as any).quantidadeTotal ?? item.quantity}
+                          </span>
+                        </td>
+                        <td className="px-3 py-2.5">
+                          <Badge className={`text-[10px] px-2 py-0.5 border ${STATUS_COLORS[item.status as AccessoryStatus]}`} variant="outline">
+                            {STATUS_LABELS[item.status as AccessoryStatus]}
+                          </Badge>
+                        </td>
+                        <td className="px-3 py-2.5">
+                          <div className="flex items-center gap-2 row-actions">
+                            <button onClick={() => openEdit(item)} className="text-[12px] text-primary hover:underline font-medium">Editar</button>
+                            <button onClick={() => setUnitsAccessoryId(item.id)} className="text-[12px] text-muted-foreground hover:text-primary">Unidades</button>
+                            <button onClick={() => setDeleteConfirmId(item.id)} className="text-muted-foreground hover:text-destructive"><Trash2 className="w-3.5 h-3.5" /></button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Mobile cards */}
+            <div className="md:hidden space-y-2">
+              {items.map((item) => {
+                const dispQty = (item as any).quantidadeDisponivel ?? (item as any).quantidadeTotal ?? item.quantity ?? 0;
+                return (
+                  <div key={item.id} className="bg-card border border-border rounded-lg p-3 active:bg-accent/40 transition-colors">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-md bg-[#C8920A]/10 flex items-center justify-center flex-shrink-0 border border-[#C8920A]/20">
+                        <Package className="w-5 h-5 text-[#C8920A]" />
                       </div>
-                    )}
-                  </div>
-                  <Badge
-                    className={`shrink-0 text-xs border ${STATUS_COLORS[item.status as AccessoryStatus]}`}
-                    variant="outline"
-                  >
-                    {STATUS_LABELS[item.status as AccessoryStatus]}
-                  </Badge>
-                </div>
-
-                {item.description && (
-                  <p className="text-xs text-muted-foreground line-clamp-2">{item.description}</p>
-                )}
-
-                <div className="grid grid-cols-2 gap-2 text-xs">
-                  {item.serialNumber && (
-                    <div className="flex items-center gap-1 text-muted-foreground">
-                      <Hash className="w-3 h-3" />
-                      <span className="truncate">{item.serialNumber}</span>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-foreground truncate">{item.name}</p>
+                        <p className="text-xs text-muted-foreground">{item.category || 'Sem categoria'} • {dispQty}/{(item as any).quantidadeTotal ?? item.quantity} disp.</p>
+                      </div>
+                      <Badge className={`text-[10px] px-2 py-0.5 border flex-shrink-0 ${STATUS_COLORS[item.status as AccessoryStatus]}`} variant="outline">
+                        {STATUS_LABELS[item.status as AccessoryStatus]}
+                      </Badge>
                     </div>
-                  )}
-                  <div className="flex items-center gap-1 text-muted-foreground">
-                    <Layers className="w-3 h-3" />
-                    <span>Total: {(item as any).quantidadeTotal ?? item.quantity}</span>
-                  </div>
-                </div>
-                {(() => {
-                  const dispQty = (item as any).quantidadeDisponivel ?? (item as any).quantidadeTotal ?? item.quantity ?? 0;
-                  const isAvail = dispQty > 0 && item.status === "available";
-                  return (
-                    <div className="flex items-center gap-2">
-                      {isAvail ? (
-                        <div className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30">
-                          <CheckCircle2 className="w-3 h-3 text-emerald-500" />
-                          <span className="text-xs text-emerald-600 font-medium">
-                            {dispQty} disponível{dispQty !== 1 ? "is" : ""}
-                          </span>
-                        </div>
-                      ) : (
-                        <div className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-red-500/10 border border-red-500/30">
-                          <XCircle className="w-3 h-3 text-red-500" />
-                          <span className="text-xs text-red-600 font-medium">
-                            {dispQty === 0 ? "Sem estoque" : `${dispQty} disp.`}
-                          </span>
-                        </div>
-                      )}
-                      <span className="text-xs text-muted-foreground">(gratuito)</span>
+                    <div className="flex gap-3 pt-2 mt-2 border-t border-border/50">
+                      <button onClick={() => openEdit(item)} className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary"><Edit className="w-3 h-3" />Editar</button>
+                      <button onClick={() => setUnitsAccessoryId(item.id)} className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary"><List className="w-3 h-3" />Unidades</button>
+                      <button onClick={() => setDeleteConfirmId(item.id)} className="flex items-center gap-1 text-xs text-muted-foreground hover:text-destructive ml-auto"><Trash2 className="w-3 h-3" /></button>
                     </div>
-                  );
-                })()}
-
-                <div className="flex gap-2 pt-1 border-t border-border">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="flex-1 gap-1 text-xs h-8"
-                    onClick={() => openEdit(item)}
-                  >
-                    <Edit className="w-3 h-3" /> Editar
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="flex-1 gap-1 text-xs h-8 text-primary hover:text-primary hover:bg-primary/10"
-                    onClick={() => setUnitsAccessoryId(item.id)}
-                  >
-                    <List className="w-3 h-3" /> Unidades
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="gap-1 text-xs h-8 text-red-400 hover:text-red-300 hover:bg-red-500/10"
-                    onClick={() => setDeleteConfirmId(item.id)}
-                  >
-                    <Trash2 className="w-3 h-3" />
-                  </Button>
-                </div>
-              </div>
-            ))}
-          </div>
+                  </div>
+                );
+              })}
+            </div>
+          </>
         )}
       </div>
 

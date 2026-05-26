@@ -912,18 +912,18 @@ export default function PublicReservation() {
               ) : bikes.length === 0 ? (
                 <p className={`${textSecondary} text-sm text-center py-6`}>{t.noBikesAvailable}</p>
               ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                   {bikes.map((bike: any) => (
                     <div key={bike.id} onClick={() => setSelectedBikeId(bike.id)}
-                      className={`border rounded-xl p-4 cursor-pointer transition-all ${
+                      className={`border rounded-xl p-3 sm:p-4 cursor-pointer transition-all ${
                         selectedBikeId === bike.id ? "border-[#C8920A] bg-[#C8920A]/10" : bikeCardInactive
                       }`}>
                       {/* Foto da bike ou placeholder */}
                       {bike.photoUrl ? (
-                        <img src={bike.photoUrl} alt={bike.model} className="w-full h-28 object-cover rounded-lg mb-3" />
+                        <img src={bike.photoUrl} alt={bike.model} className="w-full h-24 sm:h-28 object-cover rounded-lg mb-2 sm:mb-3" />
                       ) : (
-                        <div className={`w-full h-28 rounded-lg mb-3 flex items-center justify-center ${isDark ? "bg-[#1a1a2e]" : "bg-gray-100"}`}>
-                          <Bike className={`w-10 h-10 ${isDark ? "text-[#2a2a3a]" : "text-gray-300"}`} />
+                        <div className={`w-full h-24 sm:h-28 rounded-lg mb-2 sm:mb-3 flex items-center justify-center ${isDark ? "bg-[#1a1a2e]" : "bg-gray-100"}`}>
+                          <Bike className={`w-8 h-8 sm:w-10 sm:h-10 ${isDark ? "text-[#2a2a3a]" : "text-gray-300"}`} />
                         </div>
                       )}
                       <div className="flex items-start justify-between gap-2">
@@ -1064,9 +1064,9 @@ export default function PublicReservation() {
               )}
             </div>
 
-            {/* Carrinho de bikes */}
+            {/* Carrinho de bikes — sticky no mobile */}
             {cart.length > 0 && (
-              <div className={`${cardBg} border rounded-2xl p-6 space-y-4`}>
+              <div className={`${cardBg} border rounded-2xl p-4 sm:p-6 space-y-3 sm:space-y-4 sm:static sticky top-[57px] z-30`}>
                 <div className={`flex items-center gap-2 pb-3 border-b ${sectionBorder}`}>
                   <ShoppingCart className="w-4 h-4 text-[#C8920A]" />
                   <span className="text-[#C8920A] text-sm font-bold uppercase tracking-widest">{t.cartTitle}</span>
@@ -1345,7 +1345,7 @@ export default function PublicReservation() {
 
         {/* ─── Navigation — sticky no mobile ───────────────────────────────── */}
         {step < 5 && (
-          <div className={`fixed bottom-0 left-0 right-0 sm:static sm:mt-6 px-4 py-3 sm:px-0 sm:py-0 ${
+          <div className={`fixed bottom-0 left-0 right-0 sm:static sm:mt-6 px-4 py-3 sm:px-0 sm:py-0 safe-area-bottom ${
             isDark
               ? "bg-[#0a0a0f]/95 border-t border-[#1a1a2e] sm:bg-transparent sm:border-0"
               : "bg-white/95 border-t border-gray-200 sm:bg-transparent sm:border-0"
