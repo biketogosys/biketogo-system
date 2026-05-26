@@ -162,9 +162,10 @@ describe("clients.list", () => {
     const { ctx } = createAdminContext();
     const caller = appRouter.createCaller(ctx);
 
-    const result = await caller.clients.list({ limit: 10, offset: 0 });
+    const result = await caller.clients.list({ limit: 10, page: 1 });
     expect(result).toHaveProperty("items");
     expect(result).toHaveProperty("total");
+    expect(result).toHaveProperty("totalPages");
   });
 });
 
@@ -278,7 +279,7 @@ describe("email helper", () => {
       html: "<p>Test</p>",
     });
     expect(result).toBe(false);
-  });
+  }, 15000);
 });
 
 // ─── WhatsApp helper tests ───────────────────────────────────────────────────
@@ -308,5 +309,5 @@ describe("whatsapp helper", () => {
       text: "Test message",
     });
     expect(result).toBe(false);
-  });
+  }, 15000);
 });

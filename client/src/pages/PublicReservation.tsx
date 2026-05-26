@@ -147,6 +147,7 @@ export default function PublicReservation() {
   const [birthDate, setBirthDate] = useState("");
   const [gender, setGender] = useState("");
   const [height, setHeight] = useState("");
+  const [weight, setWeight] = useState("");
   const [pedalFreq, setPedalFreq] = useState("");
   const [origin, setOrigin] = useState("");
 
@@ -363,7 +364,7 @@ export default function PublicReservation() {
         if (!passport.trim() || passport.trim().length < 5) errs.passport = lang === "pt" ? "Passaporte obrigatório (mínimo 5 caracteres)" : lang === "en" ? "Passport required (min. 5 characters)" : "Pasaporte obligatorio (mín. 5 caracteres)";
       }
       if (!birthDate || birthDate.length < 10) errs.birthDate = t.invalidDate;
-      if (!height) errs.height = t.required;
+      // peso e altura são opcionais no formulário público
     }
     if (s === 1) {
       if (!phone || phone.replace(/\D/g,"").length < 10) errs.phone = t.invalidPhone;
@@ -439,9 +440,10 @@ export default function PublicReservation() {
 
       const result = await submitMutation.mutateAsync({
         name,
-        cpf: (isBrazilian && docType === "cnh") ? cpf : "",
-        rg: isBrazilian ? (docType === "rg" ? rg : "") : passport,
+        cpf: isBrazilian ? cpf : "",
+        rg: isBrazilian ? rg : passport,
         docOrigin, birthDate, gender, height: String(parseFloat(height) || 0),
+        weight: weight ? String(parseFloat(weight) || 0) : undefined,
         pedalFreq, howFound: origin, phone, email, instagram, accommodation,
         zipCode, street, number, complement, neighborhood, city, state: stateUF, country,
         lgpdConsent,
@@ -647,45 +649,19 @@ export default function PublicReservation() {
                   value={birthDate} onChange={e => setBirthDate(maskDate(e.target.value))} />
               </Field>
             </div>
-            {/* CNH ou RG (Brasil) ou Passaporte (Estrangeiro) */}
+            {/* CPF + RG (Brasil) ou Passaporte (Estrangeiro) */}
             {isBrazilian ? (
-              <div className="space-y-3">
-                {/* Radio: CNH ou RG */}
-                <div className="flex gap-4">
-                  {(["cnh", "rg"] as const).map(dt => (
-                    <label key={dt} className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="radio"
-                        name="docType"
-                        value={dt}
-                        checked={docType === dt}
-                        onChange={() => {
-                          setDocType(dt);
-                          setRg(""); setCpf("");
-                          setErrors(prev => { const n = { ...prev }; delete n.cpf; delete n.rg; return n; });
-                        }}
-                        className="accent-[#C8920A] w-4 h-4"
-                      />
-                      <span className={`text-sm font-medium ${textPrimary}`}>
-                        {dt === "cnh" ? (lang === "pt" ? "CNH" : lang === "en" ? "Driver's License" : "Licencia") : "RG"}
-                      </span>
-                    </label>
-                  ))}
-                </div>
-                {/* Campo do documento escolhido */}
-                {docType === "cnh" ? (
-                  <Field label={lang === "pt" ? "Número da CNH" : lang === "en" ? "Driver's License Number" : "Número de Licencia"} required error={errors.cpf}>
-                    <input className={errors.cpf ? inputError : inputNormal}
-                      placeholder={lang === "pt" ? "Ex: 00000000000" : "e.g. 00000000000"}
-                      value={cpf} onChange={e => setCpf(e.target.value.replace(/\D/g, "").slice(0, 11))} maxLength={11} />
-                  </Field>
-                ) : (
-                  <Field label="RG" required error={errors.rg} hint={lang === "pt" ? "Dígito verificador módulo 11" : "Mod-11 check digit"}>
-                    <input className={errors.rg ? inputError : inputNormal}
-                      placeholder="00.000.000-0"
-                      value={rg} onChange={e => setRg(maskRG(e.target.value))} maxLength={12} />
-                  </Field>
-                )}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <Field label="CPF" required error={errors.cpf} hint={lang === "pt" ? "Somente números" : "Numbers only"}>
+                  <input className={errors.cpf ? inputError : inputNormal}
+                    placeholder="000.000.000-00"
+                    value={cpf} onChange={e => setCpf(maskCPF(e.target.value))} maxLength={14} />
+                </Field>
+                <Field label="RG" error={errors.rg} hint={lang === "pt" ? "Opcional — dígito verificador módulo 11" : "Optional — mod-11 check digit"}>
+                  <input className={errors.rg ? inputError : inputNormal}
+                    placeholder="00.000.000-0"
+                    value={rg} onChange={e => setRg(maskRG(e.target.value))} maxLength={12} />
+                </Field>
               </div>
             ) : (
               <Field
@@ -712,12 +688,18 @@ export default function PublicReservation() {
                   <option value="Prefiro não informar">{t.genderPreferNotToSay}</option>
                 </select>
               </Field>
-              <Field label={t.height} required error={errors.height} hint={t.heightHint}>
+              <Field label={t.height} error={errors.height} hint={t.heightHint}>
                 <input className={errors.height ? inputError : inputNormal} placeholder={t.heightPlaceholder}
                   value={height} onChange={e => setHeight(maskHeight(e.target.value))} />
               </Field>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <Field label={lang === "pt" ? "Peso (kg)" : lang === "en" ? "Weight (kg)" : "Peso (kg)"} hint={lang === "pt" ? "Opcional" : "Optional"}>
+                <input className={inputNormal}
+                  type="number" min="20" max="300" step="0.1"
+                  placeholder={lang === "pt" ? "Ex: 75.5" : "e.g. 75.5"}
+                  value={weight} onChange={e => setWeight(e.target.value)} />
+              </Field>
               <Field label={t.pedalFrequency}>
                 <select className={selectBase} value={pedalFreq} onChange={e => setPedalFreq(e.target.value)}>
                   <option value="">—</option>
@@ -831,6 +813,31 @@ export default function PublicReservation() {
             <div className={`flex items-center gap-2 pb-3 border-b ${sectionBorder}`}>
               <span className="text-[#C8920A] text-sm font-bold uppercase tracking-widest">📄 {t.sectionDocumentPhotos}</span>
             </div>
+            {/* Radio CNH/RG apenas no step de upload (não no step de identificação) */}
+            {isBrazilian && (
+              <div className="flex gap-4">
+                {(["cnh", "rg"] as const).map(dt => (
+                  <label key={dt} className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="docTypeUpload"
+                      value={dt}
+                      checked={docType === dt}
+                      onChange={() => {
+                        setDocType(dt);
+                        setDocFrontBase64(null); setDocFrontPreview(null);
+                        setDocBackBase64(null); setDocBackPreview(null);
+                        setErrors(prev => { const n = { ...prev }; delete n.docFront; delete n.docBack; return n; });
+                      }}
+                      className="accent-[#C8920A] w-4 h-4"
+                    />
+                    <span className={`text-sm font-medium ${textPrimary}`}>
+                      {dt === "cnh" ? (lang === "pt" ? "CNH" : lang === "en" ? "Driver's License" : "Licencia") : "RG"}
+                    </span>
+                  </label>
+                ))}
+              </div>
+            )}
             {/* Indicador do tipo de documento */}
             <div className={`text-sm ${textSecondary} leading-relaxed`}>
               {isBrazilian
@@ -1084,7 +1091,7 @@ export default function PublicReservation() {
                           {item.tamanho} · {item.quantity}x · {item.numDays} {item.numDays === 1 ? t.day : t.days}
                         </p>
                         <p className={`text-xs ${textMuted}`}>
-                          {item.startDate} → {item.endDate} · {item.deliveryTime}
+                          {lang === "pt" ? "Entrega" : "Delivery"}: {item.startDate} · {lang === "pt" ? "Devolução" : "Return"}: {item.endDate} · {item.deliveryTime}
                         </p>
                       </div>
                       <div className="flex items-center gap-3 flex-shrink-0">

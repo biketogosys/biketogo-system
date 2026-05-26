@@ -76,6 +76,8 @@ function emptyForm() {
     city: "",
     state: "",
     country: "Brasil",
+    height: "",
+    weight: "",
     pedalFrequency: "" as "" | "iniciante" | "intermediario" | "avancado",
     tipoUso: "" as "" | "lazer" | "esporte" | "urbano" | "cicloturismo",
     notes: "",
@@ -168,8 +170,8 @@ function NewClientModal({ open, onClose, onSuccess }: NewClientModalProps) {
 
     createMutation.mutate({
       name: form.name,
-      cpf: form.tipoDocumento === "cnh" ? (form.cpf || undefined) : undefined,
-      rg: form.tipoDocumento === "rg" ? (form.rg || undefined) : undefined,
+      cpf: form.nacionalidade !== "estrangeiro" ? (form.cpf || undefined) : undefined,
+      rg: form.nacionalidade !== "estrangeiro" ? (form.rg || undefined) : undefined,
       birthDate: form.birthDate ? dateDisplayToISO(form.birthDate) : undefined,
       nacionalidade: (form.nacionalidade || undefined) as "brasileiro" | "estrangeiro" | undefined,
       tipoDocumento: (form.tipoDocumento || undefined) as "cnh" | "rg" | "passaporte" | undefined,
@@ -189,6 +191,8 @@ function NewClientModal({ open, onClose, onSuccess }: NewClientModalProps) {
       origin: form.origin || undefined,
       accommodation: form.accommodation || undefined,
       notes: form.notes || undefined,
+      height: form.height || undefined,
+      weight: form.weight || undefined,
       lgpdConsent: form.lgpdConsent,
       status: "lead",
     });
@@ -263,62 +267,43 @@ function NewClientModal({ open, onClose, onSuccess }: NewClientModalProps) {
                     </Select>
                   </div>
                 </div>
-                {/* Tipo de documento: condicional por nacionalidade */}
+                {/* Documentos: CPF+RG para brasileiros, Passaporte para estrangeiros */}
                 {form.nacionalidade !== "estrangeiro" ? (
-                  <div className="space-y-3">
+                  <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <Label className={labelCls}>Tipo de documento *</Label>
-                      <div className="flex gap-5 mt-1">
-                        {(["cnh", "rg"] as const).map(dt => (
-                          <label key={dt} className="flex items-center gap-2 cursor-pointer">
-                            <input
-                              type="radio"
-                              name="tipoDocClients"
-                              value={dt}
-                              checked={form.tipoDocumento === dt}
-                              onChange={() => { set("tipoDocumento", dt); set("cpf", ""); set("rg", ""); }}
-                              className="accent-primary w-4 h-4"
-                            />
-                            <span className="text-sm">{dt === "cnh" ? "CNH" : "RG"}</span>
-                          </label>
-                        ))}
-                      </div>
+                      <Label className={labelCls}>
+                        CPF
+                        {form.cpf.replace(/\D/g, "").length === 11 && (
+                          isValidCPF(form.cpf)
+                            ? <CheckCircle2 className="inline w-3 h-3 ml-1 text-green-500" />
+                            : <AlertCircle className="inline w-3 h-3 ml-1 text-destructive" />
+                        )}
+                      </Label>
+                      <Input
+                        value={form.cpf}
+                        onChange={(e) => set("cpf", maskCPF(e.target.value))}
+                        placeholder="000.000.000-00"
+                        className={inputCls}
+                        maxLength={14}
+                      />
                     </div>
-                    {form.tipoDocumento === "cnh" ? (
-                      <div>
-                        <Label className={labelCls}>
-                          Número da CNH *
-                          {form.cpf.replace(/\D/g, "").length === 11 && (
-                            <CheckCircle2 className="inline w-3 h-3 ml-1 text-green-500" />
-                          )}
-                        </Label>
-                        <Input
-                          value={form.cpf}
-                          onChange={(e) => set("cpf", e.target.value.replace(/\D/g, "").slice(0, 11))}
-                          placeholder="00000000000"
-                          className={inputCls}
-                          maxLength={11}
-                        />
-                      </div>
-                    ) : (
-                      <div>
-                        <Label className={labelCls}>
-                          Número do RG *
-                          {form.rg.replace(/[.\-\s]/g, "").length >= 8 && (
-                            isValidRG(form.rg)
-                              ? <CheckCircle2 className="inline w-3 h-3 ml-1 text-green-500" />
-                              : <AlertCircle className="inline w-3 h-3 ml-1 text-destructive" />
-                          )}
-                        </Label>
-                        <Input
-                          value={form.rg}
-                          onChange={(e) => set("rg", maskRG(e.target.value))}
-                          placeholder="00.000.000-0"
-                          className={inputCls}
-                          maxLength={12}
-                        />
-                      </div>
-                    )}
+                    <div>
+                      <Label className={labelCls}>
+                        RG
+                        {form.rg.replace(/[.\-\s]/g, "").length >= 8 && (
+                          isValidRG(form.rg)
+                            ? <CheckCircle2 className="inline w-3 h-3 ml-1 text-green-500" />
+                            : <AlertCircle className="inline w-3 h-3 ml-1 text-destructive" />
+                        )}
+                      </Label>
+                      <Input
+                        value={form.rg}
+                        onChange={(e) => set("rg", maskRG(e.target.value))}
+                        placeholder="00.000.000-0"
+                        className={inputCls}
+                        maxLength={12}
+                      />
+                    </div>
                   </div>
                 ) : (
                   <div>
@@ -507,6 +492,31 @@ function NewClientModal({ open, onClose, onSuccess }: NewClientModalProps) {
 
               {/* ── Aba 5: Perfil de uso ── */}
               <TabsContent value="perfil" className="mt-0 space-y-4">
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <Label className={labelCls}>Altura (cm)</Label>
+                    <Input
+                      value={form.height}
+                      onChange={(e) => set("height", e.target.value.replace(/\D/g, "").slice(0, 3))}
+                      placeholder="175"
+                      className={inputCls}
+                      maxLength={3}
+                    />
+                  </div>
+                  <div>
+                    <Label className={labelCls}>Peso (kg)</Label>
+                    <Input
+                      type="number"
+                      min="20"
+                      max="300"
+                      step="0.1"
+                      value={form.weight}
+                      onChange={(e) => set("weight", e.target.value)}
+                      placeholder="75.5"
+                      className={inputCls}
+                    />
+                  </div>
+                </div>
                 <div>
                   <Label className={labelCls}>Experiência em ciclismo</Label>
                   <Select value={form.pedalFrequency} onValueChange={(v) => set("pedalFrequency", v as "iniciante" | "intermediario" | "avancado")}>

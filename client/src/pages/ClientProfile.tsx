@@ -276,23 +276,20 @@ export default function ClientProfile() {
                   </h3>
                   <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                     <InfoRow label="Nome" value={client.name} />
-                    <InfoRow
-                      label={
-                        (client as any).tipoDocumento === "cnh" ? "CNH" :
-                        (client as any).tipoDocumento === "rg" ? "RG" :
-                        (client as any).tipoDocumento === "passaporte" ? "Passaporte" :
-                        (client as any).cpf ? "CPF" : "Documento"
-                      }
-                      value={
-                        (client as any).tipoDocumento === "cnh" ? (client as any).cpf :
-                        (client as any).tipoDocumento === "rg" ? (client as any).rg :
-                        (client as any).tipoDocumento === "passaporte" ? (client as any).numeroPassaporte :
-                        (client as any).cpf || (client as any).rg
-                      }
-                    />
                     <InfoRow label="Data de nascimento" value={client.birthDate} />
                     <InfoRow label="Gênero" value={client.gender} />
-                    <InfoRow label="Altura" value={client.height ? `${client.height} m` : null} />
+                    <InfoRow label="Nacionalidade" value={(client as any).nacionalidade === "estrangeiro" ? "Estrangeiro" : "Brasileiro"} />
+                    {/* CPF e RG separados para brasileiros */}
+                    {(client as any).nacionalidade !== "estrangeiro" ? (
+                      <>
+                        <InfoRow label="CPF" value={(client as any).cpf} />
+                        <InfoRow label="RG" value={(client as any).rg} />
+                      </>
+                    ) : (
+                      <InfoRow label="Passaporte" value={(client as any).numeroPassaporte} />
+                    )}
+                    <InfoRow label="Altura" value={client.height ? `${client.height} cm` : null} />
+                    <InfoRow label="Peso" value={(client as any).weight ? `${(client as any).weight} kg` : null} />
                     <InfoRow label="Frequência de pedal" value={client.pedalFrequency} />
                     <InfoRow label="Origem" value={client.origin} />
                   </div>

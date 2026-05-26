@@ -32,7 +32,7 @@ export const accessoryReturnStatusEnum = pgEnum("accessory_return_status", ["ok"
 export const maintenanceStatusEnum = pgEnum("maintenance_status", ["em_andamento", "concluida"]);
 export const accessoryUnitStatusEnum = pgEnum("accessory_unit_status", ["disponivel", "alugado", "perdido", "manutencao", "roubado"]);
 export const nacionalidadeEnum = pgEnum("nacionalidade", ["brasileiro", "estrangeiro"]);
-export const tipoDocumentoEnum = pgEnum("tipo_documento", ["cpf", "passaporte"]);
+export const tipoDocumentoEnum = pgEnum("tipo_documento", ["cpf", "rg", "passaporte", "cnh"]);
 
 // ─── Users (Manus auth — kept for backward compat) ──────────────────────────
 export const users = pgTable("users", {
@@ -74,6 +74,7 @@ export const clients = pgTable("clients", {
   birthDate: varchar("birthDate", { length: 10 }),
   gender: varchar("gender", { length: 20 }),
   height: varchar("height", { length: 10 }),
+  weight: varchar("weight", { length: 10 }),
   pedalFrequency: varchar("pedalFrequency", { length: 50 }),
   origin: varchar("origin", { length: 100 }),
   // Contact
