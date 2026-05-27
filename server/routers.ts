@@ -546,14 +546,19 @@ const clientsRouter = router({
 const bikesRouter = router({
   list: adminAuthProcedure
     .input(z.object({
-      status: z.enum(["available", "rented", "maintenance"]).optional(),
-      search: z.string().optional(),
-      category: z.string().optional(),
+      status: z.enum(["available", "rented", "maintenance"]).nullish(),
+      search: z.string().nullish(),
+      category: z.string().nullish(),
       page: z.number().min(1).default(1),
       limit: z.number().min(1).max(100).default(20),
     }))
     .query(async ({ input }) => {
-      const { page, limit, ...filters } = input;
+      const { page, limit, ...rawFilters } = input;
+      const filters = {
+        status: rawFilters.status ?? undefined,
+        search: rawFilters.search ?? undefined,
+        category: rawFilters.category ?? undefined,
+      };
       const allBikes = await getBikes(filters);
       const total = allBikes.length;
       const totalPages = Math.ceil(total / limit);
@@ -1158,14 +1163,19 @@ const rentalsRouter = router({
 const accessoriesRouter = router({
   list: adminAuthProcedure
     .input(z.object({
-      status: z.enum(["available", "rented", "maintenance", "lost"]).optional(),
-      search: z.string().optional(),
-      category: z.string().optional(),
+      status: z.enum(["available", "rented", "maintenance", "lost"]).nullish(),
+      search: z.string().nullish(),
+      category: z.string().nullish(),
       page: z.number().min(1).default(1),
       limit: z.number().min(1).max(100).default(20),
     }))
     .query(async ({ input }) => {
-      const { page, limit, ...filters } = input;
+      const { page, limit, ...rawFilters } = input;
+      const filters = {
+        status: rawFilters.status ?? undefined,
+        search: rawFilters.search ?? undefined,
+        category: rawFilters.category ?? undefined,
+      };
       const allItems = await getAccessories(filters);
       // Calculate quantidadeDisponivel in real time based on active rentals
       const db = await (await import("./db")).getDb();
