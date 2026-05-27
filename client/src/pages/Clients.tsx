@@ -221,20 +221,22 @@ function NewClientModal({ open, onClose, onSuccess }: NewClientModalProps) {
         {/* Tabs */}
         <form onSubmit={handleSubmit} className="flex flex-col flex-1 overflow-hidden">
           <Tabs value={activeTab} onValueChange={setActiveTab} className="flex flex-col flex-1 overflow-hidden">
-            <TabsList className="flex-shrink-0 mx-5 mt-4 grid grid-cols-6 h-auto gap-0.5">
-              {[
-                { value: "identificacao", label: "1. ID" },
-                { value: "contato", label: "2. Contato" },
-                { value: "endereco", label: "3. Endereço" },
-                { value: "documento", label: "4. Docs" },
-                { value: "perfil", label: "5. Perfil" },
-                { value: "lgpd", label: "6. LGPD" },
-              ].map((tab) => (
-                <TabsTrigger key={tab.value} value={tab.value} className="text-xs px-1 py-1.5">
-                  {tab.label}
-                </TabsTrigger>
-              ))}
-            </TabsList>
+            <div className="flex-shrink-0 mx-5 mt-4 overflow-x-auto">
+              <TabsList className="flex w-max min-w-full h-auto gap-0.5">
+                {[
+                  { value: "identificacao", label: "1. ID" },
+                  { value: "contato", label: "2. Contato" },
+                  { value: "endereco", label: "3. Endereço" },
+                  { value: "documento", label: "4. Docs" },
+                  { value: "perfil", label: "5. Perfil" },
+                  { value: "lgpd", label: "6. LGPD" },
+                ].map((tab) => (
+                  <TabsTrigger key={tab.value} value={tab.value} className="text-xs px-2 py-1.5 flex-1 min-w-[60px]">
+                    {tab.label}
+                  </TabsTrigger>
+                ))}
+              </TabsList>
+            </div>
 
             <div className="flex-1 overflow-y-auto px-5 py-4">
               {/* ── Aba 1: Identificação ── */}

@@ -347,15 +347,18 @@ export default function PublicReservation() {
     if (s === 0) {
       if (!name.trim() || name.trim().length < 3) errs.name = t.required;
       if (isBrazilian) {
-        if (docType === "cnh") {
-          if (!cpf || cpf.replace(/\D/g, "").length < 11) errs.cpf = lang === "pt" ? "Número da CNH obrigatório (11 dígitos)" : "Driver's license required (11 digits)";
-        } else {
+        // CPF é sempre obrigatório para brasileiros
+        if (!cpf || cpf.replace(/\D/g, "").length < 11) {
+          errs.cpf = lang === "pt" ? "CPF obrigatório (11 dígitos)" : lang === "en" ? "CPF required (11 digits)" : "CPF obligatorio (11 dígitos)";
+        } else if (!validateCPF(cpf)) {
+          errs.cpf = lang === "pt" ? "CPF inválido — verifique os dígitos" : lang === "en" ? "Invalid CPF — check the digits" : "CPF inválido — verifique los dígitos";
+        }
+        if (docType === "rg") {
           // RG: valida módulo 11
           const rgDigits = rg.replace(/[.\-\s]/g, "");
           if (!rgDigits || rgDigits.length < 7) {
             errs.rg = lang === "pt" ? "RG obrigatório" : "RG required";
           } else {
-            // Módulo 11 simples: soma ponderada dos primeiros N-1 dígitos
             const digits = rgDigits.toUpperCase();
             const body = digits.slice(0, -1);
             const lastChar = digits[digits.length - 1];
@@ -1340,20 +1343,33 @@ export default function PublicReservation() {
               {errors.lgpdConsent && <p className="text-red-400 text-xs">{errors.lgpdConsent}</p>}
             </div>
 
-            {/* Summary recap */}
-            {selectedBike && numDays > 0 && (
+            {/* Summary recap — usa carrinho se disponível, senão usa seleção direta */}
+            {(cart.length > 0 || (selectedBike && numDays > 0)) && (
               <div className={`${summaryBg} border rounded-2xl p-5`}>
                 <p className={`text-sm font-bold ${textPrimary} mb-3`}>{t.summaryTitle}</p>
                 <div className="space-y-2 text-sm">
-                  <div className="flex justify-between">
-                    <span className={textSecondary}>{selectedBike.model} × {numDays} {numDays === 1 ? t.day : t.days}</span>
-                    <span className={textPrimary}>R$ {formatCurrency(bikeSubtotal)}</span>
-                  </div>
-                  {discountAmount > 0 && (
-                    <div className="flex justify-between text-green-400">
-                      <span>{t.summaryDiscount} ({applicableDiscount}%)</span>
-                      <span>−R$ {formatCurrency(discountAmount)}</span>
-                    </div>
+                  {cart.length > 0 ? (
+                    <>
+                      {cart.map((item, idx) => (
+                        <div key={idx} className="flex justify-between">
+                          <span className={textSecondary}>{item.bikeModel} ({item.numDays} {item.numDays === 1 ? t.day : t.days} × {item.quantity})</span>
+                          <span className={textPrimary}>R$ {formatCurrency(item.dailyRate * item.numDays * item.quantity)}</span>
+                        </div>
+                      ))}
+                    </>
+                  ) : (
+                    <>
+                      <div className="flex justify-between">
+                        <span className={textSecondary}>{selectedBike!.model} × {numDays} {numDays === 1 ? t.day : t.days}</span>
+                        <span className={textPrimary}>R$ {formatCurrency(bikeSubtotal)}</span>
+                      </div>
+                      {discountAmount > 0 && (
+                        <div className="flex justify-between text-green-400">
+                          <span>{t.summaryDiscount} ({applicableDiscount}%)</span>
+                          <span>−R$ {formatCurrency(discountAmount)}</span>
+                        </div>
+                      )}
+                    </>
                   )}
                   {accTotal > 0 && (
                     <div className="flex justify-between">

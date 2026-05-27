@@ -903,7 +903,7 @@ export default function Rentals() {
           <Bike className="w-10 h-10 mb-3 opacity-30" />
           <p className="text-sm">Nenhum aluguel encontrado</p>
         </div>
-      ) : (
+      ) : viewMode === "active" ? (
         <div className="bg-card border border-border rounded-xl overflow-hidden">
           <table className="w-full hidden md:table">
             <thead>
@@ -1049,7 +1049,7 @@ export default function Rentals() {
             ))}
           </div>
         </div>
-      )}
+      ) : null}
 
       {showNew && (
         <NewRentalDialog

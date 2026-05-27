@@ -1347,7 +1347,8 @@ const accessoriesRouter = router({
       serialNumber: z.string().optional(),
     }))
     .mutation(async ({ input }) => {
-      const { accessoryUnits } = await import("../drizzle/schema");
+      const { accessoryUnits, accessories } = await import("../drizzle/schema");
+      const { eq, sql } = await import("drizzle-orm");
       const db = await (await import("./db")).getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
       const [row] = await db.insert(accessoryUnits).values({
@@ -1355,6 +1356,13 @@ const accessoriesRouter = router({
         serialNumber: input.serialNumber ?? null,
         status: "disponivel",
       }).returning();
+      // Sync quantidadeTotal and quantity on the parent accessory
+      await db.update(accessories)
+        .set({
+          quantidadeTotal: sql`(SELECT COUNT(*) FROM accessory_units WHERE accessory_id = ${input.accessoryId})`,
+          quantity: sql`(SELECT COUNT(*) FROM accessory_units WHERE accessory_id = ${input.accessoryId})`,
+        })
+        .where(eq(accessories.id, input.accessoryId));
       return row;
     }),
 

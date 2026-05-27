@@ -414,12 +414,14 @@ function BikeFormDialog({ bike, onClose, onSuccess }: { bike: any | null; onClos
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto dialog-mobile">
         <DialogHeader><DialogTitle>{isEdit ? "Editar Bicicleta" : "Nova Bicicleta"}</DialogTitle></DialogHeader>
         <Tabs defaultValue="dados">
-          <TabsList className="grid w-full grid-cols-4">
-            <TabsTrigger value="dados">Dados</TabsTrigger>
-            <TabsTrigger value="foto" disabled={!currentId}>Foto</TabsTrigger>
-            <TabsTrigger value="tamanhos" disabled={!currentId}>Tamanhos</TabsTrigger>
-            <TabsTrigger value="manutencao" disabled={!currentId}>Manutenção</TabsTrigger>
-          </TabsList>
+          <div className="overflow-x-auto -mx-1 px-1 pb-0.5">
+            <TabsList className="flex w-max min-w-full">
+              <TabsTrigger value="dados" className="flex-1 min-w-[70px] text-xs">Dados</TabsTrigger>
+              <TabsTrigger value="foto" disabled={!currentId} className="flex-1 min-w-[60px] text-xs">Foto</TabsTrigger>
+              <TabsTrigger value="tamanhos" disabled={!currentId} className="flex-1 min-w-[80px] text-xs">Tamanhos</TabsTrigger>
+              <TabsTrigger value="manutencao" disabled={!currentId} className="flex-1 min-w-[90px] text-xs">Manutenção</TabsTrigger>
+            </TabsList>
+          </div>
 
           {/* Aba Dados */}
           <TabsContent value="dados" className="space-y-4 pt-2">
