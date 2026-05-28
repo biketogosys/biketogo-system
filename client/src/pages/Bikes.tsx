@@ -414,14 +414,15 @@ function BikeFormDialog({ bike, onClose, onSuccess }: { bike: any | null; onClos
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto dialog-mobile">
         <DialogHeader><DialogTitle>{isEdit ? "Editar Bicicleta" : "Nova Bicicleta"}</DialogTitle></DialogHeader>
         <Tabs defaultValue="dados">
-          <div className="w-full overflow-x-auto">
-            <TabsList className="w-full min-w-[320px] grid grid-cols-4">
-              <TabsTrigger value="dados" className="text-xs">Dados</TabsTrigger>
-              <TabsTrigger value="foto" disabled={!currentId} className="text-xs">Foto</TabsTrigger>
-              <TabsTrigger value="tamanhos" disabled={!currentId} className="text-xs">Tamanhos</TabsTrigger>
-              <TabsTrigger value="manutencao" disabled={!currentId} className="text-xs">Manutenção</TabsTrigger>
-            </TabsList>
-          </div>
+          <TabsList className="w-full grid grid-cols-4 h-auto">
+            <TabsTrigger value="dados" className="text-xs py-2 px-1">Dados</TabsTrigger>
+            <TabsTrigger value="foto" disabled={!currentId} className="text-xs py-2 px-1">Foto</TabsTrigger>
+            <TabsTrigger value="tamanhos" disabled={!currentId} className="text-xs py-2 px-1">Tamanhos</TabsTrigger>
+            <TabsTrigger value="manutencao" disabled={!currentId} className="text-xs py-2 px-1">
+              <span className="hidden sm:inline">Manutenção</span>
+              <span className="sm:hidden">Manut.</span>
+            </TabsTrigger>
+          </TabsList>
 
           {/* Aba Dados */}
           <TabsContent value="dados" className="space-y-4 pt-2">
