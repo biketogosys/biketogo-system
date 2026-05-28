@@ -229,6 +229,7 @@ export const accessories = pgTable("accessories", {
   quantidadeDisponivel: integer("quantidadeDisponivel").default(1).notNull(),
   dailyRate: numeric("dailyRate", { precision: 10, scale: 2 }),
   purchasePrice: numeric("purchasePrice", { precision: 10, scale: 2 }),
+  replacementValue: numeric("replacementValue", { precision: 10, scale: 2 }),
   status: accessoryStatusEnum("status").default("available").notNull(),
   notes: text("notes"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),

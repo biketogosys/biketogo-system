@@ -2,7 +2,7 @@ import { trpc } from "@/lib/trpc";
 import { useState, useEffect } from "react";
 import { maskPhone } from "@/hooks/useMask";
 import { toast } from "sonner";
-import { Loader2, Save, Settings as SettingsIcon, Truck, Phone, Clock, Mail, MessageCircle, Link, Eye, EyeOff } from "lucide-react";
+import { Loader2, Save, Settings as SettingsIcon, Truck, Phone, Clock, Mail, MessageCircle, Link, Eye, EyeOff, Building2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -78,6 +78,16 @@ export default function Settings() {
     onError: (e) => toast.error(e.message),
   });
 
+  // Company
+  const [companyName, setCompanyName] = useState("");
+  const [companyCnpj, setCompanyCnpj] = useState("");
+  const [companyAddress, setCompanyAddress] = useState("");
+  const [companyCity, setCompanyCity] = useState("");
+  const [companyState, setCompanyState] = useState("");
+  const [companyCep, setCompanyCep] = useState("");
+  const [companyPhone, setCompanyPhone] = useState("");
+  const [companyEmail, setCompanyEmail] = useState("");
+  const [companyWebsite, setCompanyWebsite] = useState("");
   // Delivery
   const [deliveryFee, setDeliveryFee] = useState("");
   const [deliveryMargin, setDeliveryMargin] = useState("30");
@@ -119,6 +129,15 @@ export default function Settings() {
       setWaApiToken(map["whatsapp_api_token"] || "");
       setWaPhoneId(map["whatsapp_phone_id"] || "");
       setShopifyApiKey(map["shopify_api_key"] || "");
+      setCompanyName(map["company_name"] || "");
+      setCompanyCnpj(map["company_cnpj"] || "");
+      setCompanyAddress(map["company_address"] || "");
+      setCompanyCity(map["company_city"] || "");
+      setCompanyState(map["company_state"] || "");
+      setCompanyCep(map["company_cep"] || "");
+      setCompanyPhone(map["company_phone"] || "");
+      setCompanyEmail(map["company_email"] || "");
+      setCompanyWebsite(map["company_website"] || "");
     }
   }, [settings]);
 
@@ -145,6 +164,95 @@ export default function Settings() {
       </div>
 
       <div className="space-y-6">
+        {/* ─── Dados da Empresa ────────────────────────────────────────────── */}
+        <div className="bg-card border border-border rounded-xl p-6">
+          <div className="flex items-center gap-2 mb-4">
+            <Building2 className="w-5 h-5 text-primary" />
+            <h2 className="text-base font-semibold text-foreground">Dados da Empresa</h2>
+          </div>
+          <p className="text-xs text-muted-foreground mb-4">
+            Informações usadas no cabeçalho do contrato PDF e nos e-mails automáticos.
+          </p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <SettingField
+              label="Nome da empresa"
+              value={companyName}
+              onChange={setCompanyName}
+              onSave={() => save("company_name", companyName)}
+              saving={saving}
+              placeholder="Bike To Go Floripa"
+            />
+            <SettingField
+              label="CNPJ"
+              value={companyCnpj}
+              onChange={setCompanyCnpj}
+              onSave={() => save("company_cnpj", companyCnpj)}
+              saving={saving}
+              placeholder="00.000.000/0001-00"
+              mono
+            />
+            <div className="sm:col-span-2">
+              <SettingField
+                label="Endereço (rua, número, complemento)"
+                value={companyAddress}
+                onChange={setCompanyAddress}
+                onSave={() => save("company_address", companyAddress)}
+                saving={saving}
+                placeholder="Rua das Flores, 123 — Sala 2"
+              />
+            </div>
+            <SettingField
+              label="Cidade"
+              value={companyCity}
+              onChange={setCompanyCity}
+              onSave={() => save("company_city", companyCity)}
+              saving={saving}
+              placeholder="Florianópolis"
+            />
+            <SettingField
+              label="Estado (UF)"
+              value={companyState}
+              onChange={setCompanyState}
+              onSave={() => save("company_state", companyState)}
+              saving={saving}
+              placeholder="SC"
+            />
+            <SettingField
+              label="CEP"
+              value={companyCep}
+              onChange={setCompanyCep}
+              onSave={() => save("company_cep", companyCep)}
+              saving={saving}
+              placeholder="88000-000"
+              mono
+            />
+            <SettingField
+              label="Telefone da empresa"
+              value={companyPhone}
+              onChange={(v) => setCompanyPhone(maskPhone(v))}
+              onSave={() => save("company_phone", companyPhone)}
+              saving={saving}
+              placeholder="(48) 99999-9999"
+            />
+            <SettingField
+              label="E-mail da empresa"
+              value={companyEmail}
+              onChange={setCompanyEmail}
+              onSave={() => save("company_email", companyEmail)}
+              saving={saving}
+              placeholder="contato@biketogo.com.br"
+              type="email"
+            />
+            <SettingField
+              label="Site"
+              value={companyWebsite}
+              onChange={setCompanyWebsite}
+              onSave={() => save("company_website", companyWebsite)}
+              saving={saving}
+              placeholder="https://biketogo.com.br"
+            />
+          </div>
+        </div>
         {/* ─── Delivery ─────────────────────────────────────────────────────── */}
         <div className="bg-card border border-border rounded-xl p-6">
           <div className="flex items-center gap-2 mb-4">

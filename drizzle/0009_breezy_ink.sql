@@ -1,0 +1,1 @@
+ALTER TABLE "accessories" ADD COLUMN "replacementValue" numeric(10, 2);

@@ -222,10 +222,17 @@ function CloseContractDialog({
                   {detail.accessories.map((acc) => (
                     <div key={acc.id} className="rounded-md border p-4 space-y-3">
                       <div className="flex items-center justify-between">
-                        <p className="font-medium text-sm">
-                          {acc.accessoryName ?? `Acessório #${acc.accessoryId}`}{" "}
-                          <span className="text-muted-foreground font-normal">× {acc.qty}</span>
-                        </p>
+                        <div>
+                          <p className="font-medium text-sm">
+                            {acc.accessoryName ?? `Acessório #${acc.accessoryId}`}{" "}
+                            <span className="text-muted-foreground font-normal">× {acc.qty}</span>
+                          </p>
+                          {(acc as any).serialNumber && (
+                            <p className="text-xs text-muted-foreground mt-0.5">
+                              Nº Série: <span className="font-mono">{(acc as any).serialNumber}</span>
+                            </p>
+                          )}
+                        </div>
                         <Select
                           value={accChecklist[acc.id]?.status ?? acc.status ?? "ok"}
                           onValueChange={(v) =>
@@ -433,11 +440,18 @@ function ContractDetail({
           <ContractStatusBadge status={data.status as ContractStatus} />
           {(data.status === "pendente" || data.rentals?.some((r: any) => r.status === "pending")) && (
             <>
+              {data.clientStatus && data.clientStatus !== "verified" && (
+                <div className="flex items-center gap-1.5 text-xs text-amber-600 bg-amber-50 dark:bg-amber-950/30 dark:text-amber-400 border border-amber-200 dark:border-amber-800 rounded-md px-2.5 py-1.5">
+                  <AlertTriangle className="h-3.5 w-3.5 flex-shrink-0" />
+                  <span>Cliente não verificado — verifique antes de confirmar</span>
+                </div>
+              )}
               <Button
                 size="sm"
-                className="bg-green-600 hover:bg-green-700 text-white"
+                className="bg-green-600 hover:bg-green-700 text-white disabled:opacity-50"
                 onClick={() => confirmAllMutation.mutate({ contractId })}
-                disabled={confirmAllMutation.isPending}
+                disabled={confirmAllMutation.isPending || (data.clientStatus != null && data.clientStatus !== "verified")}
+                title={data.clientStatus !== "verified" ? "Cliente precisa ser verificado antes de confirmar" : undefined}
               >
                 <CheckCircle2 className="h-4 w-4 mr-1" />
                 {confirmAllMutation.isPending ? "Confirmando..." : "Confirmar Reserva"}

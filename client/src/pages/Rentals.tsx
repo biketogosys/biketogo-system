@@ -6,6 +6,39 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
+// ─── Lightbox ────────────────────────────────────────────────────────────────
+function Lightbox({ src, alt, onClose }: { src: string; alt: string; onClose: () => void }) {
+  const handleKey = (e: React.KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+  return (
+    <div
+      role="dialog"
+      aria-modal
+      tabIndex={0}
+      onKeyDown={handleKey}
+      onClick={onClose}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm"
+      style={{ outline: "none" }}
+      ref={el => el?.focus()}
+    >
+      <button
+        onClick={onClose}
+        className="absolute top-4 right-4 w-9 h-9 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors z-10"
+        aria-label="Fechar"
+      >
+        <span className="text-xl leading-none">×</span>
+      </button>
+      <img
+        src={src}
+        alt={alt}
+        onClick={e => e.stopPropagation()}
+        className="max-w-[90vw] max-h-[90vh] rounded-lg shadow-2xl"
+        style={{ objectFit: "contain" }}
+      />
+    </div>
+  );
+}
+
+
 type RentalStatus = "pending" | "active" | "returned" | "overdue" | "cancelled";
 
 const rentalStatusConfig: Record<RentalStatus, { cls: string; label: string }> = {
@@ -692,6 +725,10 @@ export default function Rentals() {
   const [page, setPage] = useState(1);
   const [viewMode, setViewMode] = useState<"active" | "archived">("active");
   const [archivedPage, setArchivedPage] = useState(1);
+  const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
+  const [lightboxAlt, setLightboxAlt] = useState("");
+  const openLightbox = (src: string, alt: string) => { setLightboxSrc(src); setLightboxAlt(alt); };
+  const closeLightbox = () => setLightboxSrc(null);
   const utils = trpc.useUtils();
 
   const { data: settingsData } = trpc.settings.getAll.useQuery();
@@ -756,6 +793,7 @@ export default function Rentals() {
 
   return (
     <div className="p-6 max-w-6xl mx-auto">
+      {lightboxSrc && <Lightbox src={lightboxSrc} alt={lightboxAlt} onClose={closeLightbox} />}
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-foreground">Aluguéis</h1>

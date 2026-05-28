@@ -251,6 +251,7 @@ type AccessoryForm = {
   serialNumber: string;
   quantity: number;
   quantidadeTotal: number;
+  replacementValue: string;
   status: AccessoryStatus;
   notes: string;
 };
@@ -262,6 +263,7 @@ const emptyForm: AccessoryForm = {
   serialNumber: "",
   quantity: 1,
   quantidadeTotal: 1,
+  replacementValue: "",
   status: "available",
   notes: "",
 };
@@ -340,6 +342,7 @@ export default function Accessories() {
       serialNumber: item.serialNumber ?? "",
       quantity: item.quantidadeTotal ?? item.quantity ?? 1,
       quantidadeTotal: item.quantidadeTotal ?? item.quantity ?? 1,
+      replacementValue: item.replacementValue ?? "",
       status: item.status ?? "available",
       notes: item.notes ?? "",
     });
@@ -358,6 +361,7 @@ export default function Accessories() {
       serialNumber: form.serialNumber || undefined,
       quantity: form.quantidadeTotal,
       quantidadeTotal: form.quantidadeTotal,
+      replacementValue: form.replacementValue || undefined,
       status: form.status,
       notes: form.notes || undefined,
     };
@@ -598,6 +602,20 @@ export default function Accessories() {
                   onChange={(e) => setForm({ ...form, serialNumber: e.target.value })}
                   className="bg-background"
                 />
+              </div>
+
+              <div className="space-y-1">
+                <Label>Valor de Reposição (R$)</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  placeholder="Ex: 150.00"
+                  value={form.replacementValue}
+                  onChange={(e) => setForm({ ...form, replacementValue: e.target.value })}
+                  className="bg-background"
+                />
+                <p className="text-xs text-muted-foreground">Valor cobrado em caso de perda ou dano irreparável.</p>
               </div>
 
               <div className="space-y-1">

@@ -1097,6 +1097,20 @@ const rentalsRouter = router({
         andOp(eqOp(rentalsTable.contractId, input.contractId), eqOp(rentalsTable.status, "pending"), isNullOp(rentalsTable.deletedAt))
       );
       if (pendingRentals.length === 0) throw new TRPCError({ code: "NOT_FOUND", message: "Nenhuma reserva pendente encontrada." });
+      // Block confirmation if client is not verified
+      if (pendingRentals.length > 0) {
+        const { contracts: contractsTable2, clients: clientsTable2 } = await import("../drizzle/schema");
+        const [contract] = await db.select().from(contractsTable2).where(eqOp(contractsTable2.id, input.contractId));
+        if (contract?.clientId) {
+          const [client] = await db.select().from(clientsTable2).where(eqOp(clientsTable2.id, contract.clientId));
+          if (client && client.status !== "verified") {
+            throw new TRPCError({
+              code: "PRECONDITION_FAILED",
+              message: `Cliente "${client.name}" ainda n\u00e3o foi verificado. Verifique o cliente antes de confirmar a reserva.`,
+            });
+          }
+        }
+      }
       // Confirm each rental: set status to active, mark bike as rented
       for (const rental of pendingRentals) {
         await updateRental(rental.id, { status: "active" } as any);
@@ -1133,7 +1147,80 @@ const rentalsRouter = router({
         }
       } catch (err) { console.warn("[confirmAll] Unit marking error:", err); }
       await createAuditLog({ adminId: (ctx as any).adminUser?.id ?? null, acao: "confirmou_reserva", tabela: "contracts", registroId: input.contractId });
-      return { success: true, confirmed: pendingRentals.length };
+      // Generate PDF, upload to S3, save pdfUrl, send email
+      let pdfUrl: string | null = null;
+      try {
+        const { generateContractPdf } = await import("./pdf");
+        const { storagePut } = await import("./storage");
+        const { contracts: cTable2, clients: clTable2, accessories: accTable2, contractAccessories: caTable3, accessoryUnits: auTable3 } = await import("../drizzle/schema");
+        const { eq: eqPdf, and: andPdf, isNull: isNullPdf } = await import("drizzle-orm");
+        const [contractRow] = await db.select().from(cTable2).where(eqPdf(cTable2.id, input.contractId));
+        const [clientRow] = contractRow?.clientId
+          ? await db.select().from(clTable2).where(eqPdf(clTable2.id, contractRow.clientId))
+          : [null];
+        const rentalsForPdf = await db.select({
+          bikeId: rentalsTable.bikeId, startDate: rentalsTable.startDate, endDate: rentalsTable.endDate,
+          totalAmount: rentalsTable.totalAmount,
+        }).from(rentalsTable).where(andPdf(eqPdf(rentalsTable.contractId, input.contractId), isNullPdf(rentalsTable.deletedAt)));
+        const { bikes: bikesT } = await import("../drizzle/schema");
+        const rentalsWithBike = await Promise.all(rentalsForPdf.map(async (r) => {
+          const [bike] = r.bikeId ? await db.select({ model: bikesT.model, brand: bikesT.brand, serialNumber: bikesT.serialNumber }).from(bikesT).where(eqPdf(bikesT.id, r.bikeId)) : [null];
+          return { ...r, bikeModel: bike?.model, bikeBrand: bike?.brand, bikeSerialNumber: bike?.serialNumber };
+        }));
+        const caRows3 = await db.select({
+          accessoryId: caTable3.accessoryId, qty: caTable3.qty, unitId: caTable3.unitId,
+          accessoryName: accTable2.name,
+        }).from(caTable3).leftJoin(accTable2, eqPdf(caTable3.accessoryId, accTable2.id)).where(eqPdf(caTable3.contractId, input.contractId));
+        const accWithSerial = await Promise.all(caRows3.map(async (ca) => {
+          let serialNumber: string | null = null;
+          if (ca.unitId) {
+            const [unit] = await db.select({ serialNumber: auTable3.serialNumber }).from(auTable3).where(eqPdf(auTable3.id, ca.unitId));
+            serialNumber = unit?.serialNumber ?? null;
+          }
+          return { accessoryName: ca.accessoryName, qty: ca.qty, serialNumber };
+        }));
+        // Read company settings
+        const { getSetting } = await import("./db");
+        const [empresaNome, empresaCnpj, empresaEndereco, empresaCidade, empresaEstado, empresaTelefone, empresaEmail] = await Promise.all([
+          getSetting("empresa_nome"), getSetting("empresa_cnpj"), getSetting("empresa_endereco"),
+          getSetting("empresa_cidade"), getSetting("empresa_estado"), getSetting("empresa_telefone"),
+          getSetting("empresa_email"),
+        ]);
+        const pdfBuffer = await generateContractPdf({
+          contractId: input.contractId,
+          clientName: clientRow?.name ?? "—",
+          clientCpf: clientRow?.cpf ?? null,
+          clientPhone: clientRow?.phone ?? null,
+          clientEmail: clientRow?.email ?? null,
+          criadoEm: contractRow?.criadoEm ?? new Date(),
+          valorTotal: contractRow?.valorTotal ?? null,
+          empresaNome: empresaNome ?? undefined,
+          empresaCnpj: empresaCnpj ?? undefined,
+          empresaEndereco: empresaEndereco ?? undefined,
+          empresaCidade: empresaCidade ?? undefined,
+          empresaEstado: empresaEstado ?? undefined,
+          empresaTelefone: empresaTelefone ?? undefined,
+          empresaEmail: empresaEmail ?? undefined,
+          rentals: rentalsWithBike,
+          accessories: accWithSerial,
+        });
+        const suffix = Date.now().toString(36);
+        const { url } = await storagePut(`contracts/contrato-${input.contractId}-${suffix}.pdf`, pdfBuffer, "application/pdf");
+        pdfUrl = url;
+        // Save pdfUrl in contracts table
+        const { contracts: cTable3 } = await import("../drizzle/schema");
+        await db.update(cTable3).set({ pdfUrl: url }).where(eqPdf(cTable3.id, input.contractId));
+        // Send email with PDF link if client has email
+        if (clientRow?.email) {
+          const { sendEmail } = await import("./email");
+          await sendEmail({
+            to: clientRow.email,
+            subject: `Contrato #${input.contractId} confirmado — Bike To Go`,
+            html: `<p>Ol\u00e1, <strong>${clientRow.name}</strong>!</p><p>Sua reserva foi confirmada. Acesse o contrato pelo link abaixo:</p><p><a href="${url}">Baixar Contrato PDF</a></p><p>Obrigado por escolher a Bike To Go!</p>`,
+          });
+        }
+      } catch (pdfErr) { console.warn("[confirmAll] PDF generation error:", pdfErr); }
+      return { success: true, confirmed: pendingRentals.length, pdfUrl };
     }),
 
   // Reject all pending rentals in a contract
@@ -1240,6 +1327,7 @@ const accessoriesRouter = router({
       quantity: z.number().min(1).default(1),
       dailyRate: z.string().optional(),
       purchasePrice: z.string().optional(),
+      replacementValue: z.string().optional(),
       status: z.enum(["available", "rented", "maintenance", "lost"]).default("available"),
       notes: z.string().optional(),
     }))
@@ -1251,6 +1339,7 @@ const accessoriesRouter = router({
         serialNumber: sanitize(input.serialNumber),
         dailyRate: sanitizeNumeric(input.dailyRate),
         purchasePrice: sanitizeNumeric(input.purchasePrice),
+        replacementValue: sanitizeNumeric(input.replacementValue),
         notes: sanitize(input.notes),
       };
       const id = await createAccessory(sanitizedAcc);
@@ -1277,6 +1366,7 @@ const accessoriesRouter = router({
       quantity: z.number().optional(),
       dailyRate: z.string().optional(),
       purchasePrice: z.string().optional(),
+      replacementValue: z.string().optional(),
       status: z.enum(["available", "rented", "maintenance", "lost"]).optional(),
       notes: z.string().optional(),
     }))
@@ -1289,6 +1379,7 @@ const accessoriesRouter = router({
         serialNumber: data.serialNumber !== undefined ? sanitize(data.serialNumber) : undefined,
         dailyRate: data.dailyRate !== undefined ? sanitizeNumeric(data.dailyRate) : undefined,
         purchasePrice: data.purchasePrice !== undefined ? sanitizeNumeric(data.purchasePrice) : undefined,
+        replacementValue: data.replacementValue !== undefined ? sanitizeNumeric(data.replacementValue) : undefined,
         notes: data.notes !== undefined ? sanitize(data.notes) : undefined,
       };
       await updateAccessory(id, sanitizedAcc);
@@ -2143,6 +2234,7 @@ import {
   clients as clientsTable,
   bikes as bikesTable,
   accessories as accessoriesTable,
+  accessoryUnits,
   Contract,
   InsertContract,
 } from "../drizzle/schema";
@@ -2265,6 +2357,7 @@ const contractsRouter = router({
         clientName: clientsTable.name,
         clientPhone: clientsTable.phone,
         clientEmail: clientsTable.email,
+        clientStatus: clientsTable.status,
       })
         .from(contracts)
         .leftJoin(clientsTable, eq(contracts.clientId, clientsTable.id))
@@ -2286,7 +2379,7 @@ const contractsRouter = router({
         .from(rentalsTable)
         .leftJoin(bikesTable, eq(rentalsTable.bikeId, bikesTable.id))
         .where(and(eq(rentalsTable.contractId, input.id), isNull(rentalsTable.deletedAt)));
-      const accChecklist = await db.select({
+      const accChecklistRaw = await db.select({
         id: contractAccessories.id,
         accessoryId: contractAccessories.accessoryId,
         qty: contractAccessories.qty,
@@ -2294,10 +2387,21 @@ const contractsRouter = router({
         observacao: contractAccessories.observacao,
         fotoUrl: contractAccessories.fotoUrl,
         accessoryName: accessoriesTable.name,
+        unitId: contractAccessories.unitId,
       })
         .from(contractAccessories)
         .leftJoin(accessoriesTable, eq(contractAccessories.accessoryId, accessoriesTable.id))
         .where(eq(contractAccessories.contractId, input.id));
+      // Fetch serialNumber for each linked unit
+      const accChecklist = await Promise.all(accChecklistRaw.map(async (ca) => {
+        let serialNumber: string | null = null;
+        if (ca.unitId) {
+          const [unit] = await db.select({ serialNumber: accessoryUnits.serialNumber })
+            .from(accessoryUnits).where(eq(accessoryUnits.id, ca.unitId));
+          serialNumber = unit?.serialNumber ?? null;
+        }
+        return { ...ca, serialNumber };
+      }));
       return { ...contract, rentals: linkedRentals, accessories: accChecklist };
     }),
 
