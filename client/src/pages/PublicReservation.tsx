@@ -42,11 +42,7 @@ function daysBetween(start: string, end: string) {
 }
 
 const STATES = ["AC","AL","AP","AM","BA","CE","DF","ES","GO","MA","MT","MS","MG","PA","PB","PR","PE","PI","RJ","RN","RS","RO","RR","SC","SP","SE","TO"];
-const TIMES: string[] = [];
-for (let h = 9; h <= 19; h++) {
-  TIMES.push(`${String(h).padStart(2,"0")}:00`);
-  if (h < 19) TIMES.push(`${String(h).padStart(2,"0")}:30`);
-}
+// TIMES is now loaded dynamically from server settings (publicApi.getDeliveryHours)
 
 // ─── Field component ───────────────────────────────────────────────────────────
 function Field({ label, required, error, hint, children }: {
@@ -221,6 +217,8 @@ export default function PublicReservation() {
   const { data: accByCategoryRaw } = trpc.publicApi.availableAccessoriesByCategory.useQuery();
   const { data: accessoriesRaw } = trpc.publicApi.availableAccessories.useQuery();
   const { data: deliveryFeeStr } = trpc.publicApi.deliveryFee.useQuery();
+  const { data: deliveryHoursData } = trpc.publicApi.getDeliveryHours.useQuery();
+  const TIMES: string[] = deliveryHoursData ?? [];
   const { data: discountRulesRaw } = trpc.publicApi.bikeDiscountRules.useQuery(
     { bikeId: selectedBikeId! }, { enabled: !!selectedBikeId }
   );

@@ -1784,6 +1784,24 @@ const publicApiRouter = router({
     return fee || "0";
   }),
 
+  // Get configured delivery hours (for public reservation form)
+  getDeliveryHours: publicProcedure.query(async () => {
+    const raw = await getSetting("delivery_hours");
+    if (raw) {
+      try {
+        const parsed: string[] = JSON.parse(raw);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      } catch { /* fall through */ }
+    }
+    // Default: half-hour slots from 09:00 to 19:00
+    const defaults: string[] = [];
+    for (let h = 9; h <= 19; h++) {
+      defaults.push(`${String(h).padStart(2, "0")}:00`);
+      if (h < 19) defaults.push(`${String(h).padStart(2, "0")}:30`);
+    }
+    return defaults;
+  }),
+
   // Submit reservation from Shopify
   submitReservation: publicProcedure
     .input(z.object({
