@@ -81,6 +81,7 @@ import {
 } from "./db";
 import { notifyOwner } from "./_core/notification";
 import { sendEmail, buildReservationEmailHtml } from "./email";
+import { buildProfessionalReservationEmail } from "./email-templates";
 import { sendWhatsApp, buildOwnerReservationMessage } from "./whatsapp";
 import { createStripeCheckout } from "./stripe";
 import { COOKIE_NAME } from "@shared/const";
@@ -1976,16 +1977,32 @@ const publicApiRouter = router({
         rentalIds.push(rentalId);
       }
 
-      // Add accessories (linked to first rental for simplicity)
+      // Add accessories: link to contract_accessories (for contract detail) AND rental_accessories (for rental detail)
       if (input.accessories && input.accessories.length > 0) {
+        const dbForAcc = await (await import("./db")).getDb();
+        const { contractAccessories: caSchema } = await import("../drizzle/schema");
         for (const acc of input.accessories) {
           const accessory = await getAccessoryById(acc.accessoryId);
+          // 1. Link to first rental (rental_accessories)
           await createRentalAccessory({
             rentalId: rentalIds[0],
             accessoryId: acc.accessoryId,
             quantity: acc.quantity,
             dailyRate: accessory?.dailyRate || null,
           } as any);
+          // 2. Link to contract (contract_accessories) — required for contract detail view
+          if (contractId && dbForAcc) {
+            try {
+              await dbForAcc.insert(caSchema).values({
+                contractId,
+                accessoryId: acc.accessoryId,
+                qty: acc.quantity,
+                status: "ok",
+              });
+            } catch (err) {
+              console.warn("[submitReservation] Failed to insert contract_accessory:", err);
+            }
+          }
         }
       }
 
@@ -2015,45 +2032,61 @@ const publicApiRouter = router({
         const ownerPhone = sanitizePhone(rawOwnerPhone) ?? rawOwnerPhone ?? undefined;
         await sendWhatsApp({ text: waMessage, to: ownerPhone });
 
-        // 3. Email confirmation to client
+        // 3. Fetch company settings for professional email
+        const [companyName, companyEmail2, companyPhone2, logoUrl] = await Promise.all([
+          getSetting("company_name"),
+          getSetting("company_email"),
+          getSetting("company_phone"),
+          getSetting("logo_url"),
+        ]);
+        const cartEmailItems = await Promise.all(cartItems.map(async (item) => {
+          const bike = await getBikeById(item.bikeId);
+          return {
+            bikeModel: bike?.model || "N/A",
+            bikeBrand: bike?.brand || undefined,
+            startDate: item.startDate,
+            endDate: item.endDate,
+            deliveryTime: item.deliveryTime,
+            totalAmount: item.totalAmount,
+          };
+        }));
+        const accessoryNames: string[] = [];
+        if (input.accessories && input.accessories.length > 0) {
+          for (const acc of input.accessories) {
+            const accessory = await getAccessoryById(acc.accessoryId);
+            if (accessory?.name) accessoryNames.push(`${accessory.name} ×${acc.quantity}`);
+          }
+        }
+        const professionalEmailHtml = buildProfessionalReservationEmail({
+          clientName: input.name,
+          cartItems: cartEmailItems,
+          accessories: accessoryNames,
+          grandTotal: grandTotal.toFixed(2),
+          paymentMethod: input.paymentMethod,
+          companyName: companyName || "Bike To Go",
+          companyEmail: companyEmail2 || undefined,
+          companyPhone: companyPhone2 || undefined,
+          logoUrl: logoUrl || undefined,
+        });
+        // Send to client
         if (input.email) {
-          const emailHtml = buildReservationEmailHtml({
-            clientName: input.name,
-            bikeModel: bikeSummary,
-            startDate: firstItem.startDate,
-            endDate: firstItem.endDate,
-            deliveryTime: firstItem.deliveryTime,
-            totalAmount: grandTotal.toFixed(2),
-          });
           await sendEmail({
             to: input.email,
-            subject: `Reserva Recebida — ${bikeSummary} | Bike To Go`,
-            html: emailHtml,
+            subject: `Reserva Recebida — ${bikeSummary} | ${companyName || "Bike To Go"}`,
+            html: professionalEmailHtml,
           });
         }
-
-        // 4. Email notification to admin (if admin email is configured)
-        const adminEmail = await getSetting("notification_email");
-        if (adminEmail) {
+        // 4. Send copy to company_email (owner receives copy of every reservation)
+        const ownerCopyEmail = companyEmail2 || await getSetting("notification_email");
+        if (ownerCopyEmail && ownerCopyEmail !== input.email) {
           const contractPath = contractId ? `/contratos?contractId=${contractId}` : "/contratos";
-          const adminEmailHtml = `
-            <div style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:24px;">
-              <h2 style="color:#C8920A;">&#x1F6B2; Nova Reserva Pendente — Bike To Go</h2>
-              <p><strong>Cliente:</strong> ${input.name}</p>
-              <p><strong>Bikes:</strong> ${bikeSummary}</p>
-              <p><strong>Período:</strong> ${firstItem.startDate} a ${firstItem.endDate}</p>
-              <p><strong>Valor Total:</strong> R$ ${grandTotal.toFixed(2)}</p>
-              <p><strong>Pagamento:</strong> ${input.paymentMethod || "N/A"}</p>
-              <hr style="border:none;border-top:1px solid #eee;margin:16px 0;" />
-              <p style="color:#e67e22;">&#x26A0;&#xFE0F; Esta reserva está <strong>PENDENTE</strong> e aguarda sua verificação.</p>
-              <p>Acesse o painel para confirmar ou recusar: <a href="${contractPath}">${contractPath}</a></p>
-            </div>
-          `;
-          await sendEmail({
-            to: adminEmail,
-            subject: `⚠️ Nova Reserva Pendente — ${input.name} | Bike To Go`,
-            html: adminEmailHtml,
-          });
+          const ownerSubject = `⚠️ Cópia da Reserva — ${input.name} | ${companyName || "Bike To Go"}`;
+          // Append admin note to the same professional template
+          const ownerHtml = professionalEmailHtml.replace(
+            "</body>",
+            `<div style="max-width:620px;margin:0 auto;padding:0 16px 24px;"><div style="padding:12px 16px;background:#1a0a0a;border-left:3px solid #e74c3c;border-radius:4px;"><p style="margin:0;font-size:13px;color:#e74c3c;"><strong>Nota para o admin:</strong> Esta é uma cópia automática. Acesse o painel para confirmar ou recusar: <a href="${contractPath}" style="color:#C8920A;">${contractPath}</a></p></div></div></body>`
+          );
+          await sendEmail({ to: ownerCopyEmail, subject: ownerSubject, html: ownerHtml });
         }
       } catch (err) {
         console.warn("[Notification] Error sending notifications:", err);
@@ -2393,6 +2426,7 @@ const contractsRouter = router({
         observacao: contractAccessories.observacao,
         fotoUrl: contractAccessories.fotoUrl,
         accessoryName: accessoriesTable.name,
+        replacementValue: accessoriesTable.replacementValue,
         unitId: contractAccessories.unitId,
       })
         .from(contractAccessories)
@@ -2492,6 +2526,54 @@ const contractsRouter = router({
         .where(eq(contracts.id, input.id));
       await createAuditLog({ adminId: (ctx as any).adminUser?.id ?? null, acao: "arquivou_contrato", tabela: "contracts", registroId: input.id });
       return { success: true };
+    }),
+
+  // Confirm presential payment: mark all rentals as paid, register revenue, activate bikes
+  confirmPayment: adminOnlyProcedure
+    .input(z.object({ contractId: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+      // Get all active (or pending) rentals for this contract that are not yet paid
+      const contractRentals = await db.select()
+        .from(rentalsTable)
+        .where(and(eq(rentalsTable.contractId, input.contractId), isNull(rentalsTable.deletedAt)));
+      if (contractRentals.length === 0)
+        throw new TRPCError({ code: "NOT_FOUND", message: "Nenhum aluguel encontrado para este contrato." });
+      const unpaidRentals = contractRentals.filter((r) => r.paymentStatus !== "paid");
+      if (unpaidRentals.length === 0)
+        throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Todos os alugueis já estão pagos." });
+      // Mark all rentals as paid
+      await db.update(rentalsTable)
+        .set({ paymentStatus: "paid" })
+        .where(and(eq(rentalsTable.contractId, input.contractId), isNull(rentalsTable.deletedAt)));
+      // Activate bikes if rental is still pending (presential payment before confirmation)
+      for (const rental of unpaidRentals) {
+        if (rental.status === "pending") {
+          await updateRental(rental.id, { status: "active" } as any);
+          await updateBike(rental.bikeId, { status: "rented" });
+        }
+      }
+      // Register revenue in financial module
+      try {
+        const today = new Date().toISOString().split("T")[0];
+        const totalAmt = unpaidRentals.reduce((sum, r) => sum + parseFloat(r.totalAmount || "0"), 0);
+        if (totalAmt > 0) {
+          await createRevenue({
+            categoryId: 1,
+            description: `Pagamento presencial — Contrato #${input.contractId}`,
+            amount: totalAmt.toFixed(2),
+            date: today,
+          } as any);
+        }
+      } catch (err) { console.warn("[confirmPayment] Revenue error:", err); }
+      await createAuditLog({
+        adminId: (ctx as any).adminUser?.id ?? null,
+        acao: "confirmou_pagamento_presencial",
+        tabela: "contracts",
+        registroId: input.contractId,
+      });
+      return { success: true, paid: unpaidRentals.length };
     }),
 });
 

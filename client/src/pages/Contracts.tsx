@@ -15,6 +15,7 @@ import {
   Package,
   Camera,
   Download,
+  CreditCard,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -403,6 +404,15 @@ function ContractDetail({
     onError: (e) => toast.error("Erro ao recusar: " + e.message),
   });
 
+  const confirmPaymentMutation = trpc.contracts.confirmPayment.useMutation({
+    onSuccess: (res) => {
+      toast.success(`Pagamento confirmado para ${res.paid} aluguel(is). Receita registrada.`);
+      utils.contracts.getById.invalidate({ id: contractId });
+      utils.contracts.list.invalidate();
+    },
+    onError: (e) => toast.error("Erro ao confirmar pagamento: " + e.message),
+  });
+
   if (isLoading) {
     return (
       <div className="flex justify-center items-center h-64">
@@ -499,6 +509,28 @@ function ContractDetail({
           </Button>
         </div>
       </div>
+
+      {/* Payment confirmation button (presential) */}
+      {data.rentals?.some((r: any) => r.paymentStatus === "pending" || !r.paymentStatus) && (
+        <div className="flex items-center gap-2 p-3 rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30">
+          <CreditCard className="h-4 w-4 text-amber-600 dark:text-amber-400 flex-shrink-0" />
+          <span className="text-sm text-amber-700 dark:text-amber-300 flex-1">
+            Pagamento presencial pendente
+          </span>
+          <Button
+            size="sm"
+            className="bg-amber-600 hover:bg-amber-700 text-white"
+            onClick={() => {
+              if (confirm("Confirmar recebimento do pagamento presencial? A receita será registrada automaticamente."))
+                confirmPaymentMutation.mutate({ contractId });
+            }}
+            disabled={confirmPaymentMutation.isPending}
+          >
+            <CreditCard className="h-4 w-4 mr-1" />
+            {confirmPaymentMutation.isPending ? "Confirmando..." : "Confirmar Pagamento"}
+          </Button>
+        </div>
+      )}
 
       {/* PDF download */}
       <div className="flex items-center gap-2">
@@ -612,29 +644,46 @@ function ContractDetail({
           <h3 className="font-semibold mb-3 flex items-center gap-2">
             <Package className="h-4 w-4" /> Acessórios do Contrato
           </h3>
-          <div className="rounded-md border divide-y">
-            {data.accessories.map((acc) => {
-              const statusCfg =
-                accessoryStatusConfig[acc.status as AccessoryReturnStatus] ??
-                accessoryStatusConfig.ok;
-              return (
-                <div key={acc.id} className="flex items-start justify-between px-4 py-3">
-                  <div>
-                    <p className="font-medium text-sm">
-                      {acc.accessoryName ?? `Acessório #${acc.accessoryId}`}{" "}
-                      <span className="text-muted-foreground">× {acc.qty}</span>
-                    </p>
-                    {acc.observacao && (
-                      <p className="text-xs text-muted-foreground mt-0.5">{acc.observacao}</p>
-                    )}
-                  </div>
-                  <span className={`flex items-center gap-1 text-xs font-medium ${statusCfg.cls}`}>
-                    {statusCfg.icon}
-                    {statusCfg.label}
-                  </span>
-                </div>
-              );
-            })}
+          <div className="rounded-md border overflow-hidden">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Acessório</TableHead>
+                  <TableHead>Qtd</TableHead>
+                  <TableHead>Valor de Reposição</TableHead>
+                  <TableHead>Condição</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {data.accessories.map((acc) => {
+                  const statusCfg =
+                    accessoryStatusConfig[acc.status as AccessoryReturnStatus] ??
+                    accessoryStatusConfig.ok;
+                  return (
+                    <TableRow key={acc.id}>
+                      <TableCell className="font-medium text-sm">
+                        {acc.accessoryName ?? `Acessório #${acc.accessoryId}`}
+                        {acc.observacao && (
+                          <p className="text-xs text-muted-foreground mt-0.5">{acc.observacao}</p>
+                        )}
+                      </TableCell>
+                      <TableCell>{acc.qty}</TableCell>
+                      <TableCell className="text-sm">
+                        {(acc as any).replacementValue
+                          ? `R$ ${Number((acc as any).replacementValue).toFixed(2)}`
+                          : <span className="text-muted-foreground">—</span>}
+                      </TableCell>
+                      <TableCell>
+                        <span className={`flex items-center gap-1 text-xs font-medium ${statusCfg.cls}`}>
+                          {statusCfg.icon}
+                          {statusCfg.label}
+                        </span>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
           </div>
         </div>
       )}
