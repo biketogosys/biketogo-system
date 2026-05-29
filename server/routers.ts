@@ -1180,12 +1180,7 @@ const rentalsRouter = router({
           return { accessoryName: ca.accessoryName, qty: ca.qty, serialNumber };
         }));
         // Read company settings
-        const { getSetting } = await import("./db");
-        const [empresaNome, empresaCnpj, empresaEndereco, empresaCidade, empresaEstado, empresaTelefone, empresaEmail] = await Promise.all([
-          getSetting("empresa_nome"), getSetting("empresa_cnpj"), getSetting("empresa_endereco"),
-          getSetting("empresa_cidade"), getSetting("empresa_estado"), getSetting("empresa_telefone"),
-          getSetting("empresa_email"),
-        ]);
+        // Dados da empresa são buscados internamente por generateContractPdf via getSetting("company_*")
         const pdfBuffer = await generateContractPdf({
           contractId: input.contractId,
           clientName: clientRow?.name ?? "—",
@@ -1194,13 +1189,6 @@ const rentalsRouter = router({
           clientEmail: clientRow?.email ?? null,
           criadoEm: contractRow?.criadoEm ?? new Date(),
           valorTotal: contractRow?.valorTotal ?? null,
-          empresaNome: empresaNome ?? undefined,
-          empresaCnpj: empresaCnpj ?? undefined,
-          empresaEndereco: empresaEndereco ?? undefined,
-          empresaCidade: empresaCidade ?? undefined,
-          empresaEstado: empresaEstado ?? undefined,
-          empresaTelefone: empresaTelefone ?? undefined,
-          empresaEmail: empresaEmail ?? undefined,
           rentals: rentalsWithBike,
           accessories: accWithSerial,
         });

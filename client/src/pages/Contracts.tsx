@@ -14,6 +14,7 @@ import {
   Bike,
   Package,
   Camera,
+  Download,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -497,6 +498,24 @@ function ContractDetail({
             <Archive className="h-4 w-4 mr-1" /> Arquivar
           </Button>
         </div>
+      </div>
+
+      {/* PDF download */}
+      <div className="flex items-center gap-2">
+        {data.pdfUrl ? (
+          <a
+            href={data.pdfUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            <Button variant="outline" size="sm" className="gap-1.5">
+              <Download className="h-4 w-4" />
+              Baixar Contrato PDF
+            </Button>
+          </a>
+        ) : (
+          <span className="text-xs text-muted-foreground italic">PDF não gerado</span>
+        )}
       </div>
 
       {/* Info cards */}

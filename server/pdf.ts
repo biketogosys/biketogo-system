@@ -1,6 +1,7 @@
 /**
  * server/pdf.ts
  * Geração de PDF de contrato usando pdfkit.
+ * Busca os dados da empresa em system_settings antes de gerar o PDF.
  * Retorna um Buffer com o PDF pronto para upload no S3.
  */
 
@@ -14,14 +15,6 @@ export interface ContractPdfData {
   clientEmail?: string | null;
   criadoEm: Date | string;
   valorTotal?: string | null;
-  // Empresa (lida de system_settings)
-  empresaNome?: string;
-  empresaCnpj?: string;
-  empresaEndereco?: string;
-  empresaCidade?: string;
-  empresaEstado?: string;
-  empresaTelefone?: string;
-  empresaEmail?: string;
   // Bikes alugadas
   rentals: Array<{
     bikeModel?: string | null;
@@ -52,7 +45,43 @@ function formatCurrency(v: string | null | undefined): string {
   return n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
 
-export function generateContractPdf(data: ContractPdfData): Promise<Buffer> {
+/** Busca um setting do banco e retorna o valor ou um placeholder descritivo */
+async function fetchSetting(key: string, placeholder: string): Promise<string> {
+  try {
+    const { getSetting } = await import("./db");
+    const value = await getSetting(key);
+    return value && value.trim() !== "" ? value : placeholder;
+  } catch {
+    return placeholder;
+  }
+}
+
+export async function generateContractPdf(data: ContractPdfData): Promise<Buffer> {
+  // ── Buscar dados da empresa nas Configurações ──────────────────────────────
+  const [
+    empresaNome,
+    empresaCnpj,
+    empresaEndereco,
+    empresaCidade,
+    empresaEstado,
+    empresaTelefone,
+    empresaEmail,
+    empresaForo,
+    empresaTermos,
+    empresaCaucao,
+  ] = await Promise.all([
+    fetchSetting("company_name",    "[Razão Social não configurada]"),
+    fetchSetting("company_cnpj",    "[CNPJ não configurado]"),
+    fetchSetting("company_address", "[Endereço não configurado]"),
+    fetchSetting("company_city",    "[Cidade não configurada]"),
+    fetchSetting("company_state",   "[Estado não configurado]"),
+    fetchSetting("company_phone",   "[Telefone não configurado]"),
+    fetchSetting("company_email",   "[E-mail não configurado]"),
+    fetchSetting("company_foro",    "[Foro não configurado]"),
+    fetchSetting("company_terms",   ""),
+    fetchSetting("company_caucao",  ""),
+  ]);
+
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({ margin: 50, size: "A4" });
     const chunks: Buffer[] = [];
@@ -67,15 +96,13 @@ export function generateContractPdf(data: ContractPdfData): Promise<Buffer> {
 
     // ── Header ──────────────────────────────────────────────────────────────
     doc.fontSize(20).fillColor(primaryColor).font("Helvetica-Bold")
-      .text(data.empresaNome || "Bike To Go", 50, 50);
+      .text(empresaNome, 50, 50);
     doc.fontSize(9).fillColor(grayColor).font("Helvetica");
-    if (data.empresaCnpj) doc.text(`CNPJ: ${data.empresaCnpj}`);
-    if (data.empresaEndereco) {
-      const addr = [data.empresaEndereco, data.empresaCidade, data.empresaEstado].filter(Boolean).join(", ");
-      doc.text(addr);
-    }
-    if (data.empresaTelefone) doc.text(`Tel: ${data.empresaTelefone}`);
-    if (data.empresaEmail) doc.text(`E-mail: ${data.empresaEmail}`);
+    doc.text(`CNPJ: ${empresaCnpj}`);
+    const addr = [empresaEndereco, empresaCidade, empresaEstado].filter(Boolean).join(", ");
+    if (addr) doc.text(addr);
+    doc.text(`Tel: ${empresaTelefone}`);
+    doc.text(`E-mail: ${empresaEmail}`);
 
     // Número do contrato (top-right)
     doc.fontSize(14).fillColor(primaryColor).font("Helvetica-Bold")
@@ -158,7 +185,33 @@ export function generateContractPdf(data: ContractPdfData): Promise<Buffer> {
     doc.moveDown(0.5);
     doc.fontSize(11).fillColor(primaryColor).font("Helvetica-Bold")
       .text(`VALOR TOTAL: ${formatCurrency(data.valorTotal)}`, { align: "right" });
-    doc.moveDown(2);
+    doc.moveDown(1.5);
+
+    // ── Caução ───────────────────────────────────────────────────────────────
+    if (empresaCaucao && empresaCaucao.trim() !== "") {
+      doc.fontSize(9).fillColor(grayColor).font("Helvetica")
+        .text(`Caução: ${empresaCaucao}`, { align: "right" });
+      doc.moveDown(1);
+    }
+
+    // ── Termos e Condições ───────────────────────────────────────────────────
+    if (empresaTermos && empresaTermos.trim() !== "") {
+      doc.moveTo(50, doc.y).lineTo(50 + pageWidth, doc.y).strokeColor(lineColor).stroke();
+      doc.moveDown(0.5);
+      doc.fontSize(10).fillColor(primaryColor).font("Helvetica-Bold").text("TERMOS E CONDIÇÕES");
+      doc.moveDown(0.3);
+      doc.fontSize(8).fillColor("#374151").font("Helvetica").text(empresaTermos, { width: pageWidth });
+      doc.moveDown(1);
+    }
+
+    // ── Foro ─────────────────────────────────────────────────────────────────
+    if (empresaForo && empresaForo !== "[Foro não configurado]") {
+      doc.fontSize(8).fillColor(grayColor).font("Helvetica")
+        .text(`Foro: ${empresaForo}`, { width: pageWidth });
+      doc.moveDown(1.5);
+    } else {
+      doc.moveDown(1);
+    }
 
     // ── Assinaturas ──────────────────────────────────────────────────────────
     const sigY = doc.y;
@@ -167,7 +220,7 @@ export function generateContractPdf(data: ContractPdfData): Promise<Buffer> {
     doc.moveTo(50, sigY + 30).lineTo(50 + sigWidth, sigY + 30).strokeColor("#9ca3af").stroke();
     doc.text("Assinatura do Cliente", 50, sigY + 35, { width: sigWidth, align: "center" });
     doc.moveTo(50 + sigWidth + 40, sigY + 30).lineTo(50 + pageWidth, sigY + 30).strokeColor("#9ca3af").stroke();
-    doc.text("Assinatura da Empresa", 50 + sigWidth + 40, sigY + 35, { width: sigWidth, align: "center" });
+    doc.text(`Assinatura — ${empresaNome}`, 50 + sigWidth + 40, sigY + 35, { width: sigWidth, align: "center" });
 
     // ── Footer ───────────────────────────────────────────────────────────────
     doc.fontSize(7).fillColor(grayColor)

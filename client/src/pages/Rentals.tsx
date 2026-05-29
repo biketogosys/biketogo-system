@@ -342,7 +342,8 @@ function NewRentalDialog({ onClose, onSuccess }: { onClose: () => void; onSucces
   // Auto-fill daily rate from selected bike
   const selectedBike = useMemo(() => {
     if (!form.bikeId) return null;
-    return (bikesData?.data ?? []).find((b: any) => b.id === parseInt(form.bikeId));
+    const bikesArr = (bikesData as any)?.data ?? (Array.isArray(bikesData) ? bikesData : []);
+    return (bikesArr as any[]).find((b: any) => b.id === parseInt(form.bikeId));
   }, [form.bikeId, bikesData]);
 
   // Discount rules for selected bike
@@ -392,7 +393,8 @@ function NewRentalDialog({ onClose, onSuccess }: { onClose: () => void; onSucces
 
     const accessoryNote = accessoryList.length > 0
       ? `Acessórios: ${accessoryList.map((a) => {
-          const acc = (accessoriesData?.data ?? []).find((x: any) => x.id === a.id);
+          const accArr = (accessoriesData as any)?.data ?? (Array.isArray(accessoriesData) ? accessoriesData : []);
+          const acc = (accArr as any[]).find((x: any) => x.id === a.id);
           return `${acc?.name ?? `#${a.id}`} (x${a.quantity})`;
         }).join(", ")}`
       : "";
@@ -437,8 +439,8 @@ function NewRentalDialog({ onClose, onSuccess }: { onClose: () => void; onSucces
     setSelectedAccessories((prev) => ({ ...prev, [id]: qty }));
   }
 
-  const bikes = bikesData?.data ?? [];
-  const accessories = accessoriesData?.data ?? [];
+  const bikes = (bikesData as any)?.data ?? (Array.isArray(bikesData) ? bikesData : []);
+  const accessories = (accessoriesData as any)?.data ?? (Array.isArray(accessoriesData) ? accessoriesData : []);
   const selectedCount = Object.keys(selectedAccessories).length;
 
   return (
@@ -475,7 +477,7 @@ function NewRentalDialog({ onClose, onSuccess }: { onClose: () => void; onSucces
               className="w-full px-3 py-2 rounded-md bg-secondary border border-border text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-[#C8920A] focus:border-[#C8920A]"
             >
               <option value="">Selecionar bicicleta disponível...</option>
-              {bikes.map((b) => (
+              {(bikes as any[]).map((b: any) => (
                 <option key={b.id} value={b.id}>
                   {b.model} — #{b.serialNumber} {b.size ? `(${b.size})` : ""}
                 </option>
@@ -500,7 +502,7 @@ function NewRentalDialog({ onClose, onSuccess }: { onClose: () => void; onSucces
               </p>
             ) : (
               <div className="bg-secondary rounded-md border border-border divide-y divide-border/50 max-h-40 overflow-y-auto">
-                {accessories.map((acc) => {
+                {(accessories as any[]).map((acc: any) => {
                   const isSelected = !!selectedAccessories[acc.id];
                   return (
                     <div key={acc.id} className="flex items-center gap-3 px-3 py-2">
@@ -764,7 +766,8 @@ export default function Rentals() {
   const { data: allClients } = trpc.clients.list.useQuery({ limit: 100, page: 1 });
   const { data: allBikes } = trpc.bikes.list.useQuery({});
   const clientMap = Object.fromEntries((allClients?.items ?? []).map((c: any) => [c.id, c.name]));
-  const bikeMap = Object.fromEntries((allBikes?.data ?? []).map((b: any) => [b.id, `${b.model} #${b.serialNumber}`]));
+  const allBikesArr = (allBikes as any)?.data ?? (Array.isArray(allBikes) ? allBikes : []);
+  const bikeMap = Object.fromEntries((allBikesArr as any[]).map((b: any) => [b.id, `${b.model} #${b.serialNumber}`]));
 
   const deleteMutation = trpc.rentals.delete.useMutation({
     onSuccess: () => { toast.success("Aluguel arquivado."); utils.rentals.list.invalidate(); },
