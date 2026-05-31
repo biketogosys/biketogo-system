@@ -1313,16 +1313,19 @@ const accessoriesRouter = router({
       description: z.string().optional(),
       category: z.string().optional(),
       serialNumber: z.string().optional(),
-      quantity: z.number().min(1).default(1),
       dailyRate: z.string().optional(),
       purchasePrice: z.string().optional(),
       replacementValue: z.string().optional(),
       status: z.enum(["available", "rented", "maintenance", "lost"]).default("available"),
+      obrigatorio: z.boolean().default(false),
       notes: z.string().optional(),
     }))
     .mutation(async ({ input }) => {
       const sanitizedAcc: any = {
         ...input,
+        quantity: 1, // always start with 1 unit; quantity is managed via accessory_units
+        quantidadeTotal: 1,
+        quantidadeDisponivel: 1,
         description: sanitize(input.description),
         category: sanitize(input.category),
         serialNumber: sanitize(input.serialNumber),
@@ -1330,17 +1333,14 @@ const accessoriesRouter = router({
         purchasePrice: sanitizeNumeric(input.purchasePrice),
         replacementValue: sanitizeNumeric(input.replacementValue),
         notes: sanitize(input.notes),
+        obrigatorio: input.obrigatorio ?? false,
       };
       const id = await createAccessory(sanitizedAcc);
-      // Auto-create N units in accessory_units
-      const qty = sanitizedAcc.quantidadeTotal ?? sanitizedAcc.quantity ?? 1;
-      if (qty > 0) {
-        const { accessoryUnits } = await import("../drizzle/schema");
-        const db = await (await import("./db")).getDb();
-        if (db) {
-          const unitRows = Array.from({ length: qty }, () => ({ accessoryId: id, status: "disponivel" as const }));
-          await db.insert(accessoryUnits).values(unitRows);
-        }
+      // Auto-create 1 initial unit in accessory_units
+      const { accessoryUnits } = await import("../drizzle/schema");
+      const db = await (await import("./db")).getDb();
+      if (db) {
+        await db.insert(accessoryUnits).values([{ accessoryId: id, status: "disponivel" as const }]);
       }
       return { id };
     }),
@@ -1357,6 +1357,7 @@ const accessoriesRouter = router({
       purchasePrice: z.string().optional(),
       replacementValue: z.string().optional(),
       status: z.enum(["available", "rented", "maintenance", "lost"]).optional(),
+      obrigatorio: z.boolean().optional(),
       notes: z.string().optional(),
     }))
     .mutation(async ({ input }) => {
@@ -1370,6 +1371,7 @@ const accessoriesRouter = router({
         purchasePrice: data.purchasePrice !== undefined ? sanitizeNumeric(data.purchasePrice) : undefined,
         replacementValue: data.replacementValue !== undefined ? sanitizeNumeric(data.replacementValue) : undefined,
         notes: data.notes !== undefined ? sanitize(data.notes) : undefined,
+        obrigatorio: data.obrigatorio,
       };
       await updateAccessory(id, sanitizedAcc);
       // Handle quantidadeTotal change: create additional units or warn on decrease
@@ -1421,36 +1423,12 @@ const accessoriesRouter = router({
         .orderBy(asc(accessoryUnits.id));
     }),
 
-  createUnit: adminAuthProcedure
-    .input(z.object({
-      accessoryId: z.number(),
-      serialNumber: z.string().optional(),
-    }))
-    .mutation(async ({ input }) => {
-      const { accessoryUnits, accessories } = await import("../drizzle/schema");
-      const { eq, sql } = await import("drizzle-orm");
-      const db = await (await import("./db")).getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
-      const [row] = await db.insert(accessoryUnits).values({
-        accessoryId: input.accessoryId,
-        serialNumber: input.serialNumber ?? null,
-        status: "disponivel",
-      }).returning();
-      // Sync quantidadeTotal and quantity on the parent accessory
-      await db.update(accessories)
-        .set({
-          quantidadeTotal: sql`(SELECT COUNT(*) FROM accessory_units WHERE accessory_id = ${input.accessoryId})`,
-          quantity: sql`(SELECT COUNT(*) FROM accessory_units WHERE accessory_id = ${input.accessoryId})`,
-        })
-        .where(eq(accessories.id, input.accessoryId));
-      return row;
-    }),
-
   updateUnitStatus: adminAuthProcedure
     .input(z.object({
       unitId: z.number(),
       status: z.enum(["disponivel", "alugado", "perdido", "manutencao", "roubado"]),
       observacao: z.string().optional(),
+      variante: z.string().optional(),
     }))
     .mutation(async ({ input }) => {
       const { accessoryUnits } = await import("../drizzle/schema");
@@ -1460,8 +1438,59 @@ const accessoriesRouter = router({
       await db.update(accessoryUnits).set({
         status: input.status,
         observacao: input.observacao ?? null,
+        variante: input.variante ?? null,
       }).where(eq(accessoryUnits.id, input.unitId));
       return { success: true };
+    }),
+
+  deleteUnit: adminAuthProcedure
+    .input(z.object({ unitId: z.number() }))
+    .mutation(async ({ input }) => {
+      const { accessoryUnits, accessories } = await import("../drizzle/schema");
+      const { eq, sql } = await import("drizzle-orm");
+      const db = await (await import("./db")).getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      // Check unit exists and is not rented
+      const [unit] = await db.select().from(accessoryUnits).where(eq(accessoryUnits.id, input.unitId));
+      if (!unit) throw new TRPCError({ code: "NOT_FOUND", message: "Unidade não encontrada." });
+      if (unit.status === "alugado") throw new TRPCError({ code: "BAD_REQUEST", message: "Não é possível excluir unidade alugada." });
+      const accessoryId = unit.accessoryId;
+      await db.delete(accessoryUnits).where(eq(accessoryUnits.id, input.unitId));
+      // Recalculate quantidadeTotal from real count of remaining units
+      await db.update(accessories)
+        .set({
+          quantidadeTotal: sql`(SELECT COUNT(*) FROM accessory_units WHERE "accessoryId" = ${accessoryId})`,
+          quantity: sql`(SELECT COUNT(*) FROM accessory_units WHERE "accessoryId" = ${accessoryId})`,
+        })
+        .where(eq(accessories.id, accessoryId));
+      return { success: true };
+    }),
+
+  createUnit: adminAuthProcedure
+    .input(z.object({
+      accessoryId: z.number(),
+      serialNumber: z.string().optional(),
+      variante: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const { accessoryUnits, accessories } = await import("../drizzle/schema");
+      const { eq, sql } = await import("drizzle-orm");
+      const db = await (await import("./db")).getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      const [row] = await db.insert(accessoryUnits).values({
+        accessoryId: input.accessoryId,
+        serialNumber: input.serialNumber ?? null,
+        variante: input.variante ?? null,
+        status: "disponivel",
+      }).returning();
+      // Sync quantidadeTotal and quantity on the parent accessory
+      await db.update(accessories)
+        .set({
+          quantidadeTotal: sql`(SELECT COUNT(*) FROM accessory_units WHERE "accessoryId" = ${input.accessoryId})`,
+          quantity: sql`(SELECT COUNT(*) FROM accessory_units WHERE "accessoryId" = ${input.accessoryId})`,
+        })
+        .where(eq(accessories.id, input.accessoryId));
+      return row;
     }),
 });
 
@@ -1741,6 +1770,7 @@ const publicApiRouter = router({
       quantity: a.quantity,
       quantidadeTotal: a.quantidadeTotal ?? a.quantity,
       quantidadeDisponivel: Math.max(0, (a.quantidadeTotal ?? a.quantity) - (usageMap[a.id] ?? 0)),
+      obrigatorio: (a as any).obrigatorio ?? false,
     }));
   }),
 
@@ -1769,6 +1799,7 @@ const publicApiRouter = router({
       dailyRate: a.dailyRate,
       quantidadeTotal: a.quantidadeTotal ?? a.quantity,
       quantidadeDisponivel: Math.max(0, (a.quantidadeTotal ?? a.quantity) - (availMap[a.id] ?? 0)),
+      obrigatorio: (a as any).obrigatorio ?? false,
     }));
     const grouped: Record<string, typeof items> = {};
     for (const item of items) {

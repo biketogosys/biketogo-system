@@ -231,6 +231,7 @@ export const accessories = pgTable("accessories", {
   purchasePrice: numeric("purchasePrice", { precision: 10, scale: 2 }),
   replacementValue: numeric("replacementValue", { precision: 10, scale: 2 }),
   status: accessoryStatusEnum("status").default("available").notNull(),
+  obrigatorio: boolean("obrigatorio").default(false).notNull(),
   notes: text("notes"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().notNull(),
@@ -373,6 +374,7 @@ export const accessoryUnits = pgTable("accessory_units", {
   accessoryId: integer("accessoryId").notNull(),
   serialNumber: varchar("serialNumber", { length: 50 }),
   status: accessoryUnitStatusEnum("status").default("disponivel").notNull(),
+  variante: varchar("variante", { length: 100 }),
   observacao: text("observacao"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });

@@ -203,6 +203,7 @@ export default function PublicReservation() {
   const [endDate, setEndDate] = useState("");
   const [deliveryTime, setDeliveryTime] = useState("");
   const [selectedAccessories, setSelectedAccessories] = useState<Record<number, number>>({});
+  const [selectedVariants, setSelectedVariants] = useState<Record<number, string>>({});
   const [activeAccCategory, setActiveAccCategory] = useState<string | null>(null);
 
   // Step 5 — Pagamento + LGPD
@@ -235,6 +236,21 @@ export default function PublicReservation() {
   const submitMutation = trpc.publicApi.submitReservation.useMutation();
   const checkoutMutation = trpc.publicApi.createCheckout.useMutation();
   const uploadDocMutation = trpc.publicApi.uploadDocument.useMutation();
+
+  // ─── Mandatory accessories: auto-include when accessories load ──────────────
+  const mandatoryAccessories = useMemo(() => accessories.filter((a: any) => a.obrigatorio), [accessories]);
+  // Initialize mandatory accessories quantity to 1 when they load
+  const [mandatoryInitialized, setMandatoryInitialized] = useState(false);
+  if (!mandatoryInitialized && mandatoryAccessories.length > 0) {
+    setMandatoryInitialized(true);
+    setSelectedAccessories(prev => {
+      const next = { ...prev };
+      for (const acc of mandatoryAccessories) {
+        if (!next[acc.id]) next[acc.id] = 1;
+      }
+      return next;
+    });
+  }
 
   // ─── Active accessory category (default to first) ────────────────────────────
   const effectiveAccCategory = activeAccCategory ?? (accByCategory[0]?.category ?? null);
@@ -429,7 +445,11 @@ export default function PublicReservation() {
     try {
       const rentalAccessories = Object.entries(selectedAccessories)
         .filter(([, qty]) => (qty as number) > 0)
-        .map(([id, qty]) => ({ accessoryId: Number(id), quantity: qty as number }));
+        .map(([id, qty]) => ({
+          accessoryId: Number(id),
+          quantity: qty as number,
+          ...(selectedVariants[Number(id)] ? { variante: selectedVariants[Number(id)] } : {}),
+        }));
 
       // Build cart for submission
       const cartForSubmit = cart.length > 0
@@ -1184,52 +1204,129 @@ export default function PublicReservation() {
                     ))}
                   </div>
                 )}
-                {/* Lista de acessórios da categoria ativa */}
+                {/* Acessórios obrigatórios — exibidos fixos acima da lista opcional */}
+                {mandatoryAccessories.length > 0 && (
+                  <div className="space-y-2">
+                    <p className={`text-[11px] font-semibold uppercase tracking-wider ${textMuted}`}>
+                      {lang === "pt" ? "Incluídos obrigatoriamente" : lang === "en" ? "Mandatory inclusions" : "Incluidos obligatoriamente"}
+                    </p>
+                    {mandatoryAccessories.map((acc: any) => {
+                      // Collect unique variants for this accessory from the units endpoint (we use the flat list)
+                      const accVariants = Array.from(new Set(
+                        accessories.filter((a: any) => a.id === acc.id && (a as any).variante).map((a: any) => (a as any).variante)
+                      )) as string[];
+                      const avail = acc.quantidadeDisponivel ?? 0;
+                      return (
+                        <div key={acc.id} className={`flex items-center justify-between p-3 border rounded-lg ${
+                          isDark ? "border-amber-500/30 bg-amber-500/5" : "border-amber-400/30 bg-amber-50"
+                        }`}>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <p className={`text-sm font-medium ${textPrimary}`}>{acc.name}</p>
+                              <span className="text-[10px] px-1.5 py-0.5 rounded font-semibold bg-amber-500/20 text-amber-500">
+                                {lang === "pt" ? "Obrigatório" : lang === "en" ? "Required" : "Obligatorio"}
+                              </span>
+                              {avail === 0 && (
+                                <span className="text-[10px] px-1.5 py-0.5 rounded font-semibold bg-red-500/20 text-red-400">
+                                  {lang === "pt" ? "Indisponível" : lang === "en" ? "Unavailable" : "No disponible"}
+                                </span>
+                              )}
+                            </div>
+                            {accVariants.length > 0 && (
+                              <div className="mt-2">
+                                <select
+                                  value={selectedVariants[acc.id] ?? ""}
+                                  onChange={(e) => setSelectedVariants(prev => ({ ...prev, [acc.id]: e.target.value }))}
+                                  className={`text-xs rounded border px-2 py-1 ${
+                                    isDark ? "bg-[#1a1a2e] border-[#2a2a3a] text-white" : "bg-white border-gray-300 text-gray-800"
+                                  }`}
+                                >
+                                  <option value="">{lang === "pt" ? "Selecionar variante..." : lang === "en" ? "Select variant..." : "Seleccionar variante..."}</option>
+                                  {accVariants.map((v: string) => (
+                                    <option key={v} value={v}>{v}</option>
+                                  ))}
+                                </select>
+                              </div>
+                            )}
+                          </div>
+                          <span className={`text-sm font-bold ml-3 ${textMuted}`}>×1</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* Lista de acessórios opcionais da categoria ativa */}
                 <div className="space-y-3">
-                  {(accByCategory.find(g => g.category === effectiveAccCategory)?.accessories ?? []).map((acc: any) => {
+                  {(accByCategory.find(g => g.category === effectiveAccCategory)?.accessories ?? [])
+                    .filter((acc: any) => !acc.obrigatorio)
+                    .map((acc: any) => {
                     const qty = selectedAccessories[acc.id] || 0;
                     const avail = acc.quantidadeDisponivel ?? 0;
                     const isDisabled = avail === 0;
+                    // Collect unique variants for this accessory
+                    const accVariants = Array.from(new Set(
+                      accessories.filter((a: any) => a.id === acc.id && (a as any).variante).map((a: any) => (a as any).variante)
+                    )) as string[];
                     return (
-                      <div key={acc.id} className={`flex items-center justify-between p-3 border rounded-lg transition-all ${
+                      <div key={acc.id} className={`p-3 border rounded-lg transition-all ${
                         isDisabled
                           ? isDark ? "border-[#1a1a2e] opacity-50" : "border-gray-100 opacity-50"
                           : isDark ? "border-[#2a2a3a]" : "border-gray-200"
                       }`}>
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <p className={`text-sm font-medium ${textPrimary}`}>{acc.name}</p>
-                            <span className={`text-[10px] px-1.5 py-0.5 rounded font-semibold ${
-                              isDisabled
-                                ? "bg-red-500/20 text-red-400"
-                                : avail <= 2
-                                  ? "bg-amber-500/20 text-amber-400"
-                                  : "bg-green-500/20 text-green-400"
-                            }`}>
-                              {isDisabled
-                                ? (lang === "pt" ? "Indisponível" : lang === "en" ? "Unavailable" : "No disponible")
-                                : `${avail} ${lang === "pt" ? "disp." : lang === "en" ? "avail." : "disp."}`}
-                            </span>
+                        <div className="flex items-center justify-between">
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <p className={`text-sm font-medium ${textPrimary}`}>{acc.name}</p>
+                              <span className={`text-[10px] px-1.5 py-0.5 rounded font-semibold ${
+                                isDisabled
+                                  ? "bg-red-500/20 text-red-400"
+                                  : avail <= 2
+                                    ? "bg-amber-500/20 text-amber-400"
+                                    : "bg-green-500/20 text-green-400"
+                              }`}>
+                                {isDisabled
+                                  ? (lang === "pt" ? "Indisponível" : lang === "en" ? "Unavailable" : "No disponible")
+                                  : `${avail} ${lang === "pt" ? "disp." : lang === "en" ? "avail." : "disp."}`}
+                              </span>
+                            </div>
+                            <p className={`text-xs ${textMuted} mt-0.5`}>
+                              {lang === "pt" ? "(gratuito)" : lang === "en" ? "(free)" : "(gratuito)"}
+                            </p>
                           </div>
-                          <p className={`text-xs ${textMuted} mt-0.5`}>
-                            {lang === "pt" ? "(gratuito)" : lang === "en" ? "(free)" : "(gratuito)"}
-                          </p>
+                          <div className="flex items-center gap-2 flex-shrink-0">
+                            <button
+                              disabled={isDisabled || qty === 0}
+                              onClick={() => setSelectedAccessories(prev => ({ ...prev, [acc.id]: Math.max(0, (prev[acc.id] || 0) - 1) }))}
+                              className={`w-7 h-7 rounded-full border flex items-center justify-center text-sm font-bold transition-all disabled:opacity-30 disabled:cursor-not-allowed ${isDark ? "border-[#2a2a3a] text-[#888] hover:border-[#C8920A] hover:text-[#C8920A]" : "border-gray-300 text-gray-500 hover:border-[#C8920A] hover:text-[#C8920A]"}`}>
+                              −
+                            </button>
+                            <span className={`w-6 text-center text-sm font-bold ${textPrimary}`}>{qty}</span>
+                            <button
+                              disabled={isDisabled || qty >= avail}
+                              onClick={() => setSelectedAccessories(prev => ({ ...prev, [acc.id]: Math.min(avail, (prev[acc.id] || 0) + 1) }))}
+                              className="w-7 h-7 rounded-full bg-[#C8920A] text-[#0a0a0f] flex items-center justify-center text-sm font-bold hover:bg-[#d9a020] transition-all disabled:opacity-30 disabled:cursor-not-allowed">
+                              +
+                            </button>
+                          </div>
                         </div>
-                        <div className="flex items-center gap-2 flex-shrink-0">
-                          <button
-                            disabled={isDisabled || qty === 0}
-                            onClick={() => setSelectedAccessories(prev => ({ ...prev, [acc.id]: Math.max(0, (prev[acc.id] || 0) - 1) }))}
-                            className={`w-7 h-7 rounded-full border flex items-center justify-center text-sm font-bold transition-all disabled:opacity-30 disabled:cursor-not-allowed ${isDark ? "border-[#2a2a3a] text-[#888] hover:border-[#C8920A] hover:text-[#C8920A]" : "border-gray-300 text-gray-500 hover:border-[#C8920A] hover:text-[#C8920A]"}`}>
-                            −
-                          </button>
-                          <span className={`w-6 text-center text-sm font-bold ${textPrimary}`}>{qty}</span>
-                          <button
-                            disabled={isDisabled || qty >= avail}
-                            onClick={() => setSelectedAccessories(prev => ({ ...prev, [acc.id]: Math.min(avail, (prev[acc.id] || 0) + 1) }))}
-                            className="w-7 h-7 rounded-full bg-[#C8920A] text-[#0a0a0f] flex items-center justify-center text-sm font-bold hover:bg-[#d9a020] transition-all disabled:opacity-30 disabled:cursor-not-allowed">
-                            +
-                          </button>
-                        </div>
+                        {/* Variant selector for optional accessory (only if qty > 0 and variants exist) */}
+                        {qty > 0 && accVariants.length > 0 && (
+                          <div className="mt-2">
+                            <select
+                              value={selectedVariants[acc.id] ?? ""}
+                              onChange={(e) => setSelectedVariants(prev => ({ ...prev, [acc.id]: e.target.value }))}
+                              className={`text-xs rounded border px-2 py-1 w-full ${
+                                isDark ? "bg-[#1a1a2e] border-[#2a2a3a] text-white" : "bg-white border-gray-300 text-gray-800"
+                              }`}
+                            >
+                              <option value="">{lang === "pt" ? "Selecionar variante..." : lang === "en" ? "Select variant..." : "Seleccionar variante..."}</option>
+                              {accVariants.map((v: string) => (
+                                <option key={v} value={v}>{v}</option>
+                              ))}
+                            </select>
+                          </div>
+                        )}
                       </div>
                     );
                   })}

@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
 import {
   Plus,
@@ -36,6 +37,8 @@ import {
   ChevronUp,
   AlertTriangle,
   Loader2,
+  ShieldCheck,
+  ShieldOff,
 } from "lucide-react";
 
 type AccessoryStatus = "available" | "rented" | "maintenance" | "lost";
@@ -64,14 +67,18 @@ function AccessoryUnitsPanel({ accessoryId, onClose }: { accessoryId: number; on
   const [editingUnitId, setEditingUnitId] = useState<number | null>(null);
   const [editStatus, setEditStatus] = useState<UnitStatus>("disponivel");
   const [editObs, setEditObs] = useState("");
+  const [editVariante, setEditVariante] = useState("");
   const [newSerial, setNewSerial] = useState("");
+  const [newVariante, setNewVariante] = useState("");
   const [showAddForm, setShowAddForm] = useState(false);
+  const [deleteUnitId, setDeleteUnitId] = useState<number | null>(null);
 
   const updateMut = trpc.accessories.updateUnitStatus.useMutation({
     onSuccess: () => {
       utils.accessories.getUnits.invalidate();
+      utils.accessories.list.invalidate();
       setEditingUnitId(null);
-      toast.success("Status atualizado!");
+      toast.success("Unidade atualizada!");
     },
     onError: (e) => toast.error(e.message),
   });
@@ -79,9 +86,21 @@ function AccessoryUnitsPanel({ accessoryId, onClose }: { accessoryId: number; on
   const createMut = trpc.accessories.createUnit.useMutation({
     onSuccess: () => {
       utils.accessories.getUnits.invalidate();
+      utils.accessories.list.invalidate();
       setNewSerial("");
+      setNewVariante("");
       setShowAddForm(false);
       toast.success("Unidade adicionada!");
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const deleteMut = trpc.accessories.deleteUnit.useMutation({
+    onSuccess: () => {
+      utils.accessories.getUnits.invalidate();
+      utils.accessories.list.invalidate();
+      setDeleteUnitId(null);
+      toast.success("Unidade removida.");
     },
     onError: (e) => toast.error(e.message),
   });
@@ -90,6 +109,7 @@ function AccessoryUnitsPanel({ accessoryId, onClose }: { accessoryId: number; on
     setEditingUnitId(unit.id);
     setEditStatus(unit.status as UnitStatus);
     setEditObs(unit.observacao ?? "");
+    setEditVariante(unit.variante ?? "");
   }
 
   return (
@@ -114,10 +134,15 @@ function AccessoryUnitsPanel({ accessoryId, onClose }: { accessoryId: number; on
             {(units as any[]).map((unit: any) => (
               <div key={unit.id} className="border border-border rounded-lg overflow-hidden">
                 <div className="flex items-center justify-between p-3">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <span className="text-xs font-mono text-muted-foreground">#{unit.id}</span>
                     {unit.serialNumber && (
                       <span className="text-xs text-foreground font-medium">{unit.serialNumber}</span>
+                    )}
+                    {unit.variante && (
+                      <span className="text-xs px-1.5 py-0.5 rounded bg-[#C8920A]/10 text-[#C8920A] font-medium border border-[#C8920A]/20">
+                        {unit.variante}
+                      </span>
                     )}
                     <Badge
                       variant="outline"
@@ -126,21 +151,39 @@ function AccessoryUnitsPanel({ accessoryId, onClose }: { accessoryId: number; on
                       {UNIT_STATUS_LABELS[unit.status as UnitStatus] ?? unit.status}
                     </Badge>
                   </div>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="h-7 text-xs gap-1"
-                    onClick={() => editingUnitId === unit.id ? setEditingUnitId(null) : startEdit(unit)}
-                  >
-                    <Edit className="w-3 h-3" />
-                    {editingUnitId === unit.id ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-                  </Button>
+                  <div className="flex items-center gap-1">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-7 text-xs gap-1"
+                      onClick={() => editingUnitId === unit.id ? setEditingUnitId(null) : startEdit(unit)}
+                    >
+                      <Edit className="w-3 h-3" />
+                      {editingUnitId === unit.id ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
+                      onClick={() => setDeleteUnitId(unit.id)}
+                      disabled={unit.status === "alugado"}
+                      title={unit.status === "alugado" ? "Não é possível excluir unidade alugada" : "Excluir unidade"}
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </Button>
+                  </div>
                 </div>
                 {editingUnitId === unit.id && (
                   <div className="p-3 pt-0 border-t border-border bg-secondary/20 space-y-2">
-                    {unit.observacao && editingUnitId !== unit.id && (
-                      <p className="text-xs text-muted-foreground">{unit.observacao}</p>
-                    )}
+                    <div>
+                      <Label className="text-xs">Variante (ex: P, M, G, Azul)</Label>
+                      <Input
+                        value={editVariante}
+                        onChange={(e) => setEditVariante(e.target.value)}
+                        placeholder="Ex: Tamanho M, Cor Azul..."
+                        className="h-8 text-sm mt-1"
+                      />
+                    </div>
                     <div>
                       <Label className="text-xs">Novo status</Label>
                       <Select value={editStatus} onValueChange={(v) => setEditStatus(v as UnitStatus)}>
@@ -165,7 +208,12 @@ function AccessoryUnitsPanel({ accessoryId, onClose }: { accessoryId: number; on
                       <Button
                         size="sm"
                         className="flex-1 bg-[#C8920A] hover:bg-[#A87608] text-white"
-                        onClick={() => updateMut.mutate({ unitId: unit.id, status: editStatus, observacao: editObs || undefined })}
+                        onClick={() => updateMut.mutate({
+                          unitId: unit.id,
+                          status: editStatus,
+                          observacao: editObs || undefined,
+                          variante: editVariante || undefined,
+                        })}
                         disabled={updateMut.isPending}
                       >
                         Salvar
@@ -183,18 +231,33 @@ function AccessoryUnitsPanel({ accessoryId, onClose }: { accessoryId: number; on
         <div className="border-t border-border pt-3 mt-2">
           {showAddForm ? (
             <div className="space-y-2">
-              <Label className="text-xs">Número de série (opcional)</Label>
-              <Input
-                value={newSerial}
-                onChange={(e) => setNewSerial(e.target.value)}
-                placeholder="Ex: CAP-007"
-                className="h-8 text-sm"
-              />
+              <div>
+                <Label className="text-xs">Número de série (opcional)</Label>
+                <Input
+                  value={newSerial}
+                  onChange={(e) => setNewSerial(e.target.value)}
+                  placeholder="Ex: CAP-007"
+                  className="h-8 text-sm mt-1"
+                />
+              </div>
+              <div>
+                <Label className="text-xs">Variante (opcional — ex: Tamanho M, Cor Azul)</Label>
+                <Input
+                  value={newVariante}
+                  onChange={(e) => setNewVariante(e.target.value)}
+                  placeholder="Ex: M, G, Azul..."
+                  className="h-8 text-sm mt-1"
+                />
+              </div>
               <div className="flex gap-2">
                 <Button
                   size="sm"
                   className="flex-1 bg-[#C8920A] hover:bg-[#A87608] text-white"
-                  onClick={() => createMut.mutate({ accessoryId, serialNumber: newSerial || undefined })}
+                  onClick={() => createMut.mutate({
+                    accessoryId,
+                    serialNumber: newSerial || undefined,
+                    variante: newVariante || undefined,
+                  })}
                   disabled={createMut.isPending}
                 >
                   <Plus className="w-3.5 h-3.5 mr-1" />Adicionar
@@ -209,6 +272,28 @@ function AccessoryUnitsPanel({ accessoryId, onClose }: { accessoryId: number; on
           )}
         </div>
       </DialogContent>
+
+      {/* Delete unit confirm */}
+      <Dialog open={!!deleteUnitId} onOpenChange={() => setDeleteUnitId(null)}>
+        <DialogContent className="bg-card border-border max-w-sm dialog-mobile">
+          <DialogHeader>
+            <DialogTitle>Excluir Unidade</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Tem certeza que deseja excluir esta unidade? Esta ação não pode ser desfeita.
+          </p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteUnitId(null)}>Cancelar</Button>
+            <Button
+              variant="destructive"
+              onClick={() => deleteUnitId && deleteMut.mutate({ unitId: deleteUnitId })}
+              disabled={deleteMut.isPending}
+            >
+              Excluir
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Dialog>
   );
 }
@@ -249,10 +334,9 @@ type AccessoryForm = {
   description: string;
   category: string;
   serialNumber: string;
-  quantity: number;
-  quantidadeTotal: number;
   replacementValue: string;
   status: AccessoryStatus;
+  obrigatorio: boolean;
   notes: string;
 };
 
@@ -261,10 +345,9 @@ const emptyForm: AccessoryForm = {
   description: "",
   category: "",
   serialNumber: "",
-  quantity: 1,
-  quantidadeTotal: 1,
   replacementValue: "",
   status: "available",
+  obrigatorio: false,
   notes: "",
 };
 
@@ -340,10 +423,9 @@ export default function Accessories() {
       description: item.description ?? "",
       category: item.category ?? "",
       serialNumber: item.serialNumber ?? "",
-      quantity: item.quantidadeTotal ?? item.quantity ?? 1,
-      quantidadeTotal: item.quantidadeTotal ?? item.quantity ?? 1,
       replacementValue: item.replacementValue ?? "",
       status: item.status ?? "available",
+      obrigatorio: item.obrigatorio ?? false,
       notes: item.notes ?? "",
     });
     setDialogOpen(true);
@@ -359,10 +441,9 @@ export default function Accessories() {
       description: form.description || undefined,
       category: form.category || undefined,
       serialNumber: form.serialNumber || undefined,
-      quantity: form.quantidadeTotal,
-      quantidadeTotal: form.quantidadeTotal,
       replacementValue: form.replacementValue || undefined,
       status: form.status,
+      obrigatorio: form.obrigatorio,
       notes: form.notes || undefined,
     };
     if (editingId) {
@@ -452,6 +533,7 @@ export default function Accessories() {
                     <th className="text-left text-[11px] font-semibold text-muted-foreground uppercase tracking-wider px-3 py-2.5">Acessório</th>
                     <th className="text-left text-[11px] font-semibold text-muted-foreground uppercase tracking-wider px-3 py-2.5">Categoria</th>
                     <th className="text-left text-[11px] font-semibold text-muted-foreground uppercase tracking-wider px-3 py-2.5">Estoque</th>
+                    <th className="text-left text-[11px] font-semibold text-muted-foreground uppercase tracking-wider px-3 py-2.5">Tipo</th>
                     <th className="text-left text-[11px] font-semibold text-muted-foreground uppercase tracking-wider px-3 py-2.5">Status</th>
                     <th className="w-36 px-3 py-2.5" />
                   </tr>
@@ -459,6 +541,7 @@ export default function Accessories() {
                 <tbody>
                   {items.map((item) => {
                     const dispQty = (item as any).quantidadeDisponivel ?? (item as any).quantidadeTotal ?? item.quantity ?? 0;
+                    const isObrigatorio = (item as any).obrigatorio ?? false;
                     return (
                       <tr key={item.id} className="group border-b border-border/40 last:border-b-0">
                         <td className="px-3 py-2.5">
@@ -474,6 +557,17 @@ export default function Accessories() {
                           <span className={`text-[12px] font-medium ${dispQty > 0 ? 'text-emerald-500' : 'text-red-500'}`}>
                             {dispQty} / {(item as any).quantidadeTotal ?? item.quantity}
                           </span>
+                        </td>
+                        <td className="px-3 py-2.5">
+                          {isObrigatorio ? (
+                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-500/15 text-amber-500 border border-amber-500/30">
+                              <ShieldCheck className="w-3 h-3" />Obrigatório
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-muted/50 text-muted-foreground border border-border">
+                              <ShieldOff className="w-3 h-3" />Opcional
+                            </span>
+                          )}
                         </td>
                         <td className="px-3 py-2.5">
                           <Badge className={`text-[10px] px-2 py-0.5 border ${STATUS_COLORS[item.status as AccessoryStatus]}`} variant="outline">
@@ -498,6 +592,7 @@ export default function Accessories() {
             <div className="md:hidden space-y-2">
               {items.map((item: any) => {
                 const dispQty = item.quantidadeDisponivel ?? item.quantidadeTotal ?? item.quantity ?? 0;
+                const isObrigatorio = item.obrigatorio ?? false;
                 return (
                   <div key={item.id} className="bg-card border border-border rounded-lg p-3 active:bg-accent/40 transition-colors">
                     <div className="flex items-center gap-3">
@@ -508,9 +603,16 @@ export default function Accessories() {
                         <p className="text-sm font-medium text-foreground truncate">{item.name}</p>
                         <p className="text-xs text-muted-foreground">{item.category || 'Sem categoria'} • {dispQty}/{item.quantidadeTotal ?? item.quantity} disp.</p>
                       </div>
-                      <Badge className={`text-[10px] px-2 py-0.5 border flex-shrink-0 ${STATUS_COLORS[item.status as AccessoryStatus]}`} variant="outline">
-                        {STATUS_LABELS[item.status as AccessoryStatus]}
-                      </Badge>
+                      <div className="flex flex-col items-end gap-1">
+                        <Badge className={`text-[10px] px-2 py-0.5 border flex-shrink-0 ${STATUS_COLORS[item.status as AccessoryStatus]}`} variant="outline">
+                          {STATUS_LABELS[item.status as AccessoryStatus]}
+                        </Badge>
+                        {isObrigatorio && (
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-semibold bg-amber-500/15 text-amber-500 border border-amber-500/30">
+                            <ShieldCheck className="w-2.5 h-2.5" />Obrigatório
+                          </span>
+                        )}
+                      </div>
                     </div>
                     <div className="flex gap-3 pt-2 mt-2 border-t border-border/50">
                       <button onClick={() => openEdit(item)} className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary"><Edit className="w-3 h-3" />Editar</button>
@@ -618,16 +720,18 @@ export default function Accessories() {
                 <p className="text-xs text-muted-foreground">Valor cobrado em caso de perda ou dano irreparável.</p>
               </div>
 
-              <div className="space-y-1">
-                <Label>Quantidade Total</Label>
-                <Input
-                  type="number"
-                  min={0}
-                  value={form.quantidadeTotal}
-                  onChange={(e) => setForm({ ...form, quantidadeTotal: Number(e.target.value), quantity: Number(e.target.value) })}
-                  className="bg-background"
+              {/* Toggle obrigatório */}
+              <div className="col-span-2 flex items-center justify-between rounded-lg border border-border bg-muted/20 px-4 py-3">
+                <div>
+                  <p className="text-sm font-medium text-foreground">Acessório Obrigatório</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Se ativado, este acessório será incluído automaticamente em todas as reservas públicas.
+                  </p>
+                </div>
+                <Switch
+                  checked={form.obrigatorio}
+                  onCheckedChange={(v) => setForm({ ...form, obrigatorio: v })}
                 />
-                <p className="text-xs text-muted-foreground">Acessórios são incluídos gratuitamente no aluguel.</p>
               </div>
 
               <div className="col-span-2 space-y-1">
@@ -652,6 +756,11 @@ export default function Accessories() {
                 />
               </div>
             </div>
+            {!editingId && (
+              <p className="text-xs text-muted-foreground bg-muted/30 rounded px-3 py-2 border border-border">
+                Uma unidade inicial será criada automaticamente. Adicione mais unidades via "Unidades" após o cadastro.
+              </p>
+            )}
           </div>
 
           <DialogFooter>
