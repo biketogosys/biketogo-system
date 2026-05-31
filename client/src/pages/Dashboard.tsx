@@ -9,6 +9,7 @@ import {
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, Legend,
+  PieChart, Pie, Cell,
 } from "recharts";
 
 // ─── Tipos de período ─────────────────────────────────────────────────────────
@@ -131,6 +132,7 @@ export default function Dashboard() {
 
   const { data, isLoading } = trpc.dashboard.summary.useQuery(periodDates);
   const { data: weeklyData, isLoading: weeklyLoading } = trpc.dashboard.weeklyRevenue.useQuery(periodDates);
+  const { data: bikeRevenueData = [], isLoading: bikeRevenueLoading } = trpc.dashboard.revenueByBike.useQuery(periodDates);
 
   if (isLoading) {
     return (
@@ -332,6 +334,105 @@ export default function Dashboard() {
               />
             </BarChart>
           </ResponsiveContainer>
+        )}
+      </div>
+
+      {/* Revenue by bike model chart */}
+      <div className="bg-card border border-border rounded-xl p-5 mb-8">
+        <div className="flex items-center justify-between mb-5">
+          <div>
+            <h2 className="text-sm font-semibold text-foreground uppercase tracking-wider">
+              Receita por modelo de bicicleta
+            </h2>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Aluguéis pagos no período — {periodLabel}
+            </p>
+          </div>
+        </div>
+        {bikeRevenueLoading ? (
+          <div className="flex items-center justify-center h-48">
+            <Loader2 className="w-5 h-5 animate-spin text-primary" />
+          </div>
+        ) : bikeRevenueData.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-48 text-muted-foreground">
+            <Bike className="w-8 h-8 mb-2 opacity-20" />
+            <p className="text-sm">Nenhum aluguel pago no período selecionado</p>
+          </div>
+        ) : (
+          <div className="flex flex-col md:flex-row items-center gap-6">
+            <ResponsiveContainer width="100%" height={220} className="md:!w-[280px] md:!min-w-[280px] md:!flex-shrink-0">
+              <PieChart>
+                <Pie
+                  data={bikeRevenueData}
+                  dataKey="receita"
+                  nameKey="modelo"
+                  cx="50%"
+                  cy="50%"
+                  outerRadius={90}
+                  innerRadius={48}
+                  paddingAngle={2}
+                >
+                  {bikeRevenueData.map((_: any, index: number) => (
+                    <Cell
+                      key={`cell-${index}`}
+                      fill={
+                        index === 0
+                          ? "#C8920A"
+                          : index === 1
+                          ? "#D4A843"
+                          : index === 2
+                          ? "#8A7A5A"
+                          : `oklch(${Math.max(0.35, 0.60 - index * 0.06)} 0.02 60)`
+                      }
+                      stroke="transparent"
+                    />
+                  ))}
+                </Pie>
+                <Tooltip
+                  formatter={(value: number) => [
+                    value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }),
+                    "Receita",
+                  ]}
+                  contentStyle={{
+                    backgroundColor: "var(--card)",
+                    border: "1px solid var(--border)",
+                    borderRadius: "8px",
+                    fontSize: 12,
+                  }}
+                />
+              </PieChart>
+            </ResponsiveContainer>
+            {/* Legend */}
+            <div className="flex-1 space-y-2 w-full">
+              {bikeRevenueData.map((item: any, index: number) => {
+                const totalReceita = bikeRevenueData.reduce((acc: number, d: any) => acc + d.receita, 0);
+                const pct = totalReceita > 0 ? Math.round((item.receita / totalReceita) * 100) : 0;
+                const color =
+                  index === 0
+                    ? "#C8920A"
+                    : index === 1
+                    ? "#D4A843"
+                    : index === 2
+                    ? "#8A7A5A"
+                    : `oklch(${Math.max(0.35, 0.60 - index * 0.06)} 0.02 60)`;
+                return (
+                  <div key={item.modelo} className="flex items-center gap-3">
+                    <span
+                      className="w-2.5 h-2.5 rounded-full shrink-0"
+                      style={{ backgroundColor: color }}
+                    />
+                    <span className="text-sm text-foreground flex-1 truncate" title={item.modelo}>
+                      {item.modelo}
+                    </span>
+                    <span className="text-xs text-muted-foreground shrink-0">{pct}%</span>
+                    <span className="text-sm font-semibold text-foreground shrink-0 tabular-nums">
+                      {item.receita.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
         )}
       </div>
 

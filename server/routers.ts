@@ -2303,6 +2303,46 @@ const dashboardRouter = router({
     }
     return weeks;
   }),
+
+  revenueByBike: adminAuthProcedure
+    .input(z.object({
+      startDate: z.string().optional(),
+      endDate: z.string().optional(),
+    }).optional())
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return [];
+      const { rentals: rentalsSchema, bikes: bikesSchema } = await import("../drizzle/schema");
+      const { eq: eqOp, gte: gteOp, lte: lteOp, isNotNull: isNotNullOp, sql: sqlOp } = await import("drizzle-orm");
+      const now = new Date();
+      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+      const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+      const fmt = (d: Date) => d.toISOString().split("T")[0];
+      const periodStart = input?.startDate ?? fmt(startOfMonth);
+      const periodEnd = input?.endDate ?? fmt(endOfMonth);
+      // Join rentals with bikes, filter paid rentals within period, group by bike model
+      const rows = await db
+        .select({
+          modelo: bikesSchema.model,
+          receita: sqlOp<string>`SUM(CAST(${rentalsSchema.totalAmount} AS DECIMAL(10,2)))`,
+        })
+        .from(rentalsSchema)
+        .innerJoin(bikesSchema, eqOp(rentalsSchema.bikeId, bikesSchema.id))
+        .where(
+          and(
+            eqOp(rentalsSchema.paymentStatus, "paid"),
+            isNotNullOp(rentalsSchema.totalAmount),
+            gteOp(rentalsSchema.startDate, periodStart),
+            lteOp(rentalsSchema.startDate, periodEnd),
+          )
+        )
+        .groupBy(bikesSchema.model)
+        .orderBy(sqlOp`SUM(CAST(${rentalsSchema.totalAmount} AS DECIMAL(10,2))) DESC`);
+      return rows.map((r) => ({
+        modelo: r.modelo,
+        receita: Math.round(parseFloat(r.receita ?? "0") * 100) / 100,
+      }));
+    }),
 });
 
 // ─── Audit Logs router ────────────────────────────────────────────────────────
