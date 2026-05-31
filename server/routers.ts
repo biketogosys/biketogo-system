@@ -887,6 +887,53 @@ const bikesRouter = router({
       const { url } = await storagePut(key, buffer, input.mimeType);
       return { url };
     }),
+  deleteMaintenanceLog: adminAuthProcedure
+    .input(z.object({ logId: z.number(), bikeId: z.number() }))
+    .mutation(async ({ input, ctx }) => {
+      const { bikeMaintenanceLogs, bikes, bikeSizes, auditLogs } = await import("../drizzle/schema");
+      const { eq, sql } = await import("drizzle-orm");
+      const db = await (await import("./db")).getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      // Fetch the log before deleting so we can restore quantities
+      const [log] = await db.select().from(bikeMaintenanceLogs).where(eq(bikeMaintenanceLogs.id, input.logId));
+      if (!log) throw new TRPCError({ code: "NOT_FOUND", message: "Registro de manutenção não encontrado." });
+      // If the log was still active, restore quantidadeDisponivel
+      if (log.status === "em_andamento") {
+        const qty = log.quantidadeAfetada ?? 1;
+        if (log.tamanhoBikeId) {
+          const sizeRow = await db.select({ total: bikeSizes.quantidadeTotal })
+            .from(bikeSizes).where(eq(bikeSizes.id, log.tamanhoBikeId));
+          const maxQty = sizeRow[0]?.total ?? qty;
+          await db.update(bikeSizes)
+            .set({ quantidadeDisponivel: sql`LEAST(${maxQty}, ${bikeSizes.quantidadeDisponivel} + ${qty})` })
+            .where(eq(bikeSizes.id, log.tamanhoBikeId));
+        } else {
+          await db.update(bikeSizes)
+            .set({ quantidadeDisponivel: sql`LEAST(${bikeSizes.quantidadeTotal}, ${bikeSizes.quantidadeDisponivel} + ${qty})` })
+            .where(eq(bikeSizes.bikeId, input.bikeId));
+        }
+        // Check if there are other active maintenance logs; if not, restore bike status
+        const remaining = await db.select({ id: bikeMaintenanceLogs.id, status: bikeMaintenanceLogs.status })
+          .from(bikeMaintenanceLogs)
+          .where(eq(bikeMaintenanceLogs.bikeId, input.bikeId));
+        const hasOngoing = remaining.some((r: any) => r.id !== input.logId && r.status === "em_andamento");
+        if (!hasOngoing) {
+          await db.update(bikes).set({ status: "available" }).where(eq(bikes.id, input.bikeId));
+        }
+      }
+      // Delete the log
+      await db.delete(bikeMaintenanceLogs).where(eq(bikeMaintenanceLogs.id, input.logId));
+      // Audit log
+      await db.insert(auditLogs).values({
+        adminId: ctx.user?.id ?? null,
+        acao: "delete",
+        tabela: "bike_maintenance_logs",
+        registroId: input.logId,
+        dadosAntes: log as any,
+        dadosDepois: null,
+      });
+      return { success: true };
+    }),
 });
 
 // ─── Rentals router ───────────────────────────────────────────────────────────

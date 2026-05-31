@@ -17,6 +17,8 @@ import {
   ChevronUp,
   Loader2,
   Search,
+  AlertTriangle,
+  History,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -189,6 +191,8 @@ function MaintenanceTab({ bikeId }: { bikeId: number }) {
   const [dataPrevista, setDataPrevista] = useState("");
   const [status, setStatus] = useState<"em_andamento" | "concluida">("em_andamento");
   const [expandedId, setExpandedId] = useState<number | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
+  const [showHistory, setShowHistory] = useState(false);
   // Tamanho afetado: null = todos os tamanhos
   const [tamanhoBikeId, setTamanhoBikeId] = useState<number | null>(null);
   const [quantidadeAfetada, setQuantidadeAfetada] = useState("1");
@@ -196,6 +200,13 @@ function MaintenanceTab({ bikeId }: { bikeId: number }) {
 
   const selectedSize = (sizes as any[]).find((s: any) => s.id === tamanhoBikeId);
   const maxQty = selectedSize ? (selectedSize.quantidadeDisponivel ?? selectedSize.quantidadeTotal ?? 99) : 99;
+
+  // Filter: hide completed logs older than 30 days unless showHistory is true
+  const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+  const visibleLogs = showHistory
+    ? (logs as any[])
+    : (logs as any[]).filter((l: any) => l.status !== "concluida" || new Date(l.dataEntrada) >= cutoff);
+  const hiddenCount = (logs as any[]).length - visibleLogs.length;
 
   const addMut = trpc.bikes.addMaintenance.useMutation({
     onSuccess: () => {
@@ -210,28 +221,67 @@ function MaintenanceTab({ bikeId }: { bikeId: number }) {
     onError: (e) => toast.error(e.message),
   });
   const updateMut = trpc.bikes.updateMaintenance.useMutation({
-    onSuccess: () => { utils.bikes.listMaintenance.invalidate(); utils.bikes.list.invalidate(); toast.success("Manutenção atualizada!"); },
+    onSuccess: () => {
+      utils.bikes.listMaintenance.invalidate();
+      utils.bikes.list.invalidate();
+      utils.bikes.listSizes.invalidate();
+      toast.success("Manutenção atualizada!");
+    },
     onError: (e) => toast.error(e.message),
+  });
+  const deleteMut = trpc.bikes.deleteMaintenanceLog.useMutation({
+    onSuccess: () => {
+      utils.bikes.listMaintenance.invalidate();
+      utils.bikes.list.invalidate();
+      utils.bikes.listSizes.invalidate();
+      setConfirmDeleteId(null);
+      toast.success("Registro excluído.");
+    },
+    onError: (e) => { toast.error(e.message); setConfirmDeleteId(null); },
   });
 
   return (
     <div className="space-y-3">
       {isLoading ? <p className="text-sm text-muted-foreground">Carregando...</p> : (
         <div className="space-y-2">
-          {(logs as any[]).length === 0 && <p className="text-sm text-muted-foreground">Nenhum registro de manutenção.</p>}
-          {(logs as any[]).map((log: any) => (
+          {visibleLogs.length === 0 && <p className="text-sm text-muted-foreground">Nenhum registro de manutenção.</p>}
+          {visibleLogs.map((log: any) => (
             <div key={log.id} className="border border-border rounded-lg overflow-hidden">
               <div className="flex items-center justify-between p-3 cursor-pointer hover:bg-secondary/50" onClick={() => setExpandedId(expandedId === log.id ? null : log.id)}>
-                <div className="flex items-center gap-2">
-                  {log.status === "concluida" ? <CheckCircle className="w-4 h-4 text-emerald-500" /> : <Clock className="w-4 h-4 text-amber-500" />}
+                <div className="flex items-center gap-2 min-w-0">
+                  {log.status === "concluida" ? <CheckCircle className="w-4 h-4 text-emerald-500 shrink-0" /> : <Clock className="w-4 h-4 text-amber-500 shrink-0" />}
                   <span className="text-sm font-medium line-clamp-1">{log.descricao}</span>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1 shrink-0">
                   <Badge variant={log.status === "concluida" ? "default" : "secondary"} className="text-xs">{log.status === "concluida" ? "Concluída" : "Em andamento"}</Badge>
+                  <button
+                    className="p-1 rounded hover:bg-destructive/10 text-destructive/70 hover:text-destructive transition-colors"
+                    title="Excluir registro"
+                    onClick={(e) => { e.stopPropagation(); setConfirmDeleteId(log.id); }}
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
                   {expandedId === log.id ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
                 </div>
               </div>
-              {expandedId === log.id && (
+              {/* Confirm delete inline */}
+              {confirmDeleteId === log.id && (
+                <div className="px-3 pb-3 border-t border-destructive/20 bg-destructive/5">
+                  <div className="flex items-center gap-2 py-2">
+                    <AlertTriangle className="w-4 h-4 text-destructive shrink-0" />
+                    <p className="text-xs text-destructive flex-1">
+                      {log.status === "em_andamento"
+                        ? "Excluir este registro irá restaurar a disponibilidade da bike. Confirmar?"
+                        : "Excluir este registro de manutenção? Esta ação não pode ser desfeita."}
+                    </p>
+                    <Button size="sm" variant="destructive" className="h-6 text-xs px-2" onClick={() => deleteMut.mutate({ logId: log.id, bikeId })} disabled={deleteMut.isPending}>
+                      {deleteMut.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : "Excluir"}
+                    </Button>
+                    <Button size="sm" variant="ghost" className="h-6 text-xs px-2" onClick={() => setConfirmDeleteId(null)}>Cancelar</Button>
+                  </div>
+                </div>
+              )}
+              {expandedId === log.id && confirmDeleteId !== log.id && (
                 <div className="p-3 pt-0 border-t border-border bg-secondary/20 space-y-2">
                   <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
                     <span>Entrada: {new Date(log.dataEntrada).toLocaleDateString("pt-BR")}</span>
@@ -240,13 +290,31 @@ function MaintenanceTab({ bikeId }: { bikeId: number }) {
                   </div>
                   {log.status === "em_andamento" && (
                     <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => updateMut.mutate({ id: log.id, bikeId, status: "concluida" })} disabled={updateMut.isPending}>
-                      <CheckCircle className="w-3 h-3 mr-1" />Marcar como concluída
+                      {updateMut.isPending ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <CheckCircle className="w-3 h-3 mr-1" />}Marcar como concluída
                     </Button>
                   )}
                 </div>
               )}
             </div>
           ))}
+          {hiddenCount > 0 && (
+            <button
+              className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors w-full justify-center py-1"
+              onClick={() => setShowHistory(true)}
+            >
+              <History className="w-3.5 h-3.5" />
+              Ver histórico completo ({hiddenCount} registro{hiddenCount !== 1 ? "s" : ""} oculto{hiddenCount !== 1 ? "s" : ""})
+            </button>
+          )}
+          {showHistory && hiddenCount > 0 && (
+            <button
+              className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors w-full justify-center py-1"
+              onClick={() => setShowHistory(false)}
+            >
+              <ChevronUp className="w-3.5 h-3.5" />
+              Ocultar histórico antigo
+            </button>
+          )}
         </div>
       )}
       {showForm ? (
