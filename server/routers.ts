@@ -2618,15 +2618,68 @@ const contractsRouter = router({
         await db.update(contracts)
           .set({ pendenciaAcessorio: true })
           .where(eq(contracts.id, input.id));
-        // Notify admin
+        // Build human-readable list of pending accessories (with names via JOIN)
+        const pendingIds = (input.accessories ?? [])
+          .filter((a) => a.status !== "ok")
+          .map((a) => a.id);
+        const { accessories: accessoriesTable2 } = await import("../drizzle/schema");
+        const { inArray: inArrayOp } = await import("drizzle-orm");
+        const caRows = pendingIds.length > 0
+          ? await db
+              .select({
+                caId: contractAccessories.id,
+                accessoryId: contractAccessories.accessoryId,
+                accessoryName: accessoriesTable2.name,
+              })
+              .from(contractAccessories)
+              .leftJoin(accessoriesTable2, eq(contractAccessories.accessoryId, accessoriesTable2.id))
+              .where(inArrayOp(contractAccessories.id, pendingIds))
+          : [];
+        const caNameMap = new Map(caRows.map((r) => [r.caId, r.accessoryName ?? `Acessório #${r.caId}`]));
         const pendentes = (input.accessories ?? [])
           .filter((a) => a.status !== "ok")
-          .map((a) => `Acessório #${a.id}: ${a.status}${a.observacao ? " — " + a.observacao : ""}`)
+          .map((a) => {
+            const nome = caNameMap.get(a.id) ?? `Acessório #${a.id}`;
+            const obs = a.observacao ? ` — ${a.observacao}` : "";
+            return `• ${nome}: ${a.status}${obs}`;
+          })
           .join("\n");
+        // Fetch client name for the WhatsApp message
+        const [contractRow] = await db
+          .select({ clientId: contracts.clientId })
+          .from(contracts)
+          .where(eq(contracts.id, input.id))
+          .limit(1);
+        let clientName = "—";
+        if (contractRow?.clientId) {
+          const { clients: clientsTable3 } = await import("../drizzle/schema");
+          const [clientRow] = await db
+            .select({ name: clientsTable3.name })
+            .from(clientsTable3)
+            .where(eq(clientsTable3.id, contractRow.clientId))
+            .limit(1);
+          if (clientRow?.name) clientName = clientRow.name;
+        }
+        // Notify via Manus notification
         await notifyOwner({
           title: `⚠️ Pendência de acessório — Contrato #${input.id}`,
           content: `Acessórios com problema ao encerrar o contrato #${input.id}:\n\n${pendentes}`,
         }).catch(() => {});
+        // Notify via WhatsApp (Z-API) — fail silently if not configured
+        try {
+          const rawOwnerPhone = await getSetting("whatsapp_number");
+          const ownerPhone = sanitizePhone(rawOwnerPhone) ?? rawOwnerPhone ?? undefined;
+          if (ownerPhone) {
+            const waMessage =
+              `⚠️ Contrato #${input.id} encerrado com PENDÊNCIA de acessório.\n` +
+              `Cliente: ${clientName}.\n` +
+              `Verifique o checklist de devolução.\n\n` +
+              `Itens pendentes:\n${pendentes}`;
+            await sendWhatsApp({ text: waMessage, to: ownerPhone });
+          }
+        } catch {
+          // Z-API not configured or unavailable — do not break contract closure
+        }
       }
       // Recalc status (may set to encerrado if all rentals returned)
       await recalcContractStatus(input.id);
