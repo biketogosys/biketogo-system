@@ -2700,6 +2700,116 @@ const contractsRouter = router({
     }),
 
   // Confirm presential payment: mark all rentals as paid, register revenue, activate bikes
+  // Cria contrato manualmente pelo painel (admin)
+  createManual: adminAuthProcedure
+    .input(z.object({
+      clientId: z.number(),
+      bikes: z.array(z.object({
+        bikeId: z.number(),
+        bikeSizeId: z.number().nullable().optional(),
+        startDate: z.string(),
+        endDate: z.string(),
+        quantity: z.number().min(1).default(1),
+        dailyRate: z.string().optional(),
+        totalAmount: z.string().optional(),
+      })).min(1),
+      accessories: z.array(z.object({
+        accessoryId: z.number(),
+        qty: z.number().min(1).default(1),
+      })).optional(),
+      notes: z.string().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+
+      // Validate client is verified
+      const [client] = await db.select({ id: clientsTable.id, status: clientsTable.status })
+        .from(clientsTable)
+        .where(eq(clientsTable.id, input.clientId));
+      if (!client) throw new TRPCError({ code: "NOT_FOUND", message: "Cliente não encontrado." });
+      if (client.status !== "verified")
+        throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Apenas clientes verificados podem ter contratos criados manualmente." });
+
+      // Calculate total value from all bikes
+      let totalValue = 0;
+      for (const b of input.bikes) {
+        if (b.totalAmount) totalValue += parseFloat(b.totalAmount);
+      }
+
+      // Create contract
+      const [contract] = await db.insert(contracts).values({
+        clientId: input.clientId,
+        valorTotal: totalValue > 0 ? totalValue.toFixed(2) : null,
+        status: "ativo",
+      }).returning({ id: contracts.id });
+
+      // Create one rental per bike entry
+      const rentalIds: number[] = [];
+      for (const b of input.bikes) {
+        const rentalId = await createRental({
+          clientId: input.clientId,
+          bikeId: b.bikeId,
+          bikeSizeId: b.bikeSizeId ?? null,
+          quantity: b.quantity,
+          startDate: b.startDate,
+          endDate: b.endDate,
+          dailyRate: b.dailyRate ?? null,
+          totalAmount: b.totalAmount ?? null,
+          paymentType: "presential",
+          paymentStatus: "pending",
+          status: "active",
+          source: "manual",
+          contractId: contract.id,
+          notes: input.notes ?? null,
+        } as any);
+        rentalIds.push(rentalId);
+        // Mark bike as rented
+        await updateBike(b.bikeId, { status: "rented" });
+        // Decrease available quantity for the size
+        if (b.bikeSizeId) {
+          const { bikeSizes } = await import("../drizzle/schema");
+          await db.update(bikeSizes)
+            .set({ quantidadeDisponivel: drizzleSql`GREATEST(0, ${bikeSizes.quantidadeDisponivel} - ${b.quantity})` })
+            .where(eq(bikeSizes.id, b.bikeSizeId));
+        }
+      }
+
+      // Add accessories to contract_accessories and rental_accessories
+      if (input.accessories && input.accessories.length > 0) {
+        const { contractAccessories: caSchema } = await import("../drizzle/schema");
+        for (const acc of input.accessories) {
+          const accessory = await getAccessoryById(acc.accessoryId);
+          // Link to first rental
+          await createRentalAccessory({
+            rentalId: rentalIds[0],
+            accessoryId: acc.accessoryId,
+            quantity: acc.qty,
+            dailyRate: accessory?.dailyRate ?? null,
+          } as any);
+          // Link to contract
+          await db.insert(caSchema).values({
+            contractId: contract.id,
+            accessoryId: acc.accessoryId,
+            qty: acc.qty,
+            status: "ok",
+          });
+        }
+      }
+
+      await recalcContractStatus(contract.id);
+
+      await createAuditLog({
+        adminId: (ctx as any).adminUser?.id ?? null,
+        acao: "criou_contrato_manual",
+        tabela: "contracts",
+        registroId: contract.id,
+        dadosDepois: { clientId: input.clientId, bikes: input.bikes.length, accessories: input.accessories?.length ?? 0 },
+      });
+
+      return { id: contract.id };
+    }),
+
   confirmPayment: adminOnlyProcedure
     .input(z.object({ contractId: z.number() }))
     .mutation(async ({ ctx, input }) => {
