@@ -676,10 +676,49 @@ const bikesRouter = router({
   checkAvailability: publicProcedure
     .input(z.object({
       bikeId: z.number(),
+      bikeSizeId: z.number().optional(),
       startDate: z.string(),
       endDate: z.string(),
+      quantity: z.number().min(1).default(1),
     }))
-    .query(({ input }) => checkBikeAvailability(input.bikeId, input.startDate, input.endDate)),
+    .query(async ({ input }) => {
+      const db = await (await import("./db")).getDb();
+      if (!db) return true; // fail open
+      const { rentals: rt, bikeSizes: bs } = await import("../drizzle/schema");
+      const { eq, inArray, isNull: isNullOp, and: andOp, lte: lteOp, gte: gteOp } = await import("drizzle-orm");
+
+      if (input.bikeSizeId) {
+        // Check availability for a specific size
+        const [size] = await db.select({ quantidadeTotal: bs.quantidadeTotal, quantidadeDisponivel: bs.quantidadeDisponivel })
+          .from(bs).where(eq(bs.id, input.bikeSizeId));
+        if (!size) return false;
+        const activeRentals = await db
+          .select({ id: rt.id })
+          .from(rt)
+          .where(andOp(
+            eq(rt.bikeSizeId, input.bikeSizeId),
+            inArray(rt.status, ["active", "overdue"]),
+            isNullOp(rt.deletedAt),
+            lteOp(rt.startDate, input.endDate),
+            gteOp(rt.endDate, input.startDate),
+          ));
+        const available = Math.max(0, (size.quantidadeDisponivel ?? 0) - activeRentals.length);
+        return available >= input.quantity;
+      } else {
+        // Fallback: check by bikeId (legacy)
+        const result = await db
+          .select({ id: rt.id })
+          .from(rt)
+          .where(andOp(
+            eq(rt.bikeId, input.bikeId),
+            inArray(rt.status, ["active", "overdue"]),
+            isNullOp(rt.deletedAt),
+            lteOp(rt.startDate, input.endDate),
+            gteOp(rt.endDate, input.startDate),
+          ));
+        return result.length === 0;
+      }
+    }),
   // ─── Bike Sizes ──────────────────────────────────────────────────────────
   listSizes: adminAuthProcedure
     .input(z.object({ bikeId: z.number() }))
@@ -1789,10 +1828,49 @@ const publicApiRouter = router({
   checkAvailability: publicProcedure
     .input(z.object({
       bikeId: z.number(),
+      bikeSizeId: z.number().optional(),
       startDate: z.string(),
       endDate: z.string(),
+      quantity: z.number().min(1).default(1),
     }))
-    .query(({ input }) => checkBikeAvailability(input.bikeId, input.startDate, input.endDate)),
+    .query(async ({ input }) => {
+      const db = await (await import("./db")).getDb();
+      if (!db) return true; // fail open
+      const { rentals: rt, bikeSizes: bs } = await import("../drizzle/schema");
+      const { eq, inArray, isNull: isNullOp, and: andOp, lte: lteOp, gte: gteOp } = await import("drizzle-orm");
+
+      if (input.bikeSizeId) {
+        // Check availability for a specific size
+        const [size] = await db.select({ quantidadeTotal: bs.quantidadeTotal, quantidadeDisponivel: bs.quantidadeDisponivel })
+          .from(bs).where(eq(bs.id, input.bikeSizeId));
+        if (!size) return false;
+        const activeRentals = await db
+          .select({ id: rt.id })
+          .from(rt)
+          .where(andOp(
+            eq(rt.bikeSizeId, input.bikeSizeId),
+            inArray(rt.status, ["active", "overdue"]),
+            isNullOp(rt.deletedAt),
+            lteOp(rt.startDate, input.endDate),
+            gteOp(rt.endDate, input.startDate),
+          ));
+        const available = Math.max(0, (size.quantidadeDisponivel ?? 0) - activeRentals.length);
+        return available >= input.quantity;
+      } else {
+        // Fallback: check by bikeId (legacy)
+        const result = await db
+          .select({ id: rt.id })
+          .from(rt)
+          .where(andOp(
+            eq(rt.bikeId, input.bikeId),
+            inArray(rt.status, ["active", "overdue"]),
+            isNullOp(rt.deletedAt),
+            lteOp(rt.startDate, input.endDate),
+            gteOp(rt.endDate, input.startDate),
+          ));
+        return result.length === 0;
+      }
+    }),
 
   // Get available accessories (with real-time availability)
   availableAccessories: publicProcedure.query(async () => {
