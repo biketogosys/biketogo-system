@@ -1,22 +1,49 @@
 import { trpc } from "@/lib/trpc";
 import { useParams, useLocation } from "wouter";
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { toast } from "sonner";
 import {
-  ArrowLeft, Loader2, CheckCircle, Ban, Mail, Phone, MapPin,
-  Instagram, Building2, Ruler, Bike, Clock, FileText, Shield,
-  User, Image as ImageIcon, Trash2, Upload
+  ArrowLeft, Loader2, CheckCircle, Mail, Phone,
+  Bike, Clock, FileText, Shield,
+  User, Image as ImageIcon, Trash2, Upload, X,
+  CheckCircle2, AlertCircle, Edit2, CreditCard,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  maskCPF, maskRG, maskCEP, maskPhone, maskDate,
+  isValidCPF, isValidRG, fetchViaCEP, dateDisplayToISO, dateISOToDisplay,
+} from "@/hooks/useMask";
 
-type Tab = "cadastro" | "documentacao" | "alugueis" | "historico";
+// ─── DDI list ─────────────────────────────────────────────────────────────────
+const DDI_LIST = [
+  { code: "+55", label: "🇧🇷 +55 Brasil" },
+  { code: "+1",  label: "🇺🇸 +1 EUA/Canadá" },
+  { code: "+54", label: "🇦🇷 +54 Argentina" },
+  { code: "+56", label: "🇨🇱 +56 Chile" },
+  { code: "+598", label: "🇺🇾 +598 Uruguai" },
+  { code: "+595", label: "🇵🇾 +595 Paraguai" },
+  { code: "+34", label: "🇪🇸 +34 Espanha" },
+  { code: "+351", label: "🇵🇹 +351 Portugal" },
+  { code: "+44", label: "🇬🇧 +44 Reino Unido" },
+  { code: "+49", label: "🇩🇪 +49 Alemanha" },
+  { code: "+33", label: "🇫🇷 +33 França" },
+  { code: "+39", label: "🇮🇹 +39 Itália" },
+  { code: "+81", label: "🇯🇵 +81 Japão" },
+  { code: "+86", label: "🇨🇳 +86 China" },
+  { code: "+91", label: "🇮🇳 +91 Índia" },
+];
 
 // ─── Lightbox ────────────────────────────────────────────────────────────────
 function Lightbox({ src, alt, onClose }: { src: string; alt: string; onClose: () => void }) {
-  // Fechar com ESC
   const handleKey = (e: React.KeyboardEvent) => { if (e.key === "Escape") onClose(); };
   return (
     <div
@@ -67,6 +94,604 @@ function InfoRow({ label, value }: { label: string; value?: string | null }) {
   );
 }
 
+// ─── Edit Modal ───────────────────────────────────────────────────────────────
+interface EditClientModalProps {
+  open: boolean;
+  onClose: () => void;
+  client: any;
+  clientId: number;
+  onSuccess: () => void;
+}
+
+function EditClientModal({ open, onClose, client, clientId, onSuccess }: EditClientModalProps) {
+  // Parse DDI from phone: if phone starts with +XX, extract it
+  function parseDDI(phone: string | null | undefined): { ddi: string; number: string } {
+    if (!phone) return { ddi: "+55", number: "" };
+    const match = phone.match(/^(\+\d{1,4})\s(.+)$/);
+    if (match) return { ddi: match[1], number: match[2] };
+    return { ddi: "+55", number: phone };
+  }
+
+  const { ddi: initDdi, number: initPhone } = parseDDI(client?.phone);
+
+  const [form, setForm] = useState(() => ({
+    name: client?.name ?? "",
+    birthDate: client?.birthDate ? dateISOToDisplay(client.birthDate) : "",
+    nacionalidade: (client?.nacionalidade as "" | "brasileiro" | "estrangeiro") ?? "",
+    tipoDocumento: (client?.tipoDocumento as "cnh" | "rg" | "passaporte") ?? "cnh",
+    cpf: client?.cpf ?? "",
+    rg: client?.rg ?? "",
+    numeroPassaporte: client?.numeroPassaporte ?? "",
+    ddi: initDdi,
+    phone: initPhone,
+    phoneAlt: client?.phoneAlt ?? "",
+    email: client?.email ?? "",
+    instagram: client?.instagram ?? "",
+    zipCode: client?.zipCode ?? "",
+    street: client?.street ?? "",
+    number: client?.number ?? "",
+    complement: client?.complement ?? "",
+    neighborhood: client?.neighborhood ?? "",
+    city: client?.city ?? "",
+    state: client?.state ?? "",
+    country: client?.country ?? "Brasil",
+    height: client?.height ?? "",
+    weight: client?.weight ?? "",
+    pedalFrequency: (client?.pedalFrequency as "" | "iniciante" | "intermediario" | "avancado") ?? "",
+    tipoUso: (client?.tipoUso as "" | "lazer" | "esporte" | "urbano" | "cicloturismo") ?? "",
+    notes: client?.notes ?? "",
+    accommodation: client?.accommodation ?? "",
+    origin: client?.origin ?? "",
+    lgpdConsent: client?.lgpdConsent ?? false,
+    aceiteMarketing: client?.aceiteMarketing ?? false,
+  }));
+
+  const [activeTab, setActiveTab] = useState("identificacao");
+  const [cepLoading, setCepLoading] = useState(false);
+  const [docFrenteFile, setDocFrenteFile] = useState<File | null>(null);
+  const [docVersoFile, setDocVersoFile] = useState<File | null>(null);
+  const [docFrentePreview, setDocFrentePreview] = useState("");
+  const [docVersoPreview, setDocVersoPreview] = useState("");
+  const frenteRef = useRef<HTMLInputElement>(null);
+  const versoRef = useRef<HTMLInputElement>(null);
+  const utils = trpc.useUtils();
+
+  const updateMutation = trpc.clients.update.useMutation({
+    onSuccess: () => {
+      toast.success("Cliente atualizado com sucesso!");
+      utils.clients.byId.invalidate({ id: clientId });
+      onSuccess();
+      onClose();
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  function set<K extends keyof typeof form>(key: K, value: typeof form[K]) {
+    setForm((f) => ({ ...f, [key]: value }));
+  }
+
+  async function handleCEPBlur() {
+    const digits = form.zipCode.replace(/\D/g, "");
+    if (digits.length !== 8) return;
+    setCepLoading(true);
+    const result = await fetchViaCEP(digits);
+    setCepLoading(false);
+    if (!result) return toast.error("CEP não encontrado.");
+    setForm((f) => ({
+      ...f,
+      street: result.logradouro || f.street,
+      neighborhood: result.bairro || f.neighborhood,
+      city: result.localidade || f.city,
+      state: result.uf || f.state,
+    }));
+  }
+
+  function handleFileChange(side: "frente" | "verso", file: File | null) {
+    if (!file) return;
+    const url = URL.createObjectURL(file);
+    if (side === "frente") { setDocFrenteFile(file); setDocFrentePreview(url); }
+    else { setDocVersoFile(file); setDocVersoPreview(url); }
+  }
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!form.name.trim()) { setActiveTab("identificacao"); return toast.error("Nome é obrigatório."); }
+    if (form.nacionalidade === "brasileiro" && form.cpf && !isValidCPF(form.cpf)) {
+      setActiveTab("identificacao");
+      return toast.error("CPF inválido. Verifique os dígitos verificadores.");
+    }
+    if (form.rg && !isValidRG(form.rg)) {
+      setActiveTab("identificacao");
+      return toast.error("RG inválido. Verifique o dígito verificador.");
+    }
+
+    const phone = form.ddi !== "+55" ? `${form.ddi} ${form.phone}` : form.phone;
+
+    updateMutation.mutate({
+      id: clientId,
+      name: form.name || undefined,
+      cpf: form.nacionalidade !== "estrangeiro" ? (form.cpf || undefined) : undefined,
+      rg: form.nacionalidade !== "estrangeiro" ? (form.rg || undefined) : undefined,
+      birthDate: form.birthDate ? dateDisplayToISO(form.birthDate) : undefined,
+      nacionalidade: (form.nacionalidade || undefined) as "brasileiro" | "estrangeiro" | undefined,
+      tipoDocumento: (form.tipoDocumento || undefined) as "cnh" | "rg" | "passaporte" | undefined,
+      numeroPassaporte: form.tipoDocumento === "passaporte" ? (form.numeroPassaporte || undefined) : undefined,
+      phone: phone || undefined,
+      email: form.email || undefined,
+      instagram: form.instagram || undefined,
+      zipCode: form.zipCode || undefined,
+      street: form.street || undefined,
+      number: form.number || undefined,
+      complement: form.complement || undefined,
+      neighborhood: form.neighborhood || undefined,
+      city: form.city || undefined,
+      state: form.state || undefined,
+      country: form.country || "Brasil",
+      pedalFrequency: form.pedalFrequency || undefined,
+      origin: form.origin || undefined,
+      accommodation: form.accommodation || undefined,
+      notes: form.notes || undefined,
+      height: form.height || undefined,
+      weight: form.weight || undefined,
+      lgpdConsent: form.lgpdConsent,
+    });
+  }
+
+  if (!open) return null;
+
+  const inputCls = "bg-secondary border-border text-sm";
+  const labelCls = "text-xs text-muted-foreground mb-1.5 block";
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4">
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative bg-card border border-border rounded-xl w-full max-w-2xl shadow-2xl flex flex-col max-h-[95vh]">
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-border flex-shrink-0">
+          <h2 className="text-base font-semibold text-foreground" style={{ fontFamily: "'Montserrat', sans-serif" }}>
+            Editar Cliente
+          </h2>
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground transition-colors">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* Tabs */}
+        <form onSubmit={handleSubmit} className="flex flex-col flex-1 overflow-hidden">
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="flex flex-col flex-1 overflow-hidden">
+            <div className="flex-shrink-0 mx-5 mt-4 overflow-x-auto">
+              <TabsList className="flex w-max min-w-full h-auto gap-0.5">
+                {[
+                  { value: "identificacao", label: "1. ID" },
+                  { value: "contato", label: "2. Contato" },
+                  { value: "endereco", label: "3. Endereço" },
+                  { value: "documento", label: "4. Docs" },
+                  { value: "perfil", label: "5. Perfil" },
+                  { value: "lgpd", label: "6. LGPD" },
+                ].map((tab) => (
+                  <TabsTrigger key={tab.value} value={tab.value} className="text-xs px-2 py-1.5 flex-1 min-w-[60px]">
+                    {tab.label}
+                  </TabsTrigger>
+                ))}
+              </TabsList>
+            </div>
+
+            <div className="flex-1 overflow-y-auto px-5 py-4">
+              {/* ── Aba 1: Identificação ── */}
+              <TabsContent value="identificacao" className="mt-0 space-y-4">
+                <div>
+                  <Label className={labelCls}>Nome completo *</Label>
+                  <Input value={form.name} onChange={(e) => set("name", e.target.value)} placeholder="João Silva" className={inputCls} />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <Label className={labelCls}>Data de nascimento</Label>
+                    <Input
+                      value={form.birthDate}
+                      onChange={(e) => set("birthDate", maskDate(e.target.value))}
+                      placeholder="DD/MM/AAAA"
+                      className={inputCls}
+                      maxLength={10}
+                    />
+                  </div>
+                  <div>
+                    <Label className={labelCls}>Nacionalidade</Label>
+                    <Select value={form.nacionalidade} onValueChange={(v) => set("nacionalidade", v as "brasileiro" | "estrangeiro")}>
+                      <SelectTrigger className={inputCls}>
+                        <SelectValue placeholder="Selecionar..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="brasileiro">Brasileiro</SelectItem>
+                        <SelectItem value="estrangeiro">Estrangeiro</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                {/* Documentos: CPF+RG para brasileiros, Passaporte para estrangeiros */}
+                {form.nacionalidade !== "estrangeiro" ? (
+                  <>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <Label className={labelCls}>
+                          CPF
+                          {form.cpf.replace(/\D/g, "").length === 11 && (
+                            isValidCPF(form.cpf)
+                              ? <CheckCircle2 className="inline w-3 h-3 ml-1 text-green-500" />
+                              : <AlertCircle className="inline w-3 h-3 ml-1 text-destructive" />
+                          )}
+                        </Label>
+                        <Input
+                          value={form.cpf}
+                          onChange={(e) => set("cpf", maskCPF(e.target.value))}
+                          placeholder="000.000.000-00"
+                          className={inputCls}
+                          maxLength={14}
+                        />
+                      </div>
+                      <div>
+                        <Label className={labelCls}>
+                          RG
+                          {form.rg.replace(/[.\-\s]/g, "").length >= 8 && (
+                            isValidRG(form.rg)
+                              ? <CheckCircle2 className="inline w-3 h-3 ml-1 text-green-500" />
+                              : <AlertCircle className="inline w-3 h-3 ml-1 text-destructive" />
+                          )}
+                        </Label>
+                        <Input
+                          value={form.rg}
+                          onChange={(e) => set("rg", maskRG(e.target.value))}
+                          placeholder="00.000.000-0"
+                          className={inputCls}
+                          maxLength={12}
+                        />
+                      </div>
+                    </div>
+                    {/* Tipo de documento para brasileiros */}
+                    <div>
+                      <Label className={labelCls}>Tipo de documento principal</Label>
+                      <Select value={form.tipoDocumento} onValueChange={(v) => set("tipoDocumento", v as "cnh" | "rg")}>
+                        <SelectTrigger className={inputCls}>
+                          <SelectValue placeholder="Selecionar..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="cnh">CNH</SelectItem>
+                          <SelectItem value="rg">RG</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </>
+                ) : (
+                  <div>
+                    <Label className={labelCls}>Número do Passaporte *</Label>
+                    <Input
+                      value={form.numeroPassaporte}
+                      onChange={(e) => { set("numeroPassaporte", e.target.value.toUpperCase()); set("tipoDocumento", "passaporte"); }}
+                      placeholder="AB123456"
+                      className={inputCls}
+                      maxLength={50}
+                    />
+                  </div>
+                )}
+              </TabsContent>
+
+              {/* ── Aba 2: Contato ── */}
+              <TabsContent value="contato" className="mt-0 space-y-4">
+                <div>
+                  <Label className={labelCls}>E-mail</Label>
+                  <Input type="email" value={form.email} onChange={(e) => set("email", e.target.value)} placeholder="joao@email.com" className={inputCls} />
+                </div>
+                <div>
+                  <Label className={labelCls}>WhatsApp</Label>
+                  <div className="flex gap-2">
+                    <Select value={form.ddi} onValueChange={(v) => set("ddi", v)}>
+                      <SelectTrigger className={`${inputCls} w-44 flex-shrink-0`}>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {DDI_LIST.map((d) => (
+                          <SelectItem key={d.code} value={d.code}>{d.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Input
+                      value={form.phone}
+                      onChange={(e) => set("phone", form.ddi === "+55" ? maskPhone(e.target.value) : e.target.value)}
+                      placeholder={form.ddi === "+55" ? "(48) 9 9999-9999" : "Número"}
+                      className={`${inputCls} flex-1`}
+                    />
+                  </div>
+                </div>
+                <div>
+                  <Label className={labelCls}>Telefone alternativo</Label>
+                  <Input
+                    value={form.phoneAlt}
+                    onChange={(e) => set("phoneAlt", maskPhone(e.target.value))}
+                    placeholder="(48) 3333-4444"
+                    className={inputCls}
+                  />
+                </div>
+                <div>
+                  <Label className={labelCls}>Instagram</Label>
+                  <Input value={form.instagram} onChange={(e) => set("instagram", e.target.value)} placeholder="@usuario" className={inputCls} />
+                </div>
+              </TabsContent>
+
+              {/* ── Aba 3: Endereço ── */}
+              <TabsContent value="endereco" className="mt-0 space-y-4">
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="col-span-2">
+                    <Label className={labelCls}>CEP</Label>
+                    <div className="relative">
+                      <Input
+                        value={form.zipCode}
+                        onChange={(e) => set("zipCode", maskCEP(e.target.value))}
+                        onBlur={handleCEPBlur}
+                        placeholder="00000-000"
+                        className={inputCls}
+                        maxLength={9}
+                      />
+                      {cepLoading && <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 animate-spin text-muted-foreground" />}
+                    </div>
+                  </div>
+                  <div>
+                    <Label className={labelCls}>Estado</Label>
+                    <Input value={form.state} onChange={(e) => set("state", e.target.value.toUpperCase())} placeholder="SC" className={inputCls} maxLength={2} />
+                  </div>
+                </div>
+                <div>
+                  <Label className={labelCls}>Logradouro</Label>
+                  <Input value={form.street} onChange={(e) => set("street", e.target.value)} placeholder="Rua das Flores" className={inputCls} />
+                </div>
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <Label className={labelCls}>Número</Label>
+                    <Input value={form.number} onChange={(e) => set("number", e.target.value)} placeholder="123" className={inputCls} />
+                  </div>
+                  <div className="col-span-2">
+                    <Label className={labelCls}>Complemento</Label>
+                    <Input value={form.complement} onChange={(e) => set("complement", e.target.value)} placeholder="Apto 4" className={inputCls} />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <Label className={labelCls}>Bairro</Label>
+                    <Input value={form.neighborhood} onChange={(e) => set("neighborhood", e.target.value)} placeholder="Centro" className={inputCls} />
+                  </div>
+                  <div>
+                    <Label className={labelCls}>Cidade</Label>
+                    <Input value={form.city} onChange={(e) => set("city", e.target.value)} placeholder="Florianópolis" className={inputCls} />
+                  </div>
+                </div>
+                <div>
+                  <Label className={labelCls}>País</Label>
+                  <Input value={form.country} onChange={(e) => set("country", e.target.value)} placeholder="Brasil" className={inputCls} />
+                </div>
+              </TabsContent>
+
+              {/* ── Aba 4: Documentos ── */}
+              <TabsContent value="documento" className="mt-0 space-y-5">
+                <p className="text-xs text-muted-foreground">
+                  Faça upload das fotos do documento de identificação para substituir os existentes.
+                </p>
+                {/* Frente */}
+                <div>
+                  <Label className={labelCls}>Frente do documento</Label>
+                  <input
+                    ref={frenteRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(e) => handleFileChange("frente", e.target.files?.[0] ?? null)}
+                  />
+                  {docFrentePreview ? (
+                    <div className="relative w-full h-36 rounded-lg overflow-hidden border border-border bg-secondary">
+                      <img src={docFrentePreview} alt="Frente" className="w-full h-full object-cover" />
+                      <button
+                        type="button"
+                        onClick={() => { setDocFrenteFile(null); setDocFrentePreview(""); }}
+                        className="absolute top-2 right-2 bg-black/60 rounded-full p-1 text-white hover:bg-black/80"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => frenteRef.current?.click()}
+                      className="w-full h-28 border-2 border-dashed border-border rounded-lg flex flex-col items-center justify-center gap-2 text-muted-foreground hover:border-primary/50 hover:text-primary transition-colors"
+                    >
+                      <Upload className="w-5 h-5" />
+                      <span className="text-xs">Clique para selecionar</span>
+                    </button>
+                  )}
+                </div>
+                {/* Verso */}
+                <div>
+                  <Label className={labelCls}>Verso do documento (opcional)</Label>
+                  <input
+                    ref={versoRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(e) => handleFileChange("verso", e.target.files?.[0] ?? null)}
+                  />
+                  {docVersoPreview ? (
+                    <div className="relative w-full h-36 rounded-lg overflow-hidden border border-border bg-secondary">
+                      <img src={docVersoPreview} alt="Verso" className="w-full h-full object-cover" />
+                      <button
+                        type="button"
+                        onClick={() => { setDocVersoFile(null); setDocVersoPreview(""); }}
+                        className="absolute top-2 right-2 bg-black/60 rounded-full p-1 text-white hover:bg-black/80"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => versoRef.current?.click()}
+                      className="w-full h-28 border-2 border-dashed border-border rounded-lg flex flex-col items-center justify-center gap-2 text-muted-foreground hover:border-primary/50 hover:text-primary transition-colors"
+                    >
+                      <Upload className="w-5 h-5" />
+                      <span className="text-xs">Clique para selecionar (opcional)</span>
+                    </button>
+                  )}
+                </div>
+                {(docFrenteFile || docVersoFile) && (
+                  <p className="text-xs text-amber-500 flex items-center gap-1">
+                    <AlertCircle className="w-3 h-3" />
+                    Os documentos serão enviados ao salvar (integração S3 ativa).
+                  </p>
+                )}
+              </TabsContent>
+
+              {/* ── Aba 5: Perfil de uso ── */}
+              <TabsContent value="perfil" className="mt-0 space-y-4">
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <Label className={labelCls}>Altura (cm)</Label>
+                    <Input
+                      value={form.height}
+                      onChange={(e) => set("height", e.target.value.replace(/\D/g, "").slice(0, 3))}
+                      placeholder="175"
+                      className={inputCls}
+                      maxLength={3}
+                    />
+                  </div>
+                  <div>
+                    <Label className={labelCls}>Peso (kg)</Label>
+                    <Input
+                      type="number"
+                      min="20"
+                      max="300"
+                      step="0.1"
+                      value={form.weight}
+                      onChange={(e) => set("weight", e.target.value)}
+                      placeholder="75.5"
+                      className={inputCls}
+                    />
+                  </div>
+                </div>
+                <div>
+                  <Label className={labelCls}>Experiência em ciclismo</Label>
+                  <Select value={form.pedalFrequency} onValueChange={(v) => set("pedalFrequency", v as "iniciante" | "intermediario" | "avancado")}>
+                    <SelectTrigger className={inputCls}>
+                      <SelectValue placeholder="Selecionar..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="iniciante">Iniciante</SelectItem>
+                      <SelectItem value="intermediario">Intermediário</SelectItem>
+                      <SelectItem value="avancado">Avançado</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label className={labelCls}>Tipo de uso preferido</Label>
+                  <Select value={form.tipoUso} onValueChange={(v) => set("tipoUso", v as "lazer" | "esporte" | "urbano" | "cicloturismo")}>
+                    <SelectTrigger className={inputCls}>
+                      <SelectValue placeholder="Selecionar..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="lazer">Lazer</SelectItem>
+                      <SelectItem value="esporte">Esporte</SelectItem>
+                      <SelectItem value="urbano">Urbano</SelectItem>
+                      <SelectItem value="cicloturismo">Cicloturismo</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label className={labelCls}>Origem / Como nos conheceu</Label>
+                  <Input value={form.origin} onChange={(e) => set("origin", e.target.value)} placeholder="Instagram, indicação..." className={inputCls} />
+                </div>
+                <div>
+                  <Label className={labelCls}>Hospedagem / Acomodação</Label>
+                  <Input value={form.accommodation} onChange={(e) => set("accommodation", e.target.value)} placeholder="Hotel, pousada..." className={inputCls} />
+                </div>
+                <div>
+                  <Label className={labelCls}>Observações internas (visível apenas para admin)</Label>
+                  <Textarea
+                    value={form.notes}
+                    onChange={(e) => set("notes", e.target.value)}
+                    placeholder="Notas sobre o cliente..."
+                    className={`${inputCls} resize-none`}
+                    rows={3}
+                  />
+                </div>
+              </TabsContent>
+
+              {/* ── Aba 6: LGPD ── */}
+              <TabsContent value="lgpd" className="mt-0 space-y-5">
+                <div className="rounded-lg border border-border bg-secondary/50 p-4 text-xs text-muted-foreground leading-relaxed">
+                  <p className="font-semibold text-foreground mb-2">Termos de uso e Política de Privacidade</p>
+                  <p>
+                    Ao cadastrar seus dados, você concorda com o tratamento das informações pessoais
+                    pela Bike To Go para fins de gestão de locações, comunicação e melhorias de serviço,
+                    conforme a Lei Geral de Proteção de Dados (LGPD — Lei 13.709/2018).
+                  </p>
+                  <p className="mt-2">
+                    Seus dados são armazenados com segurança e não serão compartilhados com terceiros
+                    sem seu consentimento explícito.
+                  </p>
+                </div>
+                <div className="flex items-start gap-3">
+                  <Checkbox
+                    id="editLgpdConsent"
+                    checked={form.lgpdConsent}
+                    onCheckedChange={(v) => set("lgpdConsent", !!v)}
+                    className="mt-0.5"
+                  />
+                  <label htmlFor="editLgpdConsent" className="text-sm text-foreground cursor-pointer leading-snug">
+                    Li e aceito os Termos de Uso e a Política de Privacidade.
+                  </label>
+                </div>
+                <div className="flex items-start gap-3">
+                  <Checkbox
+                    id="editAceiteMarketing"
+                    checked={form.aceiteMarketing}
+                    onCheckedChange={(v) => set("aceiteMarketing", !!v)}
+                    className="mt-0.5"
+                  />
+                  <label htmlFor="editAceiteMarketing" className="text-sm text-muted-foreground cursor-pointer leading-snug">
+                    Aceito receber comunicações de marketing e promoções por e-mail e WhatsApp. (opcional)
+                  </label>
+                </div>
+                {client?.lgpdConsentAt && (
+                  <p className="text-xs text-muted-foreground flex items-center gap-1">
+                    <Shield className="w-3 h-3" />
+                    Aceite registrado em: {new Date(client.lgpdConsentAt).toLocaleString("pt-BR")}
+                  </p>
+                )}
+              </TabsContent>
+            </div>
+
+            {/* Footer */}
+            <div className="flex gap-3 px-5 py-4 border-t border-border flex-shrink-0">
+              <Button type="button" variant="outline" onClick={onClose} className="flex-1">
+                Cancelar
+              </Button>
+              <Button
+                type="submit"
+                disabled={updateMutation.isPending}
+                className="flex-1"
+                style={!updateMutation.isPending ? { background: "oklch(0.68 0.12 65)", color: "oklch(0.10 0.005 240)" } : {}}
+              >
+                {updateMutation.isPending ? (
+                  <><Loader2 className="w-4 h-4 animate-spin mr-2" />Salvando...</>
+                ) : (
+                  "Salvar alterações"
+                )}
+              </Button>
+            </div>
+          </Tabs>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// ─── Main ClientProfile ───────────────────────────────────────────────────────
+type Tab = "cadastro" | "documentacao" | "alugueis" | "historico";
+
 export default function ClientProfile() {
   const params = useParams<{ id: string }>();
   const [, navigate] = useLocation();
@@ -74,6 +699,7 @@ export default function ClientProfile() {
   const [activeTab, setActiveTab] = useState<Tab>("cadastro");
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
   const [lightboxAlt, setLightboxAlt] = useState("");
+  const [showEditModal, setShowEditModal] = useState(false);
   const utils = trpc.useUtils();
 
   const openLightbox = (src: string, alt: string) => { setLightboxSrc(src); setLightboxAlt(alt); };
@@ -121,7 +747,6 @@ export default function ClientProfile() {
     );
   }
 
-  // Lightbox overlay
   const lightboxEl = lightboxSrc ? <Lightbox src={lightboxSrc} alt={lightboxAlt} onClose={closeLightbox} /> : null;
 
   const tabs: { id: Tab; label: string; icon: React.ElementType }[] = [
@@ -136,6 +761,18 @@ export default function ClientProfile() {
   return (
     <div className="p-4 md:p-6 max-w-6xl mx-auto">
       {lightboxEl}
+
+      {/* Edit Modal */}
+      {showEditModal && (
+        <EditClientModal
+          open={showEditModal}
+          onClose={() => setShowEditModal(false)}
+          client={client}
+          clientId={clientId}
+          onSuccess={() => utils.clients.byId.invalidate({ id: clientId })}
+        />
+      )}
+
       {/* Back button */}
       <button
         onClick={() => navigate("/clientes")}
@@ -180,6 +817,16 @@ export default function ClientProfile() {
                 {validateMutation.isPending ? "Validando..." : "Validar cadastro"}
               </Button>
             )}
+
+            {/* Edit button */}
+            <Button
+              variant="outline"
+              onClick={() => setShowEditModal(true)}
+              className="w-full mb-3 text-sm"
+            >
+              <Edit2 className="w-4 h-4 mr-2" />
+              Editar cadastro
+            </Button>
 
             {/* Situation */}
             <div className="space-y-2 text-xs text-muted-foreground">
@@ -279,14 +926,16 @@ export default function ClientProfile() {
                       {client.email}
                     </div>
                   )}
-                  {client.instagram && (
-                    <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                      <Instagram className="w-3 h-3" />
-                      {client.instagram}
-                    </div>
-                  )}
                 </div>
               </div>
+              {/* Quick edit button in header */}
+              <button
+                onClick={() => setShowEditModal(true)}
+                className="flex-shrink-0 p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+                title="Editar cadastro"
+              >
+                <Edit2 className="w-4 h-4" />
+              </button>
             </div>
           </div>
 
@@ -321,11 +970,11 @@ export default function ClientProfile() {
                     <InfoRow label="Data de nascimento" value={client.birthDate} />
                     <InfoRow label="Gênero" value={client.gender} />
                     <InfoRow label="Nacionalidade" value={(client as any).nacionalidade === "estrangeiro" ? "Estrangeiro" : "Brasileiro"} />
-                    {/* CPF e RG separados para brasileiros */}
                     {(client as any).nacionalidade !== "estrangeiro" ? (
                       <>
                         <InfoRow label="CPF" value={(client as any).cpf} />
                         <InfoRow label="RG" value={(client as any).rg} />
+                        <InfoRow label="Tipo de documento" value={(client as any).tipoDocumento?.toUpperCase()} />
                       </>
                     ) : (
                       <InfoRow label="Passaporte" value={(client as any).numeroPassaporte} />
@@ -384,8 +1033,8 @@ export default function ClientProfile() {
                     <p className="text-xs font-semibold text-foreground">Consentimento LGPD</p>
                     <p className="text-xs text-muted-foreground">
                       {(client as any).lgpdConsent
-                        ? `Aceito em ${(client as any).lgpdConsentAt ? new Date((client as any).lgpdConsentAt).toLocaleString("pt-BR") : "data n\u00e3o registrada"}`
-                        : "N\u00e3o registrado"}
+                        ? `Aceito em ${(client as any).lgpdConsentAt ? new Date((client as any).lgpdConsentAt).toLocaleString("pt-BR") : "data não registrada"}`
+                        : "Não registrado"}
                     </p>
                   </div>
                   <span className={`ml-auto text-xs px-2 py-0.5 rounded-full font-medium ${
@@ -434,60 +1083,60 @@ export default function ClientProfile() {
 
                 {/* Additional uploaded documents */}
                 <div>
-                <h3 className="text-xs font-semibold text-primary uppercase tracking-wider mb-4">
-                  Documentos Adicionais
-                </h3>
-                {(!docs || docs.length === 0) ? (
-                  <div className="flex flex-col items-center justify-center h-32 text-muted-foreground">
-                    <ImageIcon className="w-8 h-8 mb-2 opacity-30" />
-                    <p className="text-sm">Nenhum documento enviado</p>
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    {docs.map((doc) => (
-                      <div key={doc.id} className="bg-secondary border border-border rounded-lg overflow-hidden">
-                        <div
-                          className="bg-muted flex items-center justify-center cursor-zoom-in overflow-hidden"
-                          style={{ width: "100%", height: 180 }}
-                          onClick={() => openLightbox(doc.url, doc.type)}
-                          title="Clique para ampliar"
-                        >
-                          <img
-                            src={doc.url}
-                            alt={doc.type}
-                            style={{ width: 280, height: 180, objectFit: "cover", display: "block" }}
-                            onError={(e) => {
-                              (e.target as HTMLImageElement).style.display = "none";
-                            }}
-                          />
-                        </div>
-                        <div className="p-3 flex items-center justify-between">
-                          <div>
-                            <p className="text-xs font-medium text-foreground capitalize">
-                              {(() => {
-                                    const td = (client as any).tipoDocumento as string | undefined;
-                                    const docName = td === "cnh" ? "CNH" : td === "rg" ? "RG" : td === "passaporte" ? "Passaporte" : "Documento";
-                                    const dt = doc.type as string;
-                                    if (dt === "rg_front" || dt === "doc_front") return `${docName} — Frente`;
-                                    if (dt === "rg_back" || dt === "doc_back") return `${docName} — Verso`;
-                                    return "Documento";
-                                  })()}
-                            </p>
-                            <p className="text-xs text-muted-foreground">
-                              {new Date(doc.createdAt).toLocaleDateString("pt-BR")}
-                            </p>
-                          </div>
-                          <button
-                            onClick={() => deleteDocMutation.mutate({ id: doc.id })}
-                            className="text-muted-foreground hover:text-destructive transition-colors"
+                  <h3 className="text-xs font-semibold text-primary uppercase tracking-wider mb-4">
+                    Documentos Adicionais
+                  </h3>
+                  {(!docs || docs.length === 0) ? (
+                    <div className="flex flex-col items-center justify-center h-32 text-muted-foreground">
+                      <ImageIcon className="w-8 h-8 mb-2 opacity-30" />
+                      <p className="text-sm">Nenhum documento enviado</p>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      {docs.map((doc) => (
+                        <div key={doc.id} className="bg-secondary border border-border rounded-lg overflow-hidden">
+                          <div
+                            className="bg-muted flex items-center justify-center cursor-zoom-in overflow-hidden"
+                            style={{ width: "100%", height: 180 }}
+                            onClick={() => openLightbox(doc.url, doc.type)}
+                            title="Clique para ampliar"
                           >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
+                            <img
+                              src={doc.url}
+                              alt={doc.type}
+                              style={{ width: 280, height: 180, objectFit: "cover", display: "block" }}
+                              onError={(e) => {
+                                (e.target as HTMLImageElement).style.display = "none";
+                              }}
+                            />
+                          </div>
+                          <div className="p-3 flex items-center justify-between">
+                            <div>
+                              <p className="text-xs font-medium text-foreground capitalize">
+                                {(() => {
+                                  const td = (client as any).tipoDocumento as string | undefined;
+                                  const docName = td === "cnh" ? "CNH" : td === "rg" ? "RG" : td === "passaporte" ? "Passaporte" : "Documento";
+                                  const dt = doc.type as string;
+                                  if (dt === "rg_front" || dt === "doc_front") return `${docName} — Frente`;
+                                  if (dt === "rg_back" || dt === "doc_back") return `${docName} — Verso`;
+                                  return "Documento";
+                                })()}
+                              </p>
+                              <p className="text-xs text-muted-foreground">
+                                {new Date(doc.createdAt).toLocaleDateString("pt-BR")}
+                              </p>
+                            </div>
+                            <button
+                              onClick={() => deleteDocMutation.mutate({ id: doc.id })}
+                              className="text-muted-foreground hover:text-destructive transition-colors"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
                         </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
             )}
@@ -523,7 +1172,10 @@ export default function ClientProfile() {
                             <span>Total: R$ {parseFloat(rental.totalAmount).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</span>
                           )}
                           {rental.paymentMethod && (
-                            <span>Pagamento: {rental.paymentMethod}</span>
+                            <span className="flex items-center gap-1">
+                              <CreditCard className="w-3 h-3" />
+                              {rental.paymentMethod}
+                            </span>
                           )}
                         </div>
                       </div>
