@@ -2794,6 +2794,8 @@ const contractsRouter = router({
       accessories: z.array(z.object({
         accessoryId: z.number(),
         qty: z.number().min(1).default(1),
+        variante: z.string().optional(),
+        unitId: z.number().optional(),
       })).optional(),
       notes: z.string().optional(),
     }))
@@ -2870,12 +2872,139 @@ const contractsRouter = router({
             contractId: contract.id,
             accessoryId: acc.accessoryId,
             qty: acc.qty,
+            unitId: acc.unitId ?? null,
             status: "ok",
           });
         }
       }
 
       await recalcContractStatus(contract.id);
+
+      // ── Generate PDF ─────────────────────────────────────────────────────────
+      let pdfUrl: string | null = null;
+      try {
+        const { generateContractPdf } = await import("./pdf");
+        const { storagePut } = await import("./storage");
+        const { contracts: cTablePdf, clients: clTablePdf, accessories: accTablePdf, contractAccessories: caTablePdf, accessoryUnits: auTablePdf } = await import("../drizzle/schema");
+        const { eq: eqPdf, and: andPdf, isNull: isNullPdf } = await import("drizzle-orm");
+        const [contractRow] = await db.select().from(cTablePdf).where(eqPdf(cTablePdf.id, contract.id));
+        const [clientRow] = await db.select().from(clTablePdf).where(eqPdf(clTablePdf.id, input.clientId));
+        const rentalsForPdf = await db.select({
+          bikeId: rentalsTable.bikeId, startDate: rentalsTable.startDate, endDate: rentalsTable.endDate,
+          totalAmount: rentalsTable.totalAmount,
+        }).from(rentalsTable).where(andPdf(eqPdf(rentalsTable.contractId, contract.id), isNullPdf(rentalsTable.deletedAt)));
+        const { bikes: bikesTpdf } = await import("../drizzle/schema");
+        const rentalsWithBike = await Promise.all(rentalsForPdf.map(async (r) => {
+          const [bike] = r.bikeId ? await db.select({ model: bikesTpdf.model, brand: bikesTpdf.brand, serialNumber: bikesTpdf.serialNumber }).from(bikesTpdf).where(eqPdf(bikesTpdf.id, r.bikeId)) : [null];
+          return { ...r, bikeModel: bike?.model, bikeBrand: bike?.brand, bikeSerialNumber: bike?.serialNumber };
+        }));
+        const caRowsPdf = await db.select({
+          accessoryId: caTablePdf.accessoryId, qty: caTablePdf.qty, unitId: caTablePdf.unitId,
+          accessoryName: accTablePdf.name,
+        }).from(caTablePdf).leftJoin(accTablePdf, eqPdf(caTablePdf.accessoryId, accTablePdf.id)).where(eqPdf(caTablePdf.contractId, contract.id));
+        const accWithSerial = await Promise.all(caRowsPdf.map(async (ca) => {
+          let serialNumber: string | null = null;
+          if (ca.unitId) {
+            const [unit] = await db.select({ serialNumber: auTablePdf.serialNumber }).from(auTablePdf).where(eqPdf(auTablePdf.id, ca.unitId));
+            serialNumber = unit?.serialNumber ?? null;
+          }
+          return { accessoryName: ca.accessoryName, qty: ca.qty, serialNumber };
+        }));
+        const pdfBuffer = await generateContractPdf({
+          contractId: contract.id,
+          clientName: clientRow?.name ?? "—",
+          clientCpf: clientRow?.cpf ?? null,
+          clientPhone: clientRow?.phone ?? null,
+          clientEmail: clientRow?.email ?? null,
+          criadoEm: contractRow?.criadoEm ?? new Date(),
+          valorTotal: contractRow?.valorTotal ?? null,
+          rentals: rentalsWithBike,
+          accessories: accWithSerial,
+        });
+        const suffix = Date.now().toString(36);
+        const { url: pdfS3Url } = await storagePut(`contracts/contrato-${contract.id}-${suffix}.pdf`, pdfBuffer, "application/pdf");
+        pdfUrl = pdfS3Url;
+        const { contracts: cTableUpd } = await import("../drizzle/schema");
+        await db.update(cTableUpd).set({ pdfUrl: pdfS3Url }).where(eqPdf(cTableUpd.id, contract.id));
+      } catch (pdfErr) { console.warn("[createManual] PDF generation error:", pdfErr); }
+
+      // ── Send email & WhatsApp notifications ──────────────────────────────────
+      try {
+        const [companyName, companyEmail2, companyPhone2, logoUrl, whatsappNumber] = await Promise.all([
+          getSetting("company_name"),
+          getSetting("company_email"),
+          getSetting("company_phone"),
+          getSetting("logo_url"),
+          getSetting("whatsapp_number"),
+        ]);
+        const { clients: clientsSchemaEmail } = await import("../drizzle/schema");
+        const { eq: eqEmail } = await import("drizzle-orm");
+        const [clientForEmail] = await db.select({ name: clientsSchemaEmail.name, email: clientsSchemaEmail.email, phone: clientsSchemaEmail.phone })
+          .from(clientsSchemaEmail)
+          .where(eqEmail(clientsSchemaEmail.id, input.clientId));
+        // Build email items from bikeEntries
+        const emailItems = await Promise.all(input.bikes.map(async (b) => {
+          const bike = await getBikeById(b.bikeId);
+          return {
+            bikeModel: bike?.model || "N/A",
+            bikeBrand: bike?.brand || undefined,
+            startDate: b.startDate,
+            endDate: b.endDate,
+            deliveryTime: undefined as string | undefined,
+            totalAmount: b.totalAmount ?? "0.00",
+          };
+        }));
+        const accessoryNames: string[] = [];
+        if (input.accessories && input.accessories.length > 0) {
+          for (const acc of input.accessories) {
+            const accessory = await getAccessoryById(acc.accessoryId);
+            if (accessory?.name) {
+              const varianteSuffix = acc.variante ? ` (${acc.variante})` : "";
+              accessoryNames.push(`${accessory.name}${varianteSuffix} ×${acc.qty}`);
+            }
+          }
+        }
+        const grandTotalEmail = input.bikes.reduce((s, b) => s + parseFloat(b.totalAmount ?? "0"), 0);
+        const professionalEmailHtml = buildProfessionalReservationEmail({
+          clientName: clientForEmail?.name ?? "Cliente",
+          cartItems: emailItems,
+          accessories: accessoryNames,
+          grandTotal: grandTotalEmail.toFixed(2),
+          paymentMethod: "presential",
+          companyName: companyName || "Bike To Go",
+          companyEmail: companyEmail2 || undefined,
+          companyPhone: companyPhone2 || undefined,
+          logoUrl: logoUrl || undefined,
+        });
+        if (clientForEmail?.email) {
+          await sendEmail({
+            to: clientForEmail.email,
+            subject: `Contrato #${contract.id} criado — ${companyName || "Bike To Go"}`,
+            html: professionalEmailHtml,
+          });
+        }
+        // Copy to company_email
+        const ownerCopyEmail = companyEmail2 || await getSetting("notification_email");
+        if (ownerCopyEmail && ownerCopyEmail !== clientForEmail?.email) {
+          const contractPath = `/contratos?contractId=${contract.id}`;
+          const ownerHtml = professionalEmailHtml.replace(
+            "</body>",
+            `<div style="max-width:620px;margin:0 auto;padding:0 16px 24px;"><div style="padding:12px 16px;background:#1a0a0a;border-left:3px solid #e74c3c;border-radius:4px;"><p style="margin:0;font-size:13px;color:#e74c3c;"><strong>Nota para o admin:</strong> Contrato criado manualmente. Acesse: <a href="${contractPath}" style="color:#C8920A;">${contractPath}</a></p></div></div></body>`
+          );
+          await sendEmail({ to: ownerCopyEmail, subject: `⚠️ Contrato Manual #${contract.id} — ${clientForEmail?.name ?? "Cliente"} | ${companyName || "Bike To Go"}`, html: ownerHtml });
+        }
+        // WhatsApp to owner
+        if (whatsappNumber) {
+          const sanitized = sanitizePhone(whatsappNumber);
+          if (sanitized) {
+            const bikeSummaryWa = input.bikes.map((b) => `Bike #${b.bikeId}`).join(", ");
+            await sendWhatsApp({
+              to: sanitized,
+              text: `📋 Contrato #${contract.id} criado manualmente pelo admin.\nCliente: ${clientForEmail?.name ?? "—"}\nBikes: ${bikeSummaryWa}\nTotal: R$ ${grandTotalEmail.toFixed(2)}`,
+            });
+          }
+        }
+      } catch (notifErr) { console.warn("[createManual] Notification error:", notifErr); }
 
       await createAuditLog({
         adminId: (ctx as any).adminUser?.id ?? null,

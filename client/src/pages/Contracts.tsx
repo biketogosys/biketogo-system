@@ -123,6 +123,8 @@ type AccessoryEntry = {
   name: string;
   qty: number;
   obrigatorio: boolean;
+  variante?: string;
+  unitId?: number;
 };
 
 function VerifiedClientAutocomplete({
@@ -253,6 +255,15 @@ function NewContractModal({ open, onClose }: { open: boolean; onClose: () => voi
   );
   const accList = accData?.data ?? [];
 
+  // Fetch units for accessories selected in step 3 (to show variante dropdown)
+  const [expandedAccId, setExpandedAccId] = useState<number | null>(null);
+  const { data: accUnitsData } = trpc.accessories.getUnits.useQuery(
+    { accessoryId: expandedAccId! },
+    { enabled: !!expandedAccId && step === 3 }
+  );
+  const accUnits = accUnitsData ?? [];
+  const availableUnits = accUnits.filter((u) => u.status === "disponivel");
+
   // Initialize mandatory accessories when step 3 opens
   useEffect(() => {
     if (step === 3 && accList.length > 0) {
@@ -318,6 +329,14 @@ function NewContractModal({ open, onClose }: { open: boolean; onClose: () => voi
       }
       return [...prev, { accessoryId: acc.id, name: acc.name, qty: 1, obrigatorio: false }];
     });
+    // Expand to show variante options
+    setExpandedAccId((prev) => prev === acc.id ? null : acc.id);
+  }
+
+  function setAccessoryVariant(accessoryId: number, unitId: number, variante: string | null) {
+    setAccessories((prev) => prev.map((a) =>
+      a.accessoryId === accessoryId ? { ...a, unitId, variante: variante ?? undefined } : a
+    ));
   }
 
   const grandTotal = bikeEntries.reduce((s, b) => s + parseFloat(b.totalAmount), 0);
@@ -352,7 +371,7 @@ function NewContractModal({ open, onClose }: { open: boolean; onClose: () => voi
         dailyRate: b.dailyRate,
         totalAmount: b.totalAmount,
       })),
-      accessories: accessories.map((a) => ({ accessoryId: a.accessoryId, qty: a.qty })),
+      accessories: accessories.map((a) => ({ accessoryId: a.accessoryId, qty: a.qty, variante: a.variante, unitId: a.unitId })),
       notes: notes || undefined,
     });
   }
@@ -488,31 +507,70 @@ function NewContractModal({ open, onClose }: { open: boolean; onClose: () => voi
         {step === 3 && (
           <div className="space-y-3">
             <p className="text-sm text-muted-foreground">Acessórios obrigatórios já estão incluídos automaticamente. Adicione opcionais se necessário.</p>
-            <div className="grid grid-cols-2 gap-2 max-h-64 overflow-y-auto">
+            <div className="space-y-2 max-h-72 overflow-y-auto">
               {accList.map((acc) => {
                 const selected = accessories.find((a) => a.accessoryId === acc.id);
                 const isMandatory = (acc as any).obrigatorio;
+                const isExpanded = expandedAccId === acc.id;
+                const hasVariants = isExpanded && availableUnits.some((u) => u.variante);
                 return (
-                  <button
-                    key={acc.id}
-                    type="button"
-                    onClick={() => toggleAccessory(acc)}
-                    disabled={isMandatory}
-                    className={`flex items-center gap-2 p-2.5 rounded-md border text-left text-sm transition-colors ${
-                      selected ? "border-primary bg-primary/5" : "border-border hover:bg-muted/50"
-                    } ${isMandatory ? "opacity-75 cursor-default" : ""}`}
-                  >
-                    <Package className="h-4 w-4 text-muted-foreground shrink-0" />
-                    <div className="flex-1 min-w-0">
-                      <div className="font-medium truncate">{acc.name}</div>
-                      {isMandatory && <div className="text-xs text-amber-600">Obrigatório</div>}
-                    </div>
-                    {selected && <Check className="h-3.5 w-3.5 text-primary shrink-0" />}
-                  </button>
+                  <div key={acc.id} className="border rounded-md overflow-hidden">
+                    <button
+                      type="button"
+                      onClick={() => toggleAccessory(acc)}
+                      disabled={isMandatory}
+                      className={`w-full flex items-center gap-2 p-2.5 text-left text-sm transition-colors ${
+                        selected ? "bg-primary/5" : "hover:bg-muted/50"
+                      } ${isMandatory ? "cursor-default" : ""}`}
+                    >
+                      <Package className="h-4 w-4 text-muted-foreground shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <div className="font-medium truncate">{acc.name}</div>
+                        {isMandatory && <div className="text-xs text-amber-600">Obrigatório</div>}
+                        {selected?.variante && <div className="text-xs text-muted-foreground">Variante: {selected.variante}</div>}
+                      </div>
+                      {selected && <Check className="h-3.5 w-3.5 text-primary shrink-0" />}
+                    </button>
+                    {/* Variante dropdown + qty when selected and expanded */}
+                    {selected && isExpanded && (
+                      <div className="px-3 pb-3 pt-1 bg-muted/30 border-t flex flex-wrap gap-3 items-end">
+                        {hasVariants && (
+                          <div className="flex-1 min-w-[140px]">
+                            <Label className="text-xs mb-1 block">Variante</Label>
+                            <Select
+                              value={selected.unitId ? String(selected.unitId) : ""}
+                              onValueChange={(v) => {
+                                const unit = availableUnits.find((u) => String(u.id) === v);
+                                if (unit) setAccessoryVariant(acc.id, unit.id, unit.variante ?? null);
+                              }}
+                            >
+                              <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Selecionar" /></SelectTrigger>
+                              <SelectContent>
+                                {availableUnits.filter((u) => u.variante).map((u) => (
+                                  <SelectItem key={u.id} value={String(u.id)}>{u.variante}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        )}
+                        <div className="w-20">
+                          <Label className="text-xs mb-1 block">Qtd.</Label>
+                          <Input
+                            type="number" min={1} max={10}
+                            value={selected.qty}
+                            onChange={(e) => setAccessories((prev) => prev.map((a) =>
+                              a.accessoryId === acc.id ? { ...a, qty: Number(e.target.value) } : a
+                            ))}
+                            className="h-8 text-xs"
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 );
               })}
               {accList.length === 0 && (
-                <p className="col-span-2 text-center text-muted-foreground py-8 text-sm">Nenhum acessório cadastrado.</p>
+                <p className="text-center text-muted-foreground py-8 text-sm">Nenhum acessório cadastrado.</p>
               )}
             </div>
           </div>
