@@ -220,7 +220,7 @@ function VerifiedClientAutocomplete({
   );
 }
 
-function NewContractModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+export function NewContractModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const utils = trpc.useUtils();
   const [step, setStep] = useState(1);
   const [clientId, setClientId] = useState("");
