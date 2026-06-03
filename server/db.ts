@@ -63,7 +63,13 @@ export async function getDb() {
   if (!_db && process.env.DATABASE_URL) {
     try {
       const url = cleanDatabaseUrl(process.env.DATABASE_URL);
-      const client = postgres(url, { ssl: 'require' });
+      const client = postgres(url, {
+        ssl: 'require',
+        prepare: false,       // obrigatório para transaction pooler do Supabase (pgBouncer)
+        max: 10,
+        idle_timeout: 20,
+        connect_timeout: 10,
+      });
       _db = drizzle(client);
     } catch (error) {
       console.warn("[Database] Failed to connect:", error);

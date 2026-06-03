@@ -2454,9 +2454,34 @@ const dashboardRouter = router({
     const db = await getDb();
     if (!db) return [];
     const { rentals: rentalsSchema, expenses: expensesSchema, revenues: revenuesSchema } = await import("../drizzle/schema");
-    const { between, isNotNull, gte: gteOp, lte: lteOp } = await import("drizzle-orm");
-    const weeks: { week: string; receitaAlugueis: number; receitasExtras: number; despesas: number }[] = [];
+    const { isNotNull, gte: gteOp, lte: lteOp } = await import("drizzle-orm");
+
+    // Calcular range completo das 8 semanas (7 semanas atrás + semana atual)
     const now = new Date();
+    // Semana mais antiga: começa 7*7 = 49 dias atrás (segunda da semana mais antiga)
+    const rangeStart = new Date(now);
+    rangeStart.setDate(now.getDate() - 7 * 7);
+    rangeStart.setHours(0, 0, 0, 0);
+    const rangeEnd = new Date(now);
+    rangeEnd.setHours(23, 59, 59, 999);
+    const rangeStartStr = rangeStart.toISOString().split("T")[0];
+    const rangeEndStr = rangeEnd.toISOString().split("T")[0];
+
+    // 3 queries totais para o range completo
+    const [rentalRows, revenueRows, expenseRows] = await Promise.all([
+      db.select({ returnedAt: rentalsSchema.returnedAt, total: rentalsSchema.totalAmount })
+        .from(rentalsSchema)
+        .where(and(isNotNull(rentalsSchema.returnedAt), gteOp(rentalsSchema.returnedAt, rangeStart), lteOp(rentalsSchema.returnedAt, rangeEnd))),
+      db.select({ date: revenuesSchema.date, total: revenuesSchema.amount })
+        .from(revenuesSchema)
+        .where(and(gteOp(revenuesSchema.date, rangeStartStr), lteOp(revenuesSchema.date, rangeEndStr))),
+      db.select({ date: expensesSchema.date, total: expensesSchema.amount })
+        .from(expensesSchema)
+        .where(and(gteOp(expensesSchema.date, rangeStartStr), lteOp(expensesSchema.date, rangeEndStr))),
+    ]);
+
+    // Agrupar em JavaScript nas 8 semanas (mesmo formato de retorno)
+    const weeks: { week: string; receitaAlugueis: number; receitasExtras: number; despesas: number }[] = [];
     for (let i = 7; i >= 0; i--) {
       const end = new Date(now);
       end.setDate(now.getDate() - i * 7);
@@ -2466,23 +2491,25 @@ const dashboardRouter = router({
       start.setHours(0, 0, 0, 0);
       const startStr = start.toISOString().split("T")[0];
       const endStr = end.toISOString().split("T")[0];
-      const [rentalRows, revenueRows, expenseRows] = await Promise.all([
-        db.select({ total: rentalsSchema.totalAmount })
-          .from(rentalsSchema)
-          .where(and(isNotNull(rentalsSchema.returnedAt), between(rentalsSchema.returnedAt, start, end))),
-        db.select({ total: revenuesSchema.amount })
-          .from(revenuesSchema)
-          .where(and(gteOp(revenuesSchema.date, startStr), lteOp(revenuesSchema.date, endStr))),
-        db.select({ total: expensesSchema.amount })
-          .from(expensesSchema)
-          .where(and(gteOp(expensesSchema.date, startStr), lteOp(expensesSchema.date, endStr))),
-      ]);
+
+      const receitaAlugueis = rentalRows
+        .filter(r => r.returnedAt && r.returnedAt >= start && r.returnedAt <= end)
+        .reduce((a, r) => a + parseFloat(r.total ?? "0"), 0);
+
+      const receitasExtras = revenueRows
+        .filter(r => r.date >= startStr && r.date <= endStr)
+        .reduce((a, r) => a + parseFloat(r.total ?? "0"), 0);
+
+      const despesas = expenseRows
+        .filter(r => r.date >= startStr && r.date <= endStr)
+        .reduce((a, r) => a + parseFloat(r.total ?? "0"), 0);
+
       const label = start.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
       weeks.push({
         week: label,
-        receitaAlugueis: Math.round(rentalRows.reduce((a, r) => a + parseFloat(r.total ?? "0"), 0) * 100) / 100,
-        receitasExtras: Math.round(revenueRows.reduce((a, r) => a + parseFloat(r.total ?? "0"), 0) * 100) / 100,
-        despesas: Math.round(expenseRows.reduce((a, r) => a + parseFloat(r.total ?? "0"), 0) * 100) / 100,
+        receitaAlugueis: Math.round(receitaAlugueis * 100) / 100,
+        receitasExtras: Math.round(receitasExtras * 100) / 100,
+        despesas: Math.round(despesas * 100) / 100,
       });
     }
     return weeks;
