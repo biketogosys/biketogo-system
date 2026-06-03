@@ -1,48 +1,30 @@
-/*
- * PublicReservation.tsx — Formulário público de pré-cadastro e reserva
- * Fluxo multi-step: Identificação → Contato → Endereço → Documentos → Bike/Período → Pagamento/LGPD
+/**
+ * PublicReservation.tsx — Formulário público de pré-cadastro
+ * Fluxo: Identificação → Contato → Endereço → Documentos + LGPD
+ * O cliente preenche apenas seus dados; o admin cria o aluguel manualmente.
  * Suporte a idiomas: PT-BR 🇧🇷 | EN 🇺🇸 | ES 🇪🇸
- *
- * Bloco E — melhorias visuais:
- *  - Header com logo via VITE_LOGO_URL (fallback texto)
- *  - Barra de progresso com steps clicáveis (steps anteriores)
- *  - Bikes: placeholder quando sem foto, badge de disponibilidade por tamanho
- *  - Acessórios: abas por categoria, badge de qtd disponível, desabilitar se qty=0, label (gratuito)
- *  - Botão "Continuar" fixo no rodapé em mobile (sticky bottom)
  */
-import { useState, useMemo, useRef, useCallback } from "react";
+import { useState, useRef, useCallback } from "react";
 import { trpc } from "@/lib/trpc";
-import { Loader2, ChevronRight, ChevronLeft, Check, Upload, X, Sun, Moon, Bike, ShoppingCart, Trash2, Plus } from "lucide-react";
+import { Loader2, ChevronRight, ChevronLeft, Check, Upload, X, Sun, Moon, Bike } from "lucide-react";
 import { translations, languages, type Language } from "@/lib/i18n";
 import { maskCPF, maskRG, maskCEP, maskPhone, maskDate, isValidCPF } from "@/hooks/useMask";
 
 // ─── Logo URL via env ─────────────────────────────────────────────────────────
 const LOGO_URL = (import.meta as any).env?.VITE_LOGO_URL as string | undefined;
 
-// ─── Máscara auxiliar (específica deste formulário) ───────────────────────────
+// ─── Máscara auxiliar ─────────────────────────────────────────────────────────
 function maskHeight(v: string) {
   const d = v.replace(/\D/g, "").slice(0, 3);
   if (d.length >= 2) return d[0] + "." + d.slice(1);
   return d;
 }
 
-// ─── Validação CPF (delega para useMask) ──────────────────────────────────────
 function validateCPF(cpf: string) {
   return isValidCPF(cpf);
 }
 
-function formatCurrency(value: number) {
-  return value.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
-function daysBetween(start: string, end: string) {
-  const s = new Date(start + "T12:00:00");
-  const e = new Date(end + "T12:00:00");
-  const diff = Math.round((e.getTime() - s.getTime()) / (1000 * 60 * 60 * 24));
-  return diff > 0 ? diff : 0;
-}
-
 const STATES = ["AC","AL","AP","AM","BA","CE","DF","ES","GO","MA","MT","MS","MG","PA","PB","PR","PE","PI","RJ","RN","RS","RO","RR","SC","SP","SE","TO"];
-// TIMES is now loaded dynamically from server settings (publicApi.getDeliveryHours)
 
 // ─── Field component ───────────────────────────────────────────────────────────
 function Field({ label, required, error, hint, children }: {
@@ -114,30 +96,20 @@ export default function PublicReservation() {
   const themeBtnClass = `p-2 rounded-lg border transition-all ${isDark ? "border-[#2a2a3a] bg-[#141420] text-[#888] hover:text-white" : "border-gray-200 bg-gray-100 text-gray-500 hover:text-gray-800"}`;
   const uploadZoneBase = `relative border-2 border-dashed rounded-xl p-5 flex flex-col items-center justify-center gap-2 cursor-pointer min-h-[140px] transition-all`;
   const uploadZoneEmpty = isDark ? "border-[#2a2a3a] bg-[#141420] hover:border-[#C8920A]/40" : "border-gray-300 bg-gray-50 hover:border-[#C8920A]/60";
-  const paymentOptionBase = `flex items-center gap-4 p-4 border rounded-xl cursor-pointer transition-all`;
-  const paymentOptionInactive = isDark ? "border-[#2a2a3a] bg-[#141420] hover:border-[#C8920A]/40" : "border-gray-200 bg-gray-50 hover:border-[#C8920A]/60";
   const lgpdBoxBg = isDark ? "bg-[#141420] border-[#2a2a3a]" : "bg-gray-50 border-gray-200";
-  const bikeCardInactive = isDark ? "border-[#2a2a3a] bg-[#141420] hover:border-[#C8920A]/40" : "border-gray-200 bg-gray-50 hover:border-[#C8920A]/60";
-  const summaryBg = isDark ? "bg-[#0d0d1a] border-[#1a1a2e]" : "bg-white border-gray-200";
-  const radioInactive = isDark ? "border-[#555]" : "border-gray-400";
-  const tabBase = `px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer`;
-  const tabActive = `bg-[#C8920A] text-[#0a0a0f]`;
-  const tabInactive = isDark ? `text-[#888] hover:text-white border border-[#2a2a3a] hover:border-[#C8920A]/40` : `text-gray-500 hover:text-gray-800 border border-gray-200 hover:border-[#C8920A]/60`;
 
+  // ─── Steps (4 steps: Identificação, Contato, Endereço, Documentos+LGPD) ──────
   const STEPS = [
     t.sectionIdentification,
     t.sectionContact,
     t.sectionAddress,
     t.sectionDocumentPhotos,
-    t.sectionBikeSelection,
-    t.sectionPayment,
   ];
 
   const [step, setStep] = useState(0);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
-  const [checkoutUrl, setCheckoutUrl] = useState<string | null>(null);
 
   // Step 0 — Identificação
   const [name, setName] = useState("");
@@ -170,8 +142,8 @@ export default function PublicReservation() {
   const [country] = useState("Brasil");
   const [cepLoading, setCepLoading] = useState(false);
 
-  // Step 3 — Documentos
-  const [docType, setDocType] = useState<"cnh" | "rg">("cnh"); // apenas para brasileiros
+  // Step 3 — Documentos + LGPD
+  const [docType, setDocType] = useState<"cnh" | "rg">("cnh");
   const [docFrontPreview, setDocFrontPreview] = useState<string | null>(null);
   const [docBackPreview, setDocBackPreview] = useState<string | null>(null);
   const [docFrontBase64, setDocFrontBase64] = useState<string | null>(null);
@@ -180,147 +152,13 @@ export default function PublicReservation() {
   const [docBackUploading, setDocBackUploading] = useState(false);
   const frontRef = useRef<HTMLInputElement>(null);
   const backRef = useRef<HTMLInputElement>(null);
-
-  // Step 4 — Bike + Período + Acessórios (carrinho multi-bike)
-  type CartItem = {
-    bikeId: number;
-    bikeSizeId: number | null;
-    quantity: number;
-    startDate: string;
-    endDate: string;
-    deliveryTime: string;
-    bikeModel: string;
-    bikeBrand: string;
-    tamanho: string;
-    dailyRate: number;
-    numDays: number;
-  };
-  const [cart, setCart] = useState<CartItem[]>([]);
-  const [selectedBikeId, setSelectedBikeId] = useState<number | null>(null);
-  const [selectedBikeSizeId, setSelectedBikeSizeId] = useState<number | null>(null);
-  const [bikeQuantity, setBikeQuantity] = useState(1);
-  const [startDate, setStartDate] = useState("");
-  const [endDate, setEndDate] = useState("");
-  const [deliveryTime, setDeliveryTime] = useState("");
-  const [selectedAccessories, setSelectedAccessories] = useState<Record<number, number>>({});
-  const [selectedVariants, setSelectedVariants] = useState<Record<number, string>>({});
-  const [activeAccCategory, setActiveAccCategory] = useState<string | null>(null);
-
-  // Step 5 — Pagamento + LGPD
-  const [paymentMethod, setPaymentMethod] = useState<"card" | "pix" | "cash">("cash");
   const [lgpdConsent, setLgpdConsent] = useState(false);
+  const [marketingConsent, setMarketingConsent] = useState(false);
 
-  // ─── Queries ─────────────────────────────────────────────────────────────────
-  const { data: bikesRaw, isLoading: bikesLoading } = trpc.publicApi.availableBikes.useQuery();
-  const { data: bikeSizesRaw } = trpc.publicApi.bikeSizes.useQuery(
-    { bikeId: selectedBikeId! }, { enabled: !!selectedBikeId }
-  );
-  const { data: accByCategoryRaw } = trpc.publicApi.availableAccessoriesByCategory.useQuery();
-  const { data: accessoriesRaw } = trpc.publicApi.availableAccessories.useQuery();
-  const { data: deliveryFeeStr } = trpc.publicApi.deliveryFee.useQuery();
-  const { data: deliveryHoursData } = trpc.publicApi.getDeliveryHours.useQuery();
-  const TIMES: string[] = deliveryHoursData ?? [];
-  const { data: discountRulesRaw } = trpc.publicApi.bikeDiscountRules.useQuery(
-    { bikeId: selectedBikeId! }, { enabled: !!selectedBikeId }
-  );
-  const { data: availabilityResult } = trpc.publicApi.checkAvailability.useQuery(
-    { bikeId: selectedBikeId!, startDate, endDate },
-    { enabled: !!selectedBikeId && !!startDate && !!endDate }
-  );
-  const bikes = (bikesRaw ?? []) as any[];
-  const accessories = (accessoriesRaw ?? []) as any[];
-  const accByCategory = (accByCategoryRaw ?? []) as { category: string; accessories: any[] }[];
-  const deliveryFee = parseFloat(deliveryFeeStr || "0");
-  const discountRules = (discountRulesRaw ?? []) as any[];
-  const isAvailable = availabilityResult ?? true;
-  const submitMutation = trpc.publicApi.submitReservation.useMutation();
-  const checkoutMutation = trpc.publicApi.createCheckout.useMutation();
+  // ─── Mutations ────────────────────────────────────────────────────────────────
+  const submitMutation = trpc.publicApi.submitPreRegistration.useMutation();
   const uploadDocMutation = trpc.publicApi.uploadDocument.useMutation();
 
-  // ─── Mandatory accessories: auto-include when accessories load ──────────────
-  const mandatoryAccessories = useMemo(() => accessories.filter((a: any) => a.obrigatorio), [accessories]);
-  // Initialize mandatory accessories quantity to 1 when they load
-  const [mandatoryInitialized, setMandatoryInitialized] = useState(false);
-  if (!mandatoryInitialized && mandatoryAccessories.length > 0) {
-    setMandatoryInitialized(true);
-    setSelectedAccessories(prev => {
-      const next = { ...prev };
-      for (const acc of mandatoryAccessories) {
-        if (!next[acc.id]) next[acc.id] = 1;
-      }
-      return next;
-    });
-  }
-
-  // ─── Active accessory category (default to first) ────────────────────────────
-  const effectiveAccCategory = activeAccCategory ?? (accByCategory[0]?.category ?? null);
-
-  // ─── Pricing ─────────────────────────────────────────────────────────────────────
-  const selectedBike = bikes.find(b => b.id === selectedBikeId);
-  const numDays = startDate && endDate ? daysBetween(startDate, endDate) : 0;
-  const dailyRate = parseFloat(selectedBike?.dailyRate || "0");
-  const applicableDiscount = useMemo(() => {
-    if (!discountRules.length || numDays <= 0) return 0;
-    const sorted = [...discountRules].sort((a: any, b: any) => b.minDays - a.minDays);
-    const rule = sorted.find((r: any) => numDays >= r.minDays);
-    return rule ? parseFloat(rule.discountPercent) : 0;
-  }, [discountRules, numDays]);
-  const bikeSubtotal = dailyRate * numDays;
-  const discountAmount = bikeSubtotal * (applicableDiscount / 100);
-  const accTotal = useMemo(() => {
-    let total = 0;
-    const refDays = cart.length > 0 ? Math.max(...cart.map(c => c.numDays), 1) : numDays;
-    for (const [id, qty] of Object.entries(selectedAccessories)) {
-      if ((qty as number) <= 0) continue;
-      const acc = accessories.find((a: any) => a.id === Number(id));
-      if (acc) total += parseFloat(acc.dailyRate || "0") * refDays * (qty as number);
-    }
-    return total;
-  }, [selectedAccessories, accessories, numDays, cart]);
-
-  // Cart total calculation
-  const cartSubtotal = useMemo(() => {
-    return cart.reduce((sum, item) => sum + item.dailyRate * item.numDays * item.quantity, 0);
-  }, [cart]);
-  const grandTotal = cart.length > 0
-    ? cartSubtotal + accTotal + deliveryFee
-    : bikeSubtotal - discountAmount + accTotal + (selectedBikeId ? deliveryFee : 0);
-
-  // Add to cart handler
-  const handleAddToCart = () => {
-    if (!selectedBikeId || !selectedBikeSizeId || !startDate || !endDate || !deliveryTime) return;
-    const bike = bikes.find((b: any) => b.id === selectedBikeId);
-    const sizeObj = bikeSizesRaw?.find((s: any) => s.id === selectedBikeSizeId);
-    if (!bike || !sizeObj) return;
-    const days = daysBetween(startDate, endDate);
-    if (days <= 0) return;
-    const newItem: CartItem = {
-      bikeId: selectedBikeId,
-      bikeSizeId: selectedBikeSizeId,
-      quantity: bikeQuantity,
-      startDate,
-      endDate,
-      deliveryTime,
-      bikeModel: bike.model,
-      bikeBrand: bike.brand || "",
-      tamanho: sizeObj.tamanho,
-      dailyRate: parseFloat(bike.dailyRate || "0"),
-      numDays: days,
-    };
-    setCart(prev => [...prev, newItem]);
-    // Reset selection for next item
-    setSelectedBikeId(null);
-    setSelectedBikeSizeId(null);
-    setBikeQuantity(1);
-    setStartDate("");
-    setEndDate("");
-    setDeliveryTime("");
-    setErrors(prev => { const n = { ...prev }; delete n.bike; delete n.bikeSize; delete n.dates; delete n.deliveryTime; delete n.cart; return n; });
-  };
-
-  const handleRemoveFromCart = (index: number) => {
-    setCart(prev => prev.filter((_, i) => i !== index));
-  };
   // ─── CEP autocomplete ─────────────────────────────────────────────────────────
   const fetchCEP = useCallback(async (cep: string) => {
     const clean = cep.replace(/\D/g, "");
@@ -361,14 +199,12 @@ export default function PublicReservation() {
     if (s === 0) {
       if (!name.trim() || name.trim().length < 3) errs.name = t.required;
       if (isBrazilian) {
-        // CPF é sempre obrigatório para brasileiros
         if (!cpf || cpf.replace(/\D/g, "").length < 11) {
           errs.cpf = lang === "pt" ? "CPF obrigatório (11 dígitos)" : lang === "en" ? "CPF required (11 digits)" : "CPF obligatorio (11 dígitos)";
         } else if (!validateCPF(cpf)) {
           errs.cpf = lang === "pt" ? "CPF inválido — verifique os dígitos" : lang === "en" ? "Invalid CPF — check the digits" : "CPF inválido — verifique los dígitos";
         }
         if (docType === "rg") {
-          // RG: valida módulo 11
           const rgDigits = rg.replace(/[.\-\s]/g, "");
           if (!rgDigits || rgDigits.length < 7) {
             errs.rg = lang === "pt" ? "RG obrigatório" : "RG required";
@@ -387,7 +223,6 @@ export default function PublicReservation() {
         if (!passport.trim() || passport.trim().length < 5) errs.passport = lang === "pt" ? "Passaporte obrigatório (mínimo 5 caracteres)" : lang === "en" ? "Passport required (min. 5 characters)" : "Pasaporte obligatorio (mín. 5 caracteres)";
       }
       if (!birthDate || birthDate.length < 10) errs.birthDate = t.invalidDate;
-      // peso e altura são opcionais no formulário público
     }
     if (s === 1) {
       if (!phone || phone.replace(/\D/g,"").length < 10) errs.phone = t.invalidPhone;
@@ -403,23 +238,7 @@ export default function PublicReservation() {
       if (!stateUF) errs.state = t.required;
     }
     if (s === 3) {
-      // Frente é sempre obrigatória; verso é opcional
       if (!docFrontBase64) errs.docFront = t.required;
-    }
-    if (s === 4) {
-      if (cart.length === 0) {
-        // Se não tem nada no carrinho, precisa ter uma seleção ativa para adicionar
-        if (!selectedBikeId) errs.cart = t.mustAddToCart;
-        else {
-          if (!selectedBikeSizeId) errs.bikeSize = "Selecione um tamanho de bicicleta";
-          if (!startDate || !endDate) errs.dates = t.mustSelectDates;
-          if (!deliveryTime) errs.deliveryTime = t.mustSelectTime;
-          if (selectedBikeId && startDate && endDate && !isAvailable) errs.bike = t.bikeUnavailable;
-        }
-      }
-    }
-    if (s === 5) {
-      if (!paymentMethod) errs.payment = t.mustSelectPayment;
       if (!lgpdConsent) errs.lgpdConsent = t.mustAcceptLgpd;
     }
     setErrors(errs);
@@ -427,97 +246,56 @@ export default function PublicReservation() {
   };
 
   const nextStep = () => {
-    // Se estiver no step 4 e tiver seleção completa mas não adicionou ao carrinho, adicionar automaticamente
-    if (step === 4 && cart.length === 0 && selectedBikeId && selectedBikeSizeId && startDate && endDate && deliveryTime) {
-      handleAddToCart();
-      // Após adicionar, validar novamente
-      setTimeout(() => setStep(s => s + 1), 0);
-      return;
-    }
     if (validate(step)) setStep(s => s + 1);
   };
   const prevStep = () => setStep(s => s - 1);
 
   // ─── Submit ───────────────────────────────────────────────────────────────────
   const handleSubmit = async () => {
-    if (!validate(5)) return;
+    if (!validate(3)) return;
     setSubmitting(true);
     try {
-      const rentalAccessories = Object.entries(selectedAccessories)
-        .filter(([, qty]) => (qty as number) > 0)
-        .map(([id, qty]) => ({
-          accessoryId: Number(id),
-          quantity: qty as number,
-          ...(selectedVariants[Number(id)] ? { variante: selectedVariants[Number(id)] } : {}),
-        }));
-
-      // Build cart for submission
-      const cartForSubmit = cart.length > 0
-        ? cart.map(item => ({
-            bikeId: item.bikeId,
-            bikeSizeId: item.bikeSizeId ?? undefined,
-            bikeQuantity: item.quantity,
-            startDate: item.startDate,
-            endDate: item.endDate,
-            deliveryTime: item.deliveryTime,
-            totalAmount: String(item.dailyRate * item.numDays * item.quantity),
-            deliveryFee: String(deliveryFee / (cart.length || 1)),
-          }))
-        : undefined;
-
       const result = await submitMutation.mutateAsync({
         name,
-        cpf: isBrazilian ? cpf : "",
-        rg: isBrazilian ? rg : passport,
-        docOrigin, birthDate, gender, height: String(parseFloat(height) || 0),
+        cpf: isBrazilian ? cpf : undefined,
+        rg: isBrazilian ? rg : undefined,
+        passport: !isBrazilian ? passport : undefined,
+        docOrigin,
+        birthDate,
+        gender,
+        height: height ? String(parseFloat(height) || 0) : undefined,
         weight: weight ? String(parseFloat(weight) || 0) : undefined,
-        pedalFreq, howFound: origin, phone, email, instagram, accommodation,
-        zipCode, street, number, complement, neighborhood, city, state: stateUF, country,
+        pedalFreq,
+        howFound: origin,
+        phone,
+        email: email || undefined,
+        instagram,
+        accommodation,
+        zipCode,
+        street,
+        number,
+        complement,
+        neighborhood,
+        city,
+        state: stateUF,
+        country,
         lgpdConsent,
-        // Multi-bike cart
-        cart: cartForSubmit,
-        // Legacy single-bike fallback (when cart is empty but shouldn't be)
-        bikeId: cart.length === 0 ? selectedBikeId! : undefined,
-        bikeSizeId: cart.length === 0 ? (selectedBikeSizeId ?? undefined) : undefined,
-        bikeQuantity: cart.length === 0 ? bikeQuantity : undefined,
-        startDate: cart.length === 0 ? startDate : undefined,
-        endDate: cart.length === 0 ? endDate : undefined,
-        deliveryTime: cart.length === 0 ? deliveryTime : undefined,
-        deliveryFee: String(deliveryFee),
-        paymentMethod: paymentMethod === "card" ? "stripe" : paymentMethod as "pix" | "cash" | "stripe",
-        totalAmount: String(grandTotal), accessories: rentalAccessories,
       });
-      let docFrontUrl: string | undefined;
-      let docBackUrl: string | undefined;
+
+      // Upload documents after client is created
       if (result.clientId) {
         if (docFrontBase64) {
           setDocFrontUploading(true);
-          try { const r = await uploadDocMutation.mutateAsync({ clientId: result.clientId, base64: docFrontBase64, side: "front" }); docFrontUrl = r.url; }
+          try { await uploadDocMutation.mutateAsync({ clientId: result.clientId, base64: docFrontBase64, side: "front" }); }
           finally { setDocFrontUploading(false); }
         }
         if (docBackBase64) {
           setDocBackUploading(true);
-          try { const r = await uploadDocMutation.mutateAsync({ clientId: result.clientId, base64: docBackBase64, side: "back" }); docBackUrl = r.url; }
+          try { await uploadDocMutation.mutateAsync({ clientId: result.clientId, base64: docBackBase64, side: "back" }); }
           finally { setDocBackUploading(false); }
         }
       }
-      void docFrontUrl; void docBackUrl;
-      const firstRentalId = result.rentalIds?.[0];
-      if (paymentMethod !== "cash" && result.clientId && firstRentalId) {
-        try {
-          const checkout = await checkoutMutation.mutateAsync({
-            rentalId: firstRentalId, clientId: result.clientId,
-            clientName: name,
-            clientEmail: email || undefined,
-            bikeModel: selectedBike?.model || "N/A",
-            startDate, endDate,
-            totalAmountBRL: grandTotal,
-            paymentType: paymentMethod as "card" | "pix",
-            origin: window.location.origin,
-          });
-          if (checkout.checkoutUrl) { setCheckoutUrl(checkout.checkoutUrl); window.open(checkout.checkoutUrl, "_blank"); }
-        } catch {}
-      }
+
       setSubmitted(true);
     } catch (err: any) {
       setErrors({ submit: err?.message || t.errorMessage });
@@ -533,24 +311,24 @@ export default function PublicReservation() {
             <Check className="w-10 h-10 text-[#C8920A]" />
           </div>
           <h1 className={`text-2xl font-bold ${textPrimary} mb-3`} style={{ fontFamily: "'Montserrat', sans-serif" }}>
-            {t.successTitle}
+            {lang === "pt" ? "Cadastro enviado com sucesso!" : lang === "en" ? "Registration submitted!" : "¡Registro enviado con éxito!"}
           </h1>
-          <p className={`${textSecondary} text-sm leading-relaxed mb-6`}>{t.successMessage}</p>
-          {checkoutUrl && (
-            <div className="bg-amber-900/20 border border-amber-500/30 rounded-xl p-4 mb-4 text-left">
-              <p className="text-amber-300 text-sm font-semibold mb-1">{t.paymentPix}</p>
-              <a href={checkoutUrl} target="_blank" rel="noopener noreferrer" className="text-[#C8920A] text-sm underline font-medium">
-                {t.submitButtonStripe} →
-              </a>
-            </div>
-          )}
+          <p className={`${textSecondary} text-sm leading-relaxed mb-6`}>
+            {lang === "pt"
+              ? "Nossa equipe vai entrar em contato para combinar qual bike e os acessórios."
+              : lang === "en"
+              ? "Our team will get in touch to arrange which bike and accessories are best for you."
+              : "Nuestro equipo se pondrá en contacto para combinar la bicicleta y los accesorios."}
+          </p>
           <div className={`${cardBg} border rounded-xl p-5 text-left`}>
-            <div className="grid grid-cols-2 gap-3 text-sm">
-              <div><p className={`text-[10px] ${textMuted}`}>{t.summaryBike}</p><p className={`${textPrimary} font-medium`}>{selectedBike?.model}</p></div>
-              <div><p className={`text-[10px] ${textMuted}`}>{t.sectionRentalPeriod}</p><p className={`${textPrimary} font-medium`}>{numDays} {numDays === 1 ? t.day : t.days}</p></div>
-              <div><p className={`text-[10px] ${textMuted}`}>{t.deliveryTime}</p><p className={`${textPrimary} font-medium`}>{deliveryTime}</p></div>
-              <div><p className={`text-[10px] ${textMuted}`}>{t.summaryTotal}</p><p className="text-[#C8920A] font-bold">R$ {formatCurrency(grandTotal)}</p></div>
-            </div>
+            <p className={`text-sm font-semibold ${textPrimary} mb-2`}>
+              {lang === "pt" ? "Próximos passos:" : lang === "en" ? "Next steps:" : "Próximos pasos:"}
+            </p>
+            <ul className={`text-sm ${textSecondary} space-y-1.5 list-disc list-inside`}>
+              <li>{lang === "pt" ? "Aguarde o contato da nossa equipe pelo WhatsApp ou e-mail." : lang === "en" ? "Wait for our team to contact you via WhatsApp or email." : "Espera el contacto de nuestro equipo por WhatsApp o correo."}</li>
+              <li>{lang === "pt" ? "Vamos combinar a bike ideal, acessórios e datas." : lang === "en" ? "We'll arrange the ideal bike, accessories, and dates." : "Combinaremos la bici ideal, accesorios y fechas."}</li>
+              <li>{lang === "pt" ? "O contrato será enviado para sua assinatura." : lang === "en" ? "The contract will be sent for your signature." : "El contrato será enviado para tu firma."}</li>
+            </ul>
           </div>
         </div>
       </div>
@@ -559,7 +337,7 @@ export default function PublicReservation() {
 
   return (
     <div className={`min-h-screen ${bg} ${textPrimary}`}>
-      {/* ─── Lightbox overlay ──────────────────────────────────────────────────────────────────────── */}
+      {/* ─── Lightbox overlay ──────────────────────────────────────────────────── */}
       {lbSrc && (
         <div
           role="dialog"
@@ -587,7 +365,8 @@ export default function PublicReservation() {
           />
         </div>
       )}
-      {/* ─── Header ───────────────────────────────────────────────────────────────────────────────── */}
+
+      {/* ─── Header ───────────────────────────────────────────────────────────── */}
       <header className={`border-b ${headerBg} backdrop-blur sticky top-0 z-50`}>
         <div className="max-w-2xl mx-auto px-4 py-3 flex items-center justify-between gap-3">
           <div className="flex items-center gap-3">
@@ -608,7 +387,6 @@ export default function PublicReservation() {
             )}
           </div>
           <div className="flex items-center gap-2">
-            {/* Language selector */}
             <div className={`flex items-center gap-0.5 border rounded-lg p-0.5 ${langBtnBase}`}>
               {languages.map(l => (
                 <button key={l.code} onClick={() => changeLang(l.code)} title={l.label}
@@ -619,7 +397,6 @@ export default function PublicReservation() {
                 </button>
               ))}
             </div>
-            {/* Theme toggle */}
             <button onClick={toggleTheme} title={isDark ? "Light mode" : "Dark mode"} className={themeBtnClass}>
               {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
             </button>
@@ -627,10 +404,9 @@ export default function PublicReservation() {
         </div>
       </header>
 
-      {/* ─── Progress bar ────────────────────────────────────────────────────── */}
+      {/* ─── Progress bar ─────────────────────────────────────────────────────── */}
       <div className={`${progressBg} border-b`}>
         <div className="max-w-2xl mx-auto px-4 py-3">
-          {/* Barras de progresso */}
           <div className="grid gap-1 mb-2" style={{ gridTemplateColumns: `repeat(${STEPS.length}, 1fr)` }}>
             {STEPS.map((_, i) => (
               <button
@@ -642,7 +418,6 @@ export default function PublicReservation() {
               />
             ))}
           </div>
-          {/* Labels desktop */}
           <div className="hidden sm:grid gap-1" style={{ gridTemplateColumns: `repeat(${STEPS.length}, 1fr)` }}>
             {STEPS.map((s, i) => (
               <button
@@ -656,7 +431,6 @@ export default function PublicReservation() {
               </button>
             ))}
           </div>
-          {/* Label mobile */}
           <span className={`text-[11px] sm:hidden ${textSecondary}`}>{step + 1}/{STEPS.length} — {STEPS[step]}</span>
         </div>
       </div>
@@ -665,14 +439,20 @@ export default function PublicReservation() {
         {/* Title */}
         <div className="text-center mb-8">
           <span className="inline-block bg-[#C8920A] text-[#0a0a0f] text-[11px] font-bold px-3 py-1 rounded-full uppercase tracking-widest mb-3">
-            {t.pageTitle}
+            {lang === "pt" ? "Pré-Cadastro" : lang === "en" ? "Pre-Registration" : "Pre-Registro"}
           </span>
           <h2 className={`text-3xl font-extrabold ${textPrimary} mb-2`} style={{ fontFamily: "'Montserrat', sans-serif" }}>
             {lang === "pt" ? (<>Cadastre-se para <span className="text-[#C8920A]">alugar</span></>)
               : lang === "en" ? (<>Register to <span className="text-[#C8920A]">rent</span></>)
               : (<>Regístrate para <span className="text-[#C8920A]">alquilar</span></>)}
           </h2>
-          <p className={`${textSecondary} text-sm max-w-md mx-auto leading-relaxed`}>{t.pageSubheading}</p>
+          <p className={`${textSecondary} text-sm max-w-md mx-auto leading-relaxed`}>
+            {lang === "pt"
+              ? "Preencha seus dados e nossa equipe entrará em contato para combinar a bike e os acessórios ideais."
+              : lang === "en"
+              ? "Fill in your details and our team will get in touch to arrange the ideal bike and accessories."
+              : "Completa tus datos y nuestro equipo se pondrá en contacto para combinar la bici y accesorios ideales."}
+          </p>
         </div>
 
         {/* ─── STEP 0: Identificação ─────────────────────────────────────────── */}
@@ -685,12 +465,10 @@ export default function PublicReservation() {
               <input className={errors.name ? inputError : inputNormal} placeholder={t.fullNamePlaceholder}
                 value={name} onChange={e => setName(e.target.value)} />
             </Field>
-            {/* Origem do documento — sempre visível */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <Field label={t.docOrigin}>
                 <select className={selectBase} value={docOrigin} onChange={e => {
                   setDocOrigin(e.target.value);
-                  // Limpar erros e uploads ao trocar nacionalidade
                   setErrors(prev => { const n = { ...prev }; delete n.cpf; delete n.rg; delete n.passport; delete n.docFront; delete n.docBack; return n; });
                   setDocFrontBase64(null); setDocFrontPreview(null);
                   setDocBackBase64(null); setDocBackPreview(null);
@@ -704,7 +482,6 @@ export default function PublicReservation() {
                   value={birthDate} onChange={e => setBirthDate(maskDate(e.target.value))} />
               </Field>
             </div>
-            {/* CPF + RG (Brasil) ou Passaporte (Estrangeiro) */}
             {isBrazilian ? (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <Field label="CPF" required error={errors.cpf} hint={lang === "pt" ? "Somente números" : "Numbers only"}>
@@ -712,7 +489,7 @@ export default function PublicReservation() {
                     placeholder="000.000.000-00"
                     value={cpf} onChange={e => setCpf(maskCPF(e.target.value))} maxLength={14} />
                 </Field>
-                <Field label="RG" error={errors.rg} hint={lang === "pt" ? "Opcional — dígito verificador módulo 11" : "Optional — mod-11 check digit"}>
+                <Field label="RG" error={errors.rg} hint={lang === "pt" ? "Opcional" : "Optional"}>
                   <input className={errors.rg ? inputError : inputNormal}
                     placeholder="00.000.000-0"
                     value={rg} onChange={e => setRg(maskRG(e.target.value))} maxLength={12} />
@@ -743,8 +520,8 @@ export default function PublicReservation() {
                   <option value="Prefiro não informar">{t.genderPreferNotToSay}</option>
                 </select>
               </Field>
-              <Field label={t.height} error={errors.height} hint={t.heightHint}>
-                <input className={errors.height ? inputError : inputNormal} placeholder={t.heightPlaceholder}
+              <Field label={t.height} hint={t.heightHint}>
+                <input className={inputNormal} placeholder={t.heightPlaceholder}
                   value={height} onChange={e => setHeight(maskHeight(e.target.value))} />
               </Field>
             </div>
@@ -765,17 +542,17 @@ export default function PublicReservation() {
                   <option value="Diariamente">{t.pedalFreqDaily}</option>
                 </select>
               </Field>
-              <Field label={t.howFoundUs}>
-                <select className={selectBase} value={origin} onChange={e => setOrigin(e.target.value)}>
-                  <option value="">—</option>
-                  <option value="Pela internet">{t.howFoundInternet}</option>
-                  <option value="Instagram">{t.howFoundInstagram}</option>
-                  <option value="Indicação de amigo">{t.howFoundFriend}</option>
-                  <option value="Shopify">{t.howFoundShopify}</option>
-                  <option value="Outro">{t.howFoundOther}</option>
-                </select>
-              </Field>
             </div>
+            <Field label={t.howFoundUs}>
+              <select className={selectBase} value={origin} onChange={e => setOrigin(e.target.value)}>
+                <option value="">—</option>
+                <option value="Pela internet">{t.howFoundInternet}</option>
+                <option value="Instagram">{t.howFoundInstagram}</option>
+                <option value="Indicação de amigo">{t.howFoundFriend}</option>
+                <option value="Shopify">{t.howFoundShopify}</option>
+                <option value="Outro">{t.howFoundOther}</option>
+              </select>
+            </Field>
           </div>
         )}
 
@@ -862,563 +639,115 @@ export default function PublicReservation() {
           </div>
         )}
 
-        {/* ─── STEP 3: Documentos ───────────────────────────────────────────── */}
+        {/* ─── STEP 3: Documentos + LGPD ────────────────────────────────────── */}
         {step === 3 && (
-          <div className={`${cardBg} border rounded-2xl p-6 space-y-5`}>
-            <div className={`flex items-center gap-2 pb-3 border-b ${sectionBorder}`}>
-              <span className="text-[#C8920A] text-sm font-bold uppercase tracking-widest">📄 {t.sectionDocumentPhotos}</span>
-            </div>
-            {/* Radio CNH/RG apenas no step de upload (não no step de identificação) */}
-            {isBrazilian && (
-              <div className="flex gap-4">
-                {(["cnh", "rg"] as const).map(dt => (
-                  <label key={dt} className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="radio"
-                      name="docTypeUpload"
-                      value={dt}
-                      checked={docType === dt}
-                      onChange={() => {
-                        setDocType(dt);
-                        setDocFrontBase64(null); setDocFrontPreview(null);
-                        setDocBackBase64(null); setDocBackPreview(null);
-                        setErrors(prev => { const n = { ...prev }; delete n.docFront; delete n.docBack; return n; });
-                      }}
-                      className="accent-[#C8920A] w-4 h-4"
-                    />
-                    <span className={`text-sm font-medium ${textPrimary}`}>
-                      {dt === "cnh" ? (lang === "pt" ? "CNH" : lang === "en" ? "Driver's License" : "Licencia") : "RG"}
-                    </span>
-                  </label>
-                ))}
+          <div className="space-y-5">
+            {/* Documentos */}
+            <div className={`${cardBg} border rounded-2xl p-6 space-y-5`}>
+              <div className={`flex items-center gap-2 pb-3 border-b ${sectionBorder}`}>
+                <span className="text-[#C8920A] text-sm font-bold uppercase tracking-widest">📄 {t.sectionDocumentPhotos}</span>
               </div>
-            )}
-            {/* Indicador do tipo de documento */}
-            <div className={`text-sm ${textSecondary} leading-relaxed`}>
-              {isBrazilian
-                ? (lang === "pt"
-                    ? `Envie a foto da ${docType === "cnh" ? "CNH" : "RG"} (frente obrigatória, verso opcional).`
-                    : `Upload your ${docType === "cnh" ? "driver's license" : "ID"} photo (front required, back optional).`)
-                : (lang === "pt" ? "Envie a foto do Passaporte (frente obrigatória, verso opcional)." : "Upload your Passport photo (front required, back optional).")}
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-              {(["front", "back"] as const).map(side => {
-                const preview = side === "front" ? docFrontPreview : docBackPreview;
-                const err = side === "front" ? errors.docFront : errors.docBack;
-                const uploading = side === "front" ? docFrontUploading : docBackUploading;
-                const ref = side === "front" ? frontRef : backRef;
-                // Label dinâmico baseado em tipo de doc e nacionalidade
-                const docName = isBrazilian ? (docType === "cnh" ? "CNH" : "RG") : (lang === "pt" ? "Passaporte" : "Passport");
-                const label = side === "front"
-                  ? (lang === "pt" ? `Frente do ${docName}` : `${docName} Front`)
-                  : (lang === "pt" ? `Verso do ${docName} (opcional)` : `${docName} Back (optional)`);
-                const isRequired = side === "front";
-                return (
-                  <div key={side} className="flex flex-col gap-1.5">
-                    <label className={`text-xs font-semibold ${isDark ? "text-[#aaa]" : "text-gray-600"}`}>
-                      {label}{isRequired && <span className="text-red-400 ml-0.5">*</span>}
+              {isBrazilian && (
+                <div className="flex gap-4">
+                  {(["cnh", "rg"] as const).map(dt => (
+                    <label key={dt} className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="docTypeUpload"
+                        value={dt}
+                        checked={docType === dt}
+                        onChange={() => {
+                          setDocType(dt);
+                          setDocFrontBase64(null); setDocFrontPreview(null);
+                          setDocBackBase64(null); setDocBackPreview(null);
+                          setErrors(prev => { const n = { ...prev }; delete n.docFront; delete n.docBack; return n; });
+                        }}
+                        className="accent-[#C8920A] w-4 h-4"
+                      />
+                      <span className={`text-sm font-medium ${textPrimary}`}>
+                        {dt === "cnh" ? (lang === "pt" ? "CNH" : lang === "en" ? "Driver's License" : "Licencia") : "RG"}
+                      </span>
                     </label>
-                    <div
-                      onClick={() => ref.current?.click()}
-                      onDragOver={e => e.preventDefault()}
-                      onDrop={e => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) handleDocPhoto(side, f); }}
-                      className={`${uploadZoneBase} ${
-                        err ? "border-red-500/60 bg-red-900/10" :
-                        preview ? "border-[#C8920A]/60 bg-[#C8920A]/5" : uploadZoneEmpty
-                      }`}>
-                      {uploading ? (
-                        <><Loader2 className="w-8 h-8 animate-spin text-[#C8920A]" /><span className={`text-sm ${textSecondary}`}>{t.docUploading}</span></>
-                      ) : preview ? (
-                        <>
+                  ))}
+                </div>
+              )}
+              <div className={`text-sm ${textSecondary} leading-relaxed`}>
+                {isBrazilian
+                  ? (lang === "pt"
+                      ? `Envie a foto da ${docType === "cnh" ? "CNH" : "RG"} (frente obrigatória, verso opcional).`
+                      : `Upload your ${docType === "cnh" ? "driver's license" : "ID"} photo (front required, back optional).`)
+                  : (lang === "pt" ? "Envie a foto do Passaporte (frente obrigatória, verso opcional)." : "Upload your Passport photo (front required, back optional).")}
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                {(["front", "back"] as const).map(side => {
+                  const preview = side === "front" ? docFrontPreview : docBackPreview;
+                  const err = side === "front" ? errors.docFront : errors.docBack;
+                  const uploading = side === "front" ? docFrontUploading : docBackUploading;
+                  const ref = side === "front" ? frontRef : backRef;
+                  const isRequired = side === "front";
+                  const sideLabel = side === "front"
+                    ? (lang === "pt" ? "Frente" : lang === "en" ? "Front" : "Frente")
+                    : (lang === "pt" ? "Verso (opcional)" : lang === "en" ? "Back (optional)" : "Dorso (opcional)");
+
+                  return (
+                    <div key={side}>
+                      <p className={`text-xs font-semibold mb-2 ${textSecondary}`}>
+                        {sideLabel}{isRequired && <span className="text-red-400 ml-0.5">*</span>}
+                      </p>
+                      <input
+                        ref={ref}
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={e => { const f = e.target.files?.[0]; if (f) handleDocPhoto(side, f); }}
+                      />
+                      {preview ? (
+                        <div className="relative">
                           <img
                             src={preview}
-                            alt={label}
-                            className="rounded-lg object-cover cursor-zoom-in"
-                            style={{ width: 280, height: 180, objectFit: "cover" }}
-                            onClick={e => { e.stopPropagation(); openLb(preview, label); }}
-                            title="Clique para ampliar"
+                            alt={sideLabel}
+                            className="w-full h-36 object-cover rounded-xl border border-[#C8920A]/30 cursor-pointer"
+                            onClick={() => openLb(preview, sideLabel)}
                           />
-                          <button onClick={e => {
-                            e.stopPropagation();
-                            if (side === "front") { setDocFrontBase64(null); setDocFrontPreview(null); }
-                            else { setDocBackBase64(null); setDocBackPreview(null); }
-                          }} className="absolute top-2 right-2 w-6 h-6 bg-red-500/80 rounded-full flex items-center justify-center hover:bg-red-500">
-                            <X className="w-3 h-3 text-white" />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (side === "front") { setDocFrontBase64(null); setDocFrontPreview(null); }
+                              else { setDocBackBase64(null); setDocBackPreview(null); }
+                            }}
+                            className="absolute top-2 right-2 w-7 h-7 rounded-full bg-black/60 flex items-center justify-center text-white hover:bg-black/80 transition-all"
+                          >
+                            <X className="w-3.5 h-3.5" />
                           </button>
-                        </>
-                      ) : (
-                        <>
-                          <Upload className="w-8 h-8 text-[#C8920A]" />
-                          <span className={`text-sm ${textSecondary} font-medium`}>{t.docUploadHint}</span>
-                          <span className={`text-[11px] ${textMuted}`}>{t.docUploadFormats}</span>
-                        </>
-                      )}
-                    </div>
-                    <input ref={ref} type="file" accept="image/*" className="hidden"
-                      onChange={e => e.target.files?.[0] && handleDocPhoto(side, e.target.files[0])} />
-                    {err && <span className="text-[11px] text-red-400">{err}</span>}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
-
-        {/* ─── STEP 4: Bike + Período + Acessórios ─────────────────────────── */}
-        {step === 4 && (
-          <div className="space-y-5">
-            {/* Bike selection */}
-            <div className={`${cardBg} border rounded-2xl p-6`}>
-              <div className={`flex items-center gap-2 pb-3 border-b ${sectionBorder} mb-4`}>
-                <span className="text-[#C8920A] text-sm font-bold uppercase tracking-widest">🚲 {t.sectionBikeSelection}</span>
-              </div>
-              {errors.bike && <p className="text-red-400 text-sm mb-3">{errors.bike}</p>}
-              {bikesLoading ? (
-                <div className="flex items-center justify-center py-8 gap-2">
-                  <Loader2 className="w-5 h-5 animate-spin text-[#C8920A]" />
-                  <span className={textSecondary}>{t.loadingBikes}</span>
-                </div>
-              ) : bikes.length === 0 ? (
-                <p className={`${textSecondary} text-sm text-center py-6`}>{t.noBikesAvailable}</p>
-              ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                  {bikes.map((bike: any) => (
-                    <div key={bike.id} onClick={() => setSelectedBikeId(bike.id)}
-                      className={`border rounded-xl p-3 sm:p-4 cursor-pointer transition-all ${
-                        selectedBikeId === bike.id ? "border-[#C8920A] bg-[#C8920A]/10" : bikeCardInactive
-                      }`}>
-                      {/* Foto da bike ou placeholder */}
-                      {bike.photoUrl ? (
-                        <img src={bike.photoUrl} alt={bike.model} className="w-full h-24 sm:h-28 object-cover rounded-lg mb-2 sm:mb-3" />
-                      ) : (
-                        <div className={`w-full h-24 sm:h-28 rounded-lg mb-2 sm:mb-3 flex items-center justify-center ${isDark ? "bg-[#1a1a2e]" : "bg-gray-100"}`}>
-                          <Bike className={`w-8 h-8 sm:w-10 sm:h-10 ${isDark ? "text-[#2a2a3a]" : "text-gray-300"}`} />
-                        </div>
-                      )}
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="min-w-0">
-                          <p className={`font-bold text-sm ${textPrimary} truncate`}>{bike.model}</p>
-                          {bike.brand && <p className={`text-xs ${textMuted}`}>{bike.brand}</p>}
-                          {bike.size && (
-                            <span className={`inline-block mt-1 text-[10px] px-2 py-0.5 rounded-full font-medium ${isDark ? "bg-[#1a1a2e] text-[#888]" : "bg-gray-100 text-gray-500"}`}>
-                              {bike.size}
-                            </span>
+                          {uploading && (
+                            <div className="absolute inset-0 flex items-center justify-center bg-black/40 rounded-xl">
+                              <Loader2 className="w-6 h-6 animate-spin text-[#C8920A]" />
+                            </div>
                           )}
                         </div>
-                        <div className="text-right flex-shrink-0">
-                          <p className="text-[#C8920A] font-bold text-sm">R$ {formatCurrency(parseFloat(bike.dailyRate || "0"))}</p>
-                          <p className={`text-[10px] ${textMuted}`}>{t.perDay}</p>
-                        </div>
-                      </div>
-                      {selectedBikeId === bike.id && (
-                        <div className="mt-2 flex items-center gap-1">
-                          <Check className="w-3.5 h-3.5 text-[#C8920A]" />
-                          <span className="text-[#C8920A] text-xs font-semibold">{t.selected}</span>
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Bike size and quantity selection */}
-            {selectedBikeId && (
-              <div className={`${cardBg} border rounded-2xl p-6 space-y-4`}>
-                <div className={`flex items-center gap-2 pb-3 border-b ${sectionBorder}`}>
-                  <span className="text-[#C8920A] text-sm font-bold uppercase tracking-widest">📏 Tamanho e Quantidade</span>
-                </div>
-                {errors.bikeSize && <p className="text-red-400 text-sm">{errors.bikeSize}</p>}
-                {bikeSizesRaw && bikeSizesRaw.length > 0 ? (
-                  <>
-                    <div className="space-y-3">
-                      <p className={`text-sm ${textSecondary}`}>Selecione um tamanho:</p>
-                      <div className="flex flex-wrap gap-2">
-                        {bikeSizesRaw.map((size: any) => {
-                          const isDisabled = size.quantidadeDisponivel === 0;
-                          return (
-                            <button
-                              key={size.id}
-                              onClick={() => !isDisabled && setSelectedBikeSizeId(size.id)}
-                              disabled={isDisabled}
-                              className={`px-4 py-2 rounded-lg font-medium text-sm transition-all ${
-                                selectedBikeSizeId === size.id
-                                  ? "bg-[#C8920A] text-black border border-[#C8920A]"
-                                  : isDisabled
-                                  ? `${isDark ? "bg-[#1a1a2e] text-[#555]" : "bg-gray-200 text-gray-400"} cursor-not-allowed`
-                                  : `${isDark ? "bg-[#0d0d1a] border border-[#2a2a3a]" : "bg-white border border-gray-300"} hover:border-[#C8920A]`
-                              }`}
-                            >
-                              {size.tamanho}
-                              <span className={`ml-2 text-xs ${
-                                isDisabled ? "text-red-400" : "text-[#C8920A]"
-                              }`}>
-                                ({isDisabled ? "Indisponível" : `${size.quantidadeDisponivel} disp.`})
-                              </span>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                    {selectedBikeSizeId && (
-                      <div className="space-y-2">
-                        <label className="text-xs font-semibold text-[#aaa]">
-                          Quantidade <span className="text-red-400">*</span>
-                        </label>
-                        <input
-                          type="number"
-                          min="1"
-                          max={bikeSizesRaw.find((s: any) => s.id === selectedBikeSizeId)?.quantidadeDisponivel || 1}
-                          value={bikeQuantity}
-                          onChange={(e) => setBikeQuantity(Math.max(1, parseInt(e.target.value) || 1))}
-                          className={inputNormal}
-                        />
-                      </div>
-                    )}
-                  </>
-                ) : (
-                  <p className={textSecondary}>Nenhum tamanho disponível para esta bicicleta.</p>
-                )}
-              </div>
-            )}
-
-            {/* Rental period */}
-            <div className={`${cardBg} border rounded-2xl p-6 space-y-4`}>
-              <div className={`flex items-center gap-2 pb-3 border-b ${sectionBorder}`}>
-                <span className="text-[#C8920A] text-sm font-bold uppercase tracking-widest">📅 {t.sectionRentalPeriod}</span>
-              </div>
-              {errors.dates && <p className="text-red-400 text-sm">{errors.dates}</p>}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <Field label={t.startDate} required>
-                  <input type="date" className={inputNormal} value={startDate}
-                    min={new Date().toISOString().split("T")[0]}
-                    onChange={e => setStartDate(e.target.value)} />
-                </Field>
-                <Field label={t.endDate} required>
-                  <input type="date" className={inputNormal} value={endDate}
-                    min={startDate || new Date().toISOString().split("T")[0]}
-                    onChange={e => setEndDate(e.target.value)} />
-                </Field>
-              </div>
-              {numDays > 0 && (
-                <div className="flex items-center gap-2">
-                  <span className={`text-sm ${textSecondary}`}>{numDays} {numDays === 1 ? t.day : t.days}</span>
-                  {selectedBikeId && startDate && endDate && (
-                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                      isAvailable ? "bg-green-500/20 text-green-400" : "bg-red-500/20 text-red-400"
-                    }`}>
-                      {isAvailable ? t.bikeAvailable : t.bikeUnavailable}
-                    </span>
-                  )}
-                </div>
-              )}
-              <Field label={t.deliveryTime} required error={errors.deliveryTime}>
-                <select className={errors.deliveryTime ? `${inputError} appearance-none` : selectBase}
-                  value={deliveryTime} onChange={e => setDeliveryTime(e.target.value)}>
-                  <option value="">{t.selectTime}</option>
-                  {TIMES.map(time => <option key={time} value={time}>{time}</option>)}
-                </select>
-              </Field>
-
-              {/* Botão Adicionar ao Carrinho */}
-              {selectedBikeId && selectedBikeSizeId && startDate && endDate && numDays > 0 && deliveryTime && (
-                <button
-                  type="button"
-                  onClick={handleAddToCart}
-                  className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl font-semibold text-sm transition-all bg-[#C8920A] text-[#0a0a0f] hover:bg-[#d9a020]"
-                >
-                  <Plus className="w-4 h-4" />
-                  {t.addToCart}
-                </button>
-              )}
-            </div>
-
-            {/* Carrinho de bikes — sticky no mobile */}
-            {cart.length > 0 && (
-              <div className={`${cardBg} border rounded-2xl p-4 sm:p-6 space-y-3 sm:space-y-4 sm:static sticky top-[57px] z-30`}>
-                <div className={`flex items-center gap-2 pb-3 border-b ${sectionBorder}`}>
-                  <ShoppingCart className="w-4 h-4 text-[#C8920A]" />
-                  <span className="text-[#C8920A] text-sm font-bold uppercase tracking-widest">{t.cartTitle}</span>
-                  <span className={`ml-auto text-xs font-semibold px-2 py-0.5 rounded-full bg-[#C8920A]/20 text-[#C8920A]`}>
-                    {cart.length} {t.cartItemSummary}
-                  </span>
-                </div>
-                {errors.cart && <p className="text-red-400 text-sm">{errors.cart}</p>}
-                <div className="space-y-3">
-                  {cart.map((item, idx) => (
-                    <div key={idx} className={`flex items-center justify-between p-3 border rounded-lg ${isDark ? "border-[#2a2a3a] bg-[#141420]" : "border-gray-200 bg-gray-50"}`}>
-                      <div className="min-w-0 flex-1">
-                        <p className={`text-sm font-medium ${textPrimary}`}>{item.bikeModel}</p>
-                        <p className={`text-xs ${textMuted}`}>
-                          {item.tamanho} · {item.quantity}x · {item.numDays} {item.numDays === 1 ? t.day : t.days}
-                        </p>
-                        <p className={`text-xs ${textMuted}`}>
-                          {lang === "pt" ? "Entrega" : "Delivery"}: {item.startDate} · {lang === "pt" ? "Devolução" : "Return"}: {item.endDate} · {item.deliveryTime}
-                        </p>
-                      </div>
-                      <div className="flex items-center gap-3 flex-shrink-0">
-                        <span className="text-sm font-bold text-[#C8920A]">
-                          R$ {formatCurrency(item.dailyRate * item.numDays * item.quantity)}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveFromCart(idx)}
-                          className="w-7 h-7 rounded-full flex items-center justify-center text-red-400 hover:bg-red-500/20 transition-all"
-                          title={t.removeFromCart}
+                      ) : (
+                        <div
+                          className={`${uploadZoneBase} ${err ? "border-red-500/60" : uploadZoneEmpty}`}
+                          onClick={() => ref.current?.click()}
+                          onDragOver={e => e.preventDefault()}
+                          onDrop={e => {
+                            e.preventDefault();
+                            const f = e.dataTransfer.files?.[0];
+                            if (f) handleDocPhoto(side, f);
+                          }}
                         >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-                <div className={`flex justify-between font-bold text-sm pt-2 border-t ${sectionBorder}`}>
-                  <span className={textPrimary}>{t.cartTotal}</span>
-                  <span className="text-[#C8920A]">R$ {formatCurrency(cartSubtotal)}</span>
-                </div>
-              </div>
-            )}
-
-            {/* Erro de carrinho vazio */}
-            {errors.cart && cart.length === 0 && (
-              <p className="text-red-400 text-sm text-center">{errors.cart}</p>
-            )}
-
-            {/* Accessories — abas por categoria */}
-            {accByCategory.length > 0 && (
-              <div className={`${cardBg} border rounded-2xl p-6 space-y-4`}>
-                <div className={`flex items-center gap-2 pb-3 border-b ${sectionBorder}`}>
-                  <span className="text-[#C8920A] text-sm font-bold uppercase tracking-widest">🎒 {t.sectionAccessories}</span>
-                </div>
-                {/* Abas de categoria */}
-                {accByCategory.length > 1 && (
-                  <div className="flex flex-wrap gap-2">
-                    {accByCategory.map(group => (
-                      <button
-                        key={group.category}
-                        onClick={() => setActiveAccCategory(group.category)}
-                        className={`${tabBase} ${effectiveAccCategory === group.category ? tabActive : tabInactive}`}
-                      >
-                        {group.category}
-                      </button>
-                    ))}
-                  </div>
-                )}
-                {/* Acessórios obrigatórios — exibidos fixos acima da lista opcional */}
-                {mandatoryAccessories.length > 0 && (
-                  <div className="space-y-2">
-                    <p className={`text-[11px] font-semibold uppercase tracking-wider ${textMuted}`}>
-                      {lang === "pt" ? "Incluídos obrigatoriamente" : lang === "en" ? "Mandatory inclusions" : "Incluidos obligatoriamente"}
-                    </p>
-                    {mandatoryAccessories.map((acc: any) => {
-                      // Collect unique variants for this accessory from the units endpoint (we use the flat list)
-                      const accVariants = Array.from(new Set(
-                        accessories.filter((a: any) => a.id === acc.id && (a as any).variante).map((a: any) => (a as any).variante)
-                      )) as string[];
-                      const avail = acc.quantidadeDisponivel ?? 0;
-                      return (
-                        <div key={acc.id} className={`flex items-center justify-between p-3 border rounded-lg ${
-                          isDark ? "border-amber-500/30 bg-amber-500/5" : "border-amber-400/30 bg-amber-50"
-                        }`}>
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <p className={`text-sm font-medium ${textPrimary}`}>{acc.name}</p>
-                              <span className="text-[10px] px-1.5 py-0.5 rounded font-semibold bg-amber-500/20 text-amber-500">
-                                {lang === "pt" ? "Obrigatório" : lang === "en" ? "Required" : "Obligatorio"}
-                              </span>
-                              {avail === 0 && (
-                                <span className="text-[10px] px-1.5 py-0.5 rounded font-semibold bg-red-500/20 text-red-400">
-                                  {lang === "pt" ? "Indisponível" : lang === "en" ? "Unavailable" : "No disponible"}
-                                </span>
-                              )}
-                            </div>
-                            {accVariants.length > 0 && (
-                              <div className="mt-2">
-                                <select
-                                  value={selectedVariants[acc.id] ?? ""}
-                                  onChange={(e) => setSelectedVariants(prev => ({ ...prev, [acc.id]: e.target.value }))}
-                                  className={`text-xs rounded border px-2 py-1 ${
-                                    isDark ? "bg-[#1a1a2e] border-[#2a2a3a] text-white" : "bg-white border-gray-300 text-gray-800"
-                                  }`}
-                                >
-                                  <option value="">{lang === "pt" ? "Selecionar variante..." : lang === "en" ? "Select variant..." : "Seleccionar variante..."}</option>
-                                  {accVariants.map((v: string) => (
-                                    <option key={v} value={v}>{v}</option>
-                                  ))}
-                                </select>
-                              </div>
-                            )}
-                          </div>
-                          <span className={`text-sm font-bold ml-3 ${textMuted}`}>×1</span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-
-                {/* Lista de acessórios opcionais da categoria ativa */}
-                <div className="space-y-3">
-                  {(accByCategory.find(g => g.category === effectiveAccCategory)?.accessories ?? [])
-                    .filter((acc: any) => !acc.obrigatorio)
-                    .map((acc: any) => {
-                    const qty = selectedAccessories[acc.id] || 0;
-                    const avail = acc.quantidadeDisponivel ?? 0;
-                    const isDisabled = avail === 0;
-                    // Collect unique variants for this accessory
-                    const accVariants = Array.from(new Set(
-                      accessories.filter((a: any) => a.id === acc.id && (a as any).variante).map((a: any) => (a as any).variante)
-                    )) as string[];
-                    return (
-                      <div key={acc.id} className={`p-3 border rounded-lg transition-all ${
-                        isDisabled
-                          ? isDark ? "border-[#1a1a2e] opacity-50" : "border-gray-100 opacity-50"
-                          : isDark ? "border-[#2a2a3a]" : "border-gray-200"
-                      }`}>
-                        <div className="flex items-center justify-between">
-                          <div className="min-w-0">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <p className={`text-sm font-medium ${textPrimary}`}>{acc.name}</p>
-                              <span className={`text-[10px] px-1.5 py-0.5 rounded font-semibold ${
-                                isDisabled
-                                  ? "bg-red-500/20 text-red-400"
-                                  : avail <= 2
-                                    ? "bg-amber-500/20 text-amber-400"
-                                    : "bg-green-500/20 text-green-400"
-                              }`}>
-                                {isDisabled
-                                  ? (lang === "pt" ? "Indisponível" : lang === "en" ? "Unavailable" : "No disponible")
-                                  : `${avail} ${lang === "pt" ? "disp." : lang === "en" ? "avail." : "disp."}`}
-                              </span>
-                            </div>
-                            <p className={`text-xs ${textMuted} mt-0.5`}>
-                              {lang === "pt" ? "(gratuito)" : lang === "en" ? "(free)" : "(gratuito)"}
-                            </p>
-                          </div>
-                          <div className="flex items-center gap-2 flex-shrink-0">
-                            <button
-                              disabled={isDisabled || qty === 0}
-                              onClick={() => setSelectedAccessories(prev => ({ ...prev, [acc.id]: Math.max(0, (prev[acc.id] || 0) - 1) }))}
-                              className={`w-7 h-7 rounded-full border flex items-center justify-center text-sm font-bold transition-all disabled:opacity-30 disabled:cursor-not-allowed ${isDark ? "border-[#2a2a3a] text-[#888] hover:border-[#C8920A] hover:text-[#C8920A]" : "border-gray-300 text-gray-500 hover:border-[#C8920A] hover:text-[#C8920A]"}`}>
-                              −
-                            </button>
-                            <span className={`w-6 text-center text-sm font-bold ${textPrimary}`}>{qty}</span>
-                            <button
-                              disabled={isDisabled || qty >= avail}
-                              onClick={() => setSelectedAccessories(prev => ({ ...prev, [acc.id]: Math.min(avail, (prev[acc.id] || 0) + 1) }))}
-                              className="w-7 h-7 rounded-full bg-[#C8920A] text-[#0a0a0f] flex items-center justify-center text-sm font-bold hover:bg-[#d9a020] transition-all disabled:opacity-30 disabled:cursor-not-allowed">
-                              +
-                            </button>
-                          </div>
-                        </div>
-                        {/* Variant selector for optional accessory (only if qty > 0 and variants exist) */}
-                        {qty > 0 && accVariants.length > 0 && (
-                          <div className="mt-2">
-                            <select
-                              value={selectedVariants[acc.id] ?? ""}
-                              onChange={(e) => setSelectedVariants(prev => ({ ...prev, [acc.id]: e.target.value }))}
-                              className={`text-xs rounded border px-2 py-1 w-full ${
-                                isDark ? "bg-[#1a1a2e] border-[#2a2a3a] text-white" : "bg-white border-gray-300 text-gray-800"
-                              }`}
-                            >
-                              <option value="">{lang === "pt" ? "Selecionar variante..." : lang === "en" ? "Select variant..." : "Seleccionar variante..."}</option>
-                              {accVariants.map((v: string) => (
-                                <option key={v} value={v}>{v}</option>
-                              ))}
-                            </select>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-
-            {/* Price summary */}
-            {(cart.length > 0 || (selectedBikeId && numDays > 0)) && (
-              <div className={`${summaryBg} border rounded-2xl p-5`}>
-                <p className={`text-sm font-bold ${textPrimary} mb-3`}>{t.summaryTitle}</p>
-                <div className="space-y-2 text-sm">
-                  {cart.length > 0 ? (
-                    <>
-                      {cart.map((item, idx) => (
-                        <div key={idx} className="flex justify-between">
-                          <span className={textSecondary}>{item.bikeModel} ({item.numDays} {item.numDays === 1 ? t.day : t.days} × {item.quantity})</span>
-                          <span className={textPrimary}>R$ {formatCurrency(item.dailyRate * item.numDays * item.quantity)}</span>
-                        </div>
-                      ))}
-                    </>
-                  ) : (
-                    <>
-                      <div className="flex justify-between">
-                        <span className={textSecondary}>{t.summaryBike} ({numDays} {numDays === 1 ? t.day : t.days})</span>
-                        <span className={textPrimary}>R$ {formatCurrency(bikeSubtotal)}</span>
-                      </div>
-                      {discountAmount > 0 && (
-                        <div className="flex justify-between text-green-400">
-                          <span>{t.summaryDiscount} ({applicableDiscount}%)</span>
-                          <span>−R$ {formatCurrency(discountAmount)}</span>
+                          <Upload className={`w-6 h-6 ${err ? "text-red-400" : "text-[#C8920A]/60"}`} />
+                          <p className={`text-xs text-center ${err ? "text-red-400" : textMuted}`}>
+                            {lang === "pt" ? "Clique ou arraste a foto aqui" : lang === "en" ? "Click or drag photo here" : "Haz clic o arrastra la foto aquí"}
+                          </p>
+                          <p className={`text-[10px] ${textMuted}`}>JPG, PNG — máx. 10 MB</p>
                         </div>
                       )}
-                    </>
-                  )}
-                  {accTotal > 0 && (
-                    <div className="flex justify-between">
-                      <span className={textSecondary}>{t.summaryAccessories}</span>
-                      <span className={textPrimary}>R$ {formatCurrency(accTotal)}</span>
+                      {err && <p className="text-[11px] text-red-400 mt-1">{err}</p>}
                     </div>
-                  )}
-                  <div className="flex justify-between">
-                    <span className={textSecondary}>{t.summaryDelivery}</span>
-                    <span className={textPrimary}>{deliveryFee > 0 ? `R$ ${formatCurrency(deliveryFee)}` : t.summaryFree}</span>
-                  </div>
-                  <div className={`flex justify-between font-bold text-base pt-2 border-t ${sectionBorder}`}>
-                    <span className={textPrimary}>{t.summaryTotal}</span>
-                    <span className="text-[#C8920A]">R$ {formatCurrency(grandTotal)}</span>
-                  </div>
-                </div>
+                  );
+                })}
               </div>
-            )}
-          </div>
-        )}
-
-        {/* ─── STEP 5: Pagamento + LGPD ─────────────────────────────────────── */}
-        {step === 5 && (
-          <div className="space-y-5">
-            {/* Payment */}
-            <div className={`${cardBg} border rounded-2xl p-6 space-y-4`}>
-              <div className={`flex items-center gap-2 pb-3 border-b ${sectionBorder}`}>
-                <span className="text-[#C8920A] text-sm font-bold uppercase tracking-widest">💳 {t.sectionPayment}</span>
-              </div>
-              {errors.payment && <p className="text-red-400 text-sm">{errors.payment}</p>}
-              {[
-                { value: "card" as const, icon: "💳", label: t.paymentCard, desc: t.paymentCardDesc },
-                { value: "pix" as const, icon: "⚡", label: t.paymentPix, desc: t.paymentPixDesc },
-                { value: "cash" as const, icon: "🤝", label: t.paymentCash, desc: t.paymentCashDesc },
-              ].map(opt => (
-                <div key={opt.value} onClick={() => setPaymentMethod(opt.value)}
-                  className={`${paymentOptionBase} ${
-                    paymentMethod === opt.value ? "border-[#C8920A] bg-[#C8920A]/10" : paymentOptionInactive
-                  }`}>
-                  <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${
-                    paymentMethod === opt.value ? "border-[#C8920A]" : radioInactive
-                  }`}>
-                    {paymentMethod === opt.value && <div className="w-2.5 h-2.5 rounded-full bg-[#C8920A]" />}
-                  </div>
-                  <span className="text-xl">{opt.icon}</span>
-                  <div>
-                    <p className={`font-bold text-sm ${textPrimary}`}>{opt.label}</p>
-                    <p className={`text-xs ${textMuted}`}>{opt.desc}</p>
-                  </div>
-                </div>
-              ))}
-              {paymentMethod !== "cash" && (
-                <div className="bg-blue-900/20 border border-blue-500/30 rounded-lg px-4 py-3 text-xs text-blue-300">
-                  {lang === "pt" && "Após confirmar, você será redirecionado para o ambiente seguro do Stripe para finalizar o pagamento."}
-                  {lang === "en" && "After confirming, you will be redirected to Stripe's secure environment to complete the payment."}
-                  {lang === "es" && "Tras confirmar, serás redirigido al entorno seguro de Stripe para finalizar el pago."}
-                </div>
-              )}
             </div>
 
             {/* LGPD */}
@@ -1436,74 +765,38 @@ export default function PublicReservation() {
                 <span className={`text-sm ${textSecondary} leading-relaxed`}>{t.lgpdConsent}</span>
               </label>
               {errors.lgpdConsent && <p className="text-red-400 text-xs">{errors.lgpdConsent}</p>}
-            </div>
+              <label className="flex items-start gap-3 cursor-pointer">
+                <input type="checkbox" checked={marketingConsent} onChange={e => setMarketingConsent(e.target.checked)}
+                  className="mt-0.5 w-4 h-4 accent-[#C8920A] flex-shrink-0" />
+                <span className={`text-sm ${textSecondary} leading-relaxed`}>
+                  {lang === "pt" ? "Aceito receber comunicações de marketing e promoções da Bike To Go." : lang === "en" ? "I agree to receive marketing communications and promotions from Bike To Go." : "Acepto recibir comunicaciones de marketing y promociones de Bike To Go."}
+                </span>
+              </label>
 
-            {/* Summary recap — usa carrinho se disponível, senão usa seleção direta */}
-            {(cart.length > 0 || (selectedBike && numDays > 0)) && (
-              <div className={`${summaryBg} border rounded-2xl p-5`}>
-                <p className={`text-sm font-bold ${textPrimary} mb-3`}>{t.summaryTitle}</p>
-                <div className="space-y-2 text-sm">
-                  {cart.length > 0 ? (
-                    <>
-                      {cart.map((item, idx) => (
-                        <div key={idx} className="flex justify-between">
-                          <span className={textSecondary}>{item.bikeModel} ({item.numDays} {item.numDays === 1 ? t.day : t.days} × {item.quantity})</span>
-                          <span className={textPrimary}>R$ {formatCurrency(item.dailyRate * item.numDays * item.quantity)}</span>
-                        </div>
-                      ))}
-                    </>
-                  ) : (
-                    <>
-                      <div className="flex justify-between">
-                        <span className={textSecondary}>{selectedBike!.model} × {numDays} {numDays === 1 ? t.day : t.days}</span>
-                        <span className={textPrimary}>R$ {formatCurrency(bikeSubtotal)}</span>
-                      </div>
-                      {discountAmount > 0 && (
-                        <div className="flex justify-between text-green-400">
-                          <span>{t.summaryDiscount} ({applicableDiscount}%)</span>
-                          <span>−R$ {formatCurrency(discountAmount)}</span>
-                        </div>
-                      )}
-                    </>
-                  )}
-                  {accTotal > 0 && (
-                    <div className="flex justify-between">
-                      <span className={textSecondary}>{t.summaryAccessories}</span>
-                      <span className={textPrimary}>R$ {formatCurrency(accTotal)}</span>
-                    </div>
-                  )}
-                  <div className="flex justify-between">
-                    <span className={textSecondary}>{t.summaryDelivery}</span>
-                    <span className={textPrimary}>{deliveryFee > 0 ? `R$ ${formatCurrency(deliveryFee)}` : t.summaryFree}</span>
-                  </div>
-                  <div className={`flex justify-between font-bold text-base pt-2 border-t ${sectionBorder}`}>
-                    <span className={textPrimary}>{t.summaryTotal}</span>
-                    <span className="text-[#C8920A]">R$ {formatCurrency(grandTotal)}</span>
-                  </div>
+              {errors.submit && (
+                <div className="bg-red-900/20 border border-red-500/30 rounded-lg p-4 text-sm text-red-400">
+                  {errors.submit}
                 </div>
-              </div>
-            )}
-
-            {errors.submit && (
-              <div className="bg-red-900/20 border border-red-500/30 rounded-lg p-4 text-sm text-red-400">
-                {errors.submit}
-              </div>
-            )}
-            <button onClick={handleSubmit} disabled={submitting}
-              className="w-full flex items-center justify-center gap-2 px-8 py-4 rounded-xl font-bold text-base transition-all disabled:opacity-50 bg-[#C8920A] text-[#0a0a0f] hover:bg-[#d9a020]">
-              {submitting ? (
-                <><Loader2 className="w-5 h-5 animate-spin" /> {t.submitting}</>
-              ) : paymentMethod === "cash" ? (
-                <><Check className="w-5 h-5" /> {t.submitButtonCash}</>
-              ) : (
-                <><Check className="w-5 h-5" /> {t.submitButtonStripe}</>
               )}
-            </button>
+
+              <button onClick={handleSubmit} disabled={submitting}
+                className="w-full flex items-center justify-center gap-2 px-8 py-4 rounded-xl font-bold text-base transition-all disabled:opacity-50 bg-[#C8920A] text-[#0a0a0f] hover:bg-[#d9a020]">
+                {submitting ? (
+                  <><Loader2 className="w-5 h-5 animate-spin" />
+                    {lang === "pt" ? "Enviando..." : lang === "en" ? "Sending..." : "Enviando..."}
+                  </>
+                ) : (
+                  <><Check className="w-5 h-5" />
+                    {lang === "pt" ? "Enviar Pré-Cadastro" : lang === "en" ? "Submit Pre-Registration" : "Enviar Pre-Registro"}
+                  </>
+                )}
+              </button>
+            </div>
           </div>
         )}
 
         {/* ─── Navigation — sticky no mobile ───────────────────────────────── */}
-        {step < 5 && (
+        {step < 3 && (
           <div className={`fixed bottom-0 left-0 right-0 sm:static sm:mt-6 px-4 py-3 sm:px-0 sm:py-0 safe-area-bottom ${
             isDark
               ? "bg-[#0a0a0f]/95 border-t border-[#1a1a2e] sm:bg-transparent sm:border-0"
@@ -1522,6 +815,18 @@ export default function PublicReservation() {
                 <ChevronRight className="w-4 h-4" />
               </button>
             </div>
+          </div>
+        )}
+        {step === 3 && step > 0 && (
+          <div className={`fixed bottom-0 left-0 right-0 sm:hidden px-4 py-3 safe-area-bottom ${
+            isDark
+              ? "bg-[#0a0a0f]/95 border-t border-[#1a1a2e]"
+              : "bg-white/95 border-t border-gray-200"
+          } backdrop-blur z-40`}>
+            <button onClick={prevStep} className={`${navBtnSecondary} w-full justify-center`}>
+              <ChevronLeft className="w-4 h-4" />
+              {lang === "pt" ? "Voltar" : lang === "en" ? "Back" : "Volver"}
+            </button>
           </div>
         )}
       </main>

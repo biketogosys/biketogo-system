@@ -2281,6 +2281,112 @@ const publicApiRouter = router({
       return result;
     }),
 
+  // ─── Pré-cadastro: cria apenas o cliente como Lead (sem reserva) ─────────────
+  submitPreRegistration: publicProcedure
+    .input(z.object({
+      // Identificação
+      name: z.string().min(2),
+      cpf: z.string().optional(),
+      rg: z.string().optional(),
+      passport: z.string().optional(),
+      docOrigin: z.string().optional(),
+      birthDate: z.string().optional(),
+      gender: z.string().optional(),
+      height: z.string().optional(),
+      weight: z.string().optional(),
+      pedalFreq: z.string().optional(),
+      howFound: z.string().optional(),
+      // Contato
+      phone: z.string().optional(),
+      email: z.string().email().optional().or(z.literal("")),
+      instagram: z.string().optional(),
+      accommodation: z.string().optional(),
+      // Endereço
+      zipCode: z.string().optional(),
+      street: z.string().optional(),
+      number: z.string().optional(),
+      complement: z.string().optional(),
+      neighborhood: z.string().optional(),
+      city: z.string().optional(),
+      state: z.string().optional(),
+      country: z.string().optional(),
+      // LGPD
+      lgpdConsent: z.boolean().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      // Validate CPF for Brazilians
+      if (input.cpf && input.cpf.replace(/\D/g, "").length > 0) {
+        if (!validarCPF(input.cpf)) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "CPF inválido." });
+        }
+      }
+      if (input.rg && input.rg.replace(/[.\-\s]/g, "").length > 0) {
+        if (!validarRG(input.rg)) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "RG inválido." });
+        }
+      }
+
+      // Create client with status 'lead'
+      const clientId = await createClient({
+        name: input.name,
+        cpf: sanitize(input.cpf) as string | null,
+        rg: sanitize(input.rg ?? input.passport) as string | null,
+        birthDate: sanitize(input.birthDate) as string | null,
+        gender: sanitize(input.gender) as string | null,
+        height: sanitize(input.height) as string | null,
+        weight: sanitize(input.weight) as string | null,
+        phone: sanitize(input.phone) as string | null,
+        email: sanitize(input.email) as string | null,
+        instagram: sanitize(input.instagram) as string | null,
+        accommodation: sanitize(input.accommodation) as string | null,
+        zipCode: sanitize(input.zipCode) as string | null,
+        street: sanitize(input.street) as string | null,
+        number: sanitize(input.number) as string | null,
+        complement: sanitize(input.complement) as string | null,
+        neighborhood: sanitize(input.neighborhood) as string | null,
+        city: sanitize(input.city) as string | null,
+        state: sanitize(input.state) as string | null,
+        country: sanitize(input.country) as string | null || "Brasil",
+        pedalFrequency: sanitize(input.pedalFreq) as string | null,
+        origin: sanitize(input.howFound) as string | null,
+        source: "site",
+        status: "lead",
+      } as any);
+
+      // Notify owner
+      try {
+        const [companyName, rawOwnerPhone] = await Promise.all([
+          getSetting("company_name"),
+          getSetting("whatsapp_number"),
+        ]);
+        const ownerPhone = sanitizePhone(rawOwnerPhone) ?? rawOwnerPhone ?? undefined;
+
+        // Manus built-in notification
+        await notifyOwner({
+          title: "📋 Novo Pré-Cadastro!",
+          content: `Cliente: ${input.name}\nTelefone: ${input.phone || "N/A"}\nE-mail: ${input.email || "N/A"}\n\nVerifique em /clientes e entre em contato para combinar a locação.`,
+        });
+
+        // WhatsApp to owner
+        const waMsg = `📋 *Novo pré-cadastro recebido! — Bike To Go*\n\n*Cliente:* ${input.name}\n*Telefone:* ${input.phone || "N/A"}\n*E-mail:* ${input.email || "N/A"}\n\nVerifique em /clientes e entre em contato para combinar a locação.`;
+        await sendWhatsApp({ text: waMsg, to: ownerPhone });
+
+        // E-mail to owner
+        const ownerEmail = await getSetting("company_email") || await getSetting("notification_email");
+        if (ownerEmail) {
+          await sendEmail({
+            to: ownerEmail,
+            subject: `📋 Novo Pré-Cadastro — ${input.name} | ${companyName || "Bike To Go"}`,
+            html: `<p>Novo pré-cadastro recebido pelo site.</p><p><strong>Cliente:</strong> ${input.name}<br><strong>Telefone:</strong> ${input.phone || "N/A"}<br><strong>E-mail:</strong> ${input.email || "N/A"}</p><p>Acesse <a href="/clientes">/clientes</a> para verificar e entrar em contato.</p>`,
+          });
+        }
+      } catch (err) {
+        console.warn("[submitPreRegistration] Notification error:", err);
+      }
+
+      return { clientId, success: true };
+    }),
+
   // ─── Upload document photo (base64) ────────────────────────────────────────
   uploadDocument: publicProcedure
     .input(z.object({
