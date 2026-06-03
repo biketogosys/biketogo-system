@@ -1,5 +1,5 @@
 import { trpc } from "@/lib/trpc";
-import { NewContractModal } from "./Contracts";
+import { NewContractModal } from "@/components/NewContractModal";
 import { useState, useRef, useEffect } from "react";
 import { toast } from "sonner";
 import { Plus, Loader2, Bike, Search, X, Check, Trash2, AlertTriangle, RotateCcw, Archive } from "lucide-react";
