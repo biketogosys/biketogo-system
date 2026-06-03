@@ -1,0 +1,13 @@
+{
+  "query": "SELECT column_name FROM information_schema.columns WHERE table_name = 'accessories' AND column_name = 'obrigatorio';",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway05.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2uiJuwepBaepVjU.root --database 9oQjN6PX9fNMedgfErUfQE --execute SELECT column_name FROM information_schema.columns WHERE table_name = 'accessories' AND column_name = 'obrigatorio';",
+  "rows": [
+    {
+      "column_name": "obrigatorio"
+    }
+  ],
+  "messages": [],
+  "stdout": "column_name\nobrigatorio\n",
+  "stderr": "",
+  "execution_time_ms": 364
+}

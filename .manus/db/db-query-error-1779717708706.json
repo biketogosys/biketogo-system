@@ -1,0 +1,8 @@
+{
+  "query": "CREATE TYPE \"public\".\"accessory_unit_status\" AS ENUM('disponivel', 'alugado', 'perdido', 'manutencao', 'roubado');\nCREATE TABLE \"accessory_units\" (\n  \"id\" serial PRIMARY KEY NOT NULL,\n  \"accessoryId\" integer NOT NULL,\n  \"serialNumber\" varchar(50),\n  \"status\" \"accessory_unit_status\" DEFAULT 'disponivel' NOT NULL,\n  \"observacao\" text,\n  \"createdAt\" timestamp DEFAULT now() NOT NULL\n);\nALTER TABLE \"bike_maintenance_logs\" ADD COLUMN \"tamanhoBikeId\" integer;\nALTER TABLE \"bike_maintenance_logs\" ADD COLUMN \"quantidadeAfetada\" integer DEFAULT 1 NOT NULL;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway05.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2uiJuwepBaepVjU.root --database 9oQjN6PX9fNMedgfErUfQE --execute CREATE TYPE \"public\".\"accessory_unit_status\" AS ENUM('disponivel', 'alugado', 'perdido', 'manutencao', 'roubado');\nCREATE TABLE \"accessory_units\" (\n  \"id\" serial PRIMARY KEY NOT NULL,\n  \"accessoryId\" integer NOT NULL,\n  \"serialNumber\" varchar(50),\n  \"status\" \"accessory_unit_status\" DEFAULT 'disponivel' NOT NULL,\n  \"observacao\" text,\n  \"createdAt\" timestamp DEFAULT now() NOT NULL\n);\nALTER TABLE \"bike_maintenance_logs\" ADD COLUMN \"tamanhoBikeId\" integer;\nALTER TABLE \"bike_maintenance_logs\" ADD COLUMN \"quantidadeAfetada\" integer DEFAULT 1 NOT NULL;",
+  "returncode": 1,
+  "logs": [
+    "ERROR 1064 (42000) at line 1: You have an error in your SQL syntax; check the manual that corresponds to your TiDB version for the right syntax to use line 1 column 11 near \"TYPE \"public\".\"accessory_unit_status\" AS ENUM('disponivel', 'alugado', 'perdido', 'manutencao', 'roubado')\""
+  ]
+}

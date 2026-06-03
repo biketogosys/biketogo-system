@@ -1,6 +1,6 @@
 {
-  "id": "934f0aba-3d0f-4e1b-b559-a41170d2a28c",
-  "prevId": "0b36cf5a-0d77-4369-a8ca-b83c03be9e52",
+  "id": "557a5df6-4c71-48a6-8edb-35de0668957b",
+  "prevId": "9acf7262-3f78-4265-b8bb-d23112d23c1d",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -1610,9 +1610,11 @@
       "name": "contract_status",
       "schema": "public",
       "values": [
+        "pendente",
         "ativo",
         "parcialmente_devolvido",
-        "encerrado"
+        "encerrado",
+        "cancelado"
       ]
     },
     "public.doc_type": {
@@ -1674,6 +1676,7 @@
       "name": "rental_status",
       "schema": "public",
       "values": [
+        "pending",
         "active",
         "returned",
         "overdue",

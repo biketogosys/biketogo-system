@@ -1,0 +1,18 @@
+{
+  "query": "SHOW COLUMNS FROM clients LIKE 'weight';",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway05.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2uiJuwepBaepVjU.root --database 9oQjN6PX9fNMedgfErUfQE --execute SHOW COLUMNS FROM clients LIKE 'weight';",
+  "rows": [
+    {
+      "Field": "weight",
+      "Type": "varchar(10)",
+      "Null": "YES",
+      "Key": "",
+      "Default": "NULL",
+      "Extra": ""
+    }
+  ],
+  "messages": [],
+  "stdout": "Field\tType\tNull\tKey\tDefault\tExtra\nweight\tvarchar(10)\tYES\t\tNULL\t\n",
+  "stderr": "",
+  "execution_time_ms": 2064
+}

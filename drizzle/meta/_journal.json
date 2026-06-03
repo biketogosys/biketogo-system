@@ -1,33 +1,82 @@
 {
   "version": "7",
-  "dialect": "mysql",
+  "dialect": "postgresql",
   "entries": [
     {
       "idx": 0,
-      "version": "5",
-      "when": 1775933254781,
-      "tag": "0000_naive_sabra",
+      "version": "7",
+      "when": 1779159924904,
+      "tag": "0000_talented_madame_web",
       "breakpoints": true
     },
     {
       "idx": 1,
-      "version": "5",
-      "when": 1775933407446,
-      "tag": "0001_dark_wendell_vaughn",
+      "version": "7",
+      "when": 1779242482212,
+      "tag": "0001_chemical_vulture",
       "breakpoints": true
     },
     {
       "idx": 2,
-      "version": "5",
-      "when": 1776196064480,
-      "tag": "0002_outgoing_fabian_cortez",
+      "version": "7",
+      "when": 1779463938986,
+      "tag": "0002_past_wild_pack",
       "breakpoints": true
     },
     {
       "idx": 3,
-      "version": "5",
-      "when": 1776221426099,
-      "tag": "0003_nice_centennial",
+      "version": "7",
+      "when": 1779710041698,
+      "tag": "0003_lame_scalphunter",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1779710456365,
+      "tag": "0004_wealthy_hex",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1779711427549,
+      "tag": "0005_zippy_winter_soldier",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1779717697096,
+      "tag": "0006_foamy_fantastic_four",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1779721543560,
+      "tag": "0007_magenta_magik",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1779797576754,
+      "tag": "0008_watery_ultragirl",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1779972964035,
+      "tag": "0009_breezy_ink",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1780172082001,
+      "tag": "0010_mixed_darkstar",
       "breakpoints": true
     }
   ]

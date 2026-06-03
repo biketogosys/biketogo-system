@@ -1,6 +1,6 @@
 {
-  "id": "934f0aba-3d0f-4e1b-b559-a41170d2a28c",
-  "prevId": "0b36cf5a-0d77-4369-a8ca-b83c03be9e52",
+  "id": "84db48c0-b097-4f97-93c4-7185adf7c886",
+  "prevId": "df795de3-6395-4a91-b85a-bfd023b49ee1",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -94,6 +94,58 @@
         },
         "updatedAt": {
           "name": "updatedAt",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.accessory_units": {
+      "name": "accessory_units",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "accessoryId": {
+          "name": "accessoryId",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "serialNumber": {
+          "name": "serialNumber",
+          "type": "varchar(50)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "status": {
+          "name": "status",
+          "type": "accessory_unit_status",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'disponivel'"
+        },
+        "observacao": {
+          "name": "observacao",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "createdAt": {
+          "name": "createdAt",
           "type": "timestamp",
           "primaryKey": false,
           "notNull": true,
@@ -315,6 +367,19 @@
           "type": "integer",
           "primaryKey": false,
           "notNull": true
+        },
+        "tamanhoBikeId": {
+          "name": "tamanhoBikeId",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "quantidadeAfetada": {
+          "name": "quantidadeAfetada",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
         },
         "descricao": {
           "name": "descricao",
@@ -662,6 +727,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "weight": {
+          "name": "weight",
+          "type": "varchar(10)",
+          "primaryKey": false,
+          "notNull": false
+        },
         "pedalFrequency": {
           "name": "pedalFrequency",
           "type": "varchar(50)",
@@ -911,6 +982,12 @@
           "type": "text",
           "primaryKey": false,
           "notNull": false
+        },
+        "unitId": {
+          "name": "unitId",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {},
@@ -1113,6 +1190,12 @@
         "dailyRate": {
           "name": "dailyRate",
           "type": "numeric(10, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "unitId": {
+          "name": "unitId",
+          "type": "integer",
           "primaryKey": false,
           "notNull": false
         },
@@ -1563,6 +1646,17 @@
         "lost"
       ]
     },
+    "public.accessory_unit_status": {
+      "name": "accessory_unit_status",
+      "schema": "public",
+      "values": [
+        "disponivel",
+        "alugado",
+        "perdido",
+        "manutencao",
+        "roubado"
+      ]
+    },
     "public.admin_role": {
       "name": "admin_role",
       "schema": "public",
@@ -1610,9 +1704,11 @@
       "name": "contract_status",
       "schema": "public",
       "values": [
+        "pendente",
         "ativo",
         "parcialmente_devolvido",
-        "encerrado"
+        "encerrado",
+        "cancelado"
       ]
     },
     "public.doc_type": {
@@ -1674,6 +1770,7 @@
       "name": "rental_status",
       "schema": "public",
       "values": [
+        "pending",
         "active",
         "returned",
         "overdue",
@@ -1693,7 +1790,9 @@
       "schema": "public",
       "values": [
         "cpf",
-        "passaporte"
+        "rg",
+        "passaporte",
+        "cnh"
       ]
     },
     "public.user_role": {

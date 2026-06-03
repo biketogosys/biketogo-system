@@ -1,0 +1,1 @@
+ALTER TYPE "public"."rental_status" ADD VALUE 'pending' BEFORE 'active';

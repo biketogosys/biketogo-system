@@ -1,0 +1,8 @@
+{
+  "query": "\n-- Habilitar RLS nas novas tabelas\nALTER TABLE contracts ENABLE ROW LEVEL SECURITY;\nALTER TABLE contract_accessories ENABLE ROW LEVEL SECURITY;\n\n-- contracts: somente admin pode SELECT, INSERT, UPDATE, DELETE\nCREATE POLICY \"admin_all_contracts\" ON contracts FOR ALL USING (\n  (current_setting('request.jwt.claims', true)::json->>'role') = 'admin'\n);\n\n-- contract_accessories: somente admin pode SELECT, INSERT, UPDATE, DELETE\nCREATE POLICY \"admin_all_contract_accessories\" ON contract_accessories FOR ALL USING (\n  (current_setting('request.jwt.claims', true)::json->>'role') = 'admin'\n);\n",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway05.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2uiJuwepBaepVjU.root --database 9oQjN6PX9fNMedgfErUfQE --execute \n-- Habilitar RLS nas novas tabelas\nALTER TABLE contracts ENABLE ROW LEVEL SECURITY;\nALTER TABLE contract_accessories ENABLE ROW LEVEL SECURITY;\n\n-- contracts: somente admin pode SELECT, INSERT, UPDATE, DELETE\nCREATE POLICY \"admin_all_contracts\" ON contracts FOR ALL USING (\n  (current_setting('request.jwt.claims', true)::json->>'role') = 'admin'\n);\n\n-- contract_accessories: somente admin pode SELECT, INSERT, UPDATE, DELETE\nCREATE POLICY \"admin_all_contract_accessories\" ON contract_accessories FOR ALL USING (\n  (current_setting('request.jwt.claims', true)::json->>'role') = 'admin'\n);\n",
+  "returncode": 1,
+  "logs": [
+    "ERROR 1064 (42000) at line 3: You have an error in your SQL syntax; check the manual that corresponds to your TiDB version for the right syntax to use line 1 column 32 near \"ROW LEVEL SECURITY\""
+  ]
+}

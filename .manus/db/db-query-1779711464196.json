@@ -1,0 +1,9 @@
+{
+  "query": "CREATE TABLE IF NOT EXISTS contract_accessories (\n  id INT AUTO_INCREMENT PRIMARY KEY,\n  contractId INT NOT NULL,\n  accessoryId INT NOT NULL,\n  qty INT NOT NULL DEFAULT 1,\n  status VARCHAR(50) NOT NULL DEFAULT 'ok',\n  observacao TEXT,\n  createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL\n);",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway05.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2uiJuwepBaepVjU.root --database 9oQjN6PX9fNMedgfErUfQE --execute CREATE TABLE IF NOT EXISTS contract_accessories (\n  id INT AUTO_INCREMENT PRIMARY KEY,\n  contractId INT NOT NULL,\n  accessoryId INT NOT NULL,\n  qty INT NOT NULL DEFAULT 1,\n  status VARCHAR(50) NOT NULL DEFAULT 'ok',\n  observacao TEXT,\n  createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL\n);",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 328
+}

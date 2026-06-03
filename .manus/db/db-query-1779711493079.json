@@ -1,0 +1,9 @@
+{
+  "query": "CREATE TABLE IF NOT EXISTS bike_sizes (\n  id INT AUTO_INCREMENT PRIMARY KEY,\n  bikeId INT NOT NULL,\n  tamanho VARCHAR(20) NOT NULL,\n  quantidadeTotal INT NOT NULL DEFAULT 1,\n  quantidadeDisponivel INT NOT NULL DEFAULT 1,\n  dailyRate DECIMAL(10,2),\n  createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL\n);",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway05.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2uiJuwepBaepVjU.root --database 9oQjN6PX9fNMedgfErUfQE --execute CREATE TABLE IF NOT EXISTS bike_sizes (\n  id INT AUTO_INCREMENT PRIMARY KEY,\n  bikeId INT NOT NULL,\n  tamanho VARCHAR(20) NOT NULL,\n  quantidadeTotal INT NOT NULL DEFAULT 1,\n  quantidadeDisponivel INT NOT NULL DEFAULT 1,\n  dailyRate DECIMAL(10,2),\n  createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL\n);",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 323
+}

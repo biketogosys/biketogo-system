@@ -1,0 +1,18 @@
+{
+  "query": "\nCREATE TABLE IF NOT EXISTS \"audit_logs\" (\n  \"id\" serial PRIMARY KEY NOT NULL,\n  \"adminId\" integer,\n  \"acao\" varchar(100) NOT NULL,\n  \"tabela\" varchar(50) NOT NULL,\n  \"registroId\" integer,\n  \"dadosAntes\" jsonb,\n  \"dadosDepois\" jsonb,\n  \"ip\" varchar(45),\n  \"criadoEm\" timestamp DEFAULT now() NOT NULL\n);\n\nALTER TABLE \"clients\" ADD COLUMN IF NOT EXISTS \"deletedAt\" timestamp;\nALTER TABLE \"rentals\" ADD COLUMN IF NOT EXISTS \"deletedAt\" timestamp;\n",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway05.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2uiJuwepBaepVjU.root --database 9oQjN6PX9fNMedgfErUfQE --execute \nCREATE TABLE IF NOT EXISTS \"audit_logs\" (\n  \"id\" serial PRIMARY KEY NOT NULL,\n  \"adminId\" integer,\n  \"acao\" varchar(100) NOT NULL,\n  \"tabela\" varchar(50) NOT NULL,\n  \"registroId\" integer,\n  \"dadosAntes\" jsonb,\n  \"dadosDepois\" jsonb,\n  \"ip\" varchar(45),\n  \"criadoEm\" timestamp DEFAULT now() NOT NULL\n);\n\nALTER TABLE \"clients\" ADD COLUMN IF NOT EXISTS \"deletedAt\" timestamp;\nALTER TABLE \"rentals\" ADD COLUMN IF NOT EXISTS \"deletedAt\" timestamp;\n",
+  "returncode": 1,
+  "logs": [
+    "ERROR 1064 (42000) at line 2: You have an error in your SQL syntax; check the manual that corresponds to your TiDB version for the right syntax to use line 1 column 39 near \"\"audit_logs\" (",
+    "  \"id\" serial PRIMARY KEY NOT NULL,",
+    "  \"adminId\" integer,",
+    "  \"acao\" varchar(100) NOT NULL,",
+    "  \"tabela\" varchar(50) NOT NULL,",
+    "  \"registroId\" integer,",
+    "  \"dadosAntes\" jsonb,",
+    "  \"dadosDepois\" jsonb,",
+    "  \"ip\" varchar(45),",
+    "  \"criadoEm\" timestamp DEFAULT now() NOT NULL",
+    ")\""
+  ]
+}

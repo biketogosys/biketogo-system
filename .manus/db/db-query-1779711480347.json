@@ -1,0 +1,9 @@
+{
+  "query": "ALTER TABLE rentals ADD COLUMN contractId INT NULL;\nALTER TABLE rentals ADD COLUMN bikeSizeId INT NULL;\nALTER TABLE rentals ADD COLUMN quantity INT DEFAULT 1;\nALTER TABLE rentals MODIFY COLUMN status ENUM('pending','active','returned','overdue','cancelled') NOT NULL DEFAULT 'active';",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway05.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2uiJuwepBaepVjU.root --database 9oQjN6PX9fNMedgfErUfQE --execute ALTER TABLE rentals ADD COLUMN contractId INT NULL;\nALTER TABLE rentals ADD COLUMN bikeSizeId INT NULL;\nALTER TABLE rentals ADD COLUMN quantity INT DEFAULT 1;\nALTER TABLE rentals MODIFY COLUMN status ENUM('pending','active','returned','overdue','cancelled') NOT NULL DEFAULT 'active';",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 1125
+}
