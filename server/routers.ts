@@ -2935,6 +2935,35 @@ const contractsRouter = router({
       if (client.status !== "verified")
         throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Apenas clientes verificados podem ter contratos criados manualmente." });
 
+      // Validate availability for each bike size BEFORE creating anything
+      {
+        const { rentals: rtSchema, bikeSizes: bsSchema } = await import("../drizzle/schema");
+        const { eq: eqOp, inArray: inArrayOp, isNull: isNullOp, and: andOp, lte: lteOp, gte: gteOp } = await import("drizzle-orm");
+        for (const b of input.bikes) {
+          if (!b.bikeSizeId) continue;
+          const [size] = await db.select({ quantidadeDisponivel: bsSchema.quantidadeDisponivel })
+            .from(bsSchema).where(eqOp(bsSchema.id, b.bikeSizeId));
+          if (!size) throw new TRPCError({ code: "NOT_FOUND", message: "Tamanho de bike não encontrado." });
+          const activeRentals = await db
+            .select({ id: rtSchema.id })
+            .from(rtSchema)
+            .where(andOp(
+              eqOp(rtSchema.bikeSizeId, b.bikeSizeId),
+              inArrayOp(rtSchema.status, ["active", "overdue"]),
+              isNullOp(rtSchema.deletedAt),
+              lteOp(rtSchema.startDate, b.endDate),
+              gteOp(rtSchema.endDate, b.startDate),
+            ));
+          const available = Math.max(0, (size.quantidadeDisponivel ?? 0) - activeRentals.length);
+          if (b.quantity > available) {
+            throw new TRPCError({
+              code: "PRECONDITION_FAILED",
+              message: `Quantidade indisponível para o tamanho selecionado. Disponível: ${available}.`,
+            });
+          }
+        }
+      }
+
       // Calculate total value from all bikes
       let totalValue = 0;
       for (const b of input.bikes) {

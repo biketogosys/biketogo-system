@@ -95,22 +95,27 @@ export async function generateContractPdf(data: ContractPdfData): Promise<Buffer
     const pageWidth = doc.page.width - 100; // margins 50 each side
 
     // ── Header ──────────────────────────────────────────────────────────────
+    // Coluna esquerda: dados da empresa (largura fixa para não invadir a direita)
     doc.fontSize(20).fillColor(primaryColor).font("Helvetica-Bold")
-      .text(empresaNome, 50, 50);
+      .text(empresaNome, 50, 50, { width: 320 });
     doc.fontSize(9).fillColor(grayColor).font("Helvetica");
-    doc.text(`CNPJ: ${empresaCnpj}`);
+    doc.text(`CNPJ: ${empresaCnpj}`, 50, doc.y, { width: 320 });
     const addr = [empresaEndereco, empresaCidade, empresaEstado].filter(Boolean).join(", ");
-    if (addr) doc.text(addr);
-    doc.text(`Tel: ${empresaTelefone}`);
-    doc.text(`E-mail: ${empresaEmail}`);
+    if (addr) doc.text(addr, 50, doc.y, { width: 320 });
+    doc.text(`Tel: ${empresaTelefone}`, 50, doc.y, { width: 320 });
+    doc.text(`E-mail: ${empresaEmail}`, 50, doc.y, { width: 320 });
+    const leftEndY = doc.y;
 
-    // Número do contrato (top-right)
+    // Coluna direita: número do contrato + data
     doc.fontSize(14).fillColor(primaryColor).font("Helvetica-Bold")
       .text(`CONTRATO #${data.contractId}`, 50, 50, { align: "right" });
     doc.fontSize(9).fillColor(grayColor).font("Helvetica")
       .text(`Emitido em: ${formatDate(data.criadoEm)}`, { align: "right" });
+    const rightEndY = doc.y;
 
-    doc.moveDown(2);
+    // Cursor abaixo da coluna mais alta
+    doc.x = 50;
+    doc.y = Math.max(leftEndY, rightEndY) + 15;
 
     // ── Divider ──────────────────────────────────────────────────────────────
     doc.moveTo(50, doc.y).lineTo(50 + pageWidth, doc.y).strokeColor(lineColor).stroke();
@@ -226,7 +231,7 @@ export async function generateContractPdf(data: ContractPdfData): Promise<Buffer
     doc.fontSize(7).fillColor(grayColor)
       .text(
         `Documento gerado em ${new Date().toLocaleString("pt-BR")} — Contrato #${data.contractId}`,
-        50, doc.page.height - 40, { align: "center", width: pageWidth }
+        50, doc.page.height - 50, { align: "center", width: pageWidth, lineBreak: false }
       );
 
     doc.end();

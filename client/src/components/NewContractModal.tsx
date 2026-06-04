@@ -401,7 +401,23 @@ export function NewContractModal({ open, onClose }: { open: boolean; onClose: ()
               </div>
               <div>
                 <Label className="mb-1 block text-xs">Quantidade</Label>
-                <Input type="number" min={1} max={10} value={selQty} onChange={(e) => setSelQty(Number(e.target.value))} className="text-sm" />
+                {(() => {
+                  const selectedSize = sizes.find((s) => s.id === Number(selBikeSizeId));
+                  const maxQty = selectedSize ? selectedSize.quantidadeDisponivel : 10;
+                  return (
+                    <Input
+                      type="number"
+                      min={1}
+                      max={maxQty}
+                      value={selQty}
+                      onChange={(e) => {
+                        const v = Number(e.target.value);
+                        setSelQty(Math.min(Math.max(1, v), maxQty > 0 ? maxQty : 1));
+                      }}
+                      className="text-sm"
+                    />
+                  );
+                })()}
               </div>
               {selectedBike && (
                 <div className="flex items-end">
@@ -409,7 +425,16 @@ export function NewContractModal({ open, onClose }: { open: boolean; onClose: ()
                 </div>
               )}
             </div>
-            <Button variant="outline" size="sm" onClick={handleAddBike} className="w-full">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleAddBike}
+              className="w-full"
+              disabled={(() => {
+                const selectedSize = sizes.find((s) => s.id === Number(selBikeSizeId));
+                return selectedSize !== undefined && selectedSize.quantidadeDisponivel === 0;
+              })()}
+            >
               <Plus className="h-4 w-4 mr-1" /> Adicionar bike ao contrato
             </Button>
 

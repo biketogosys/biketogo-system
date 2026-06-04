@@ -157,14 +157,19 @@ function EditClientModal({ open, onClose, client, clientId, onSuccess }: EditCli
   const utils = trpc.useUtils();
 
   const updateMutation = trpc.clients.update.useMutation({
-    onSuccess: () => {
-      toast.success("Cliente atualizado com sucesso!");
-      utils.clients.byId.invalidate({ id: clientId });
-      onSuccess();
-      onClose();
-    },
     onError: (err) => toast.error(err.message),
   });
+
+  const uploadDocMutation = trpc.publicApi.uploadDocument.useMutation();
+
+  function fileToBase64(file: File): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  }
 
   function set<K extends keyof typeof form>(key: K, value: typeof form[K]) {
     setForm((f) => ({ ...f, [key]: value }));
@@ -193,7 +198,7 @@ function EditClientModal({ open, onClose, client, clientId, onSuccess }: EditCli
     else { setDocVersoFile(file); setDocVersoPreview(url); }
   }
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!form.name.trim()) { setActiveTab("identificacao"); return toast.error("Nome é obrigatório."); }
     if (form.nacionalidade === "brasileiro" && form.cpf && !isValidCPF(form.cpf)) {
@@ -207,34 +212,53 @@ function EditClientModal({ open, onClose, client, clientId, onSuccess }: EditCli
 
     const phone = form.ddi !== "+55" ? `${form.ddi} ${form.phone}` : form.phone;
 
-    updateMutation.mutate({
-      id: clientId,
-      name: form.name || undefined,
-      cpf: form.nacionalidade !== "estrangeiro" ? (form.cpf || undefined) : undefined,
-      rg: form.nacionalidade !== "estrangeiro" ? (form.rg || undefined) : undefined,
-      birthDate: form.birthDate ? dateDisplayToISO(form.birthDate) : undefined,
-      nacionalidade: (form.nacionalidade || undefined) as "brasileiro" | "estrangeiro" | undefined,
-      tipoDocumento: (form.tipoDocumento || undefined) as "cnh" | "rg" | "passaporte" | undefined,
-      numeroPassaporte: form.tipoDocumento === "passaporte" ? (form.numeroPassaporte || undefined) : undefined,
-      phone: phone || undefined,
-      email: form.email || undefined,
-      instagram: form.instagram || undefined,
-      zipCode: form.zipCode || undefined,
-      street: form.street || undefined,
-      number: form.number || undefined,
-      complement: form.complement || undefined,
-      neighborhood: form.neighborhood || undefined,
-      city: form.city || undefined,
-      state: form.state || undefined,
-      country: form.country || "Brasil",
-      pedalFrequency: form.pedalFrequency || undefined,
-      origin: form.origin || undefined,
-      accommodation: form.accommodation || undefined,
-      notes: form.notes || undefined,
-      height: form.height || undefined,
-      weight: form.weight || undefined,
-      lgpdConsent: form.lgpdConsent,
-    });
+    try {
+      await updateMutation.mutateAsync({
+        id: clientId,
+        name: form.name || undefined,
+        cpf: form.nacionalidade !== "estrangeiro" ? (form.cpf || undefined) : undefined,
+        rg: form.nacionalidade !== "estrangeiro" ? (form.rg || undefined) : undefined,
+        birthDate: form.birthDate ? dateDisplayToISO(form.birthDate) : undefined,
+        nacionalidade: (form.nacionalidade || undefined) as "brasileiro" | "estrangeiro" | undefined,
+        tipoDocumento: (form.tipoDocumento || undefined) as "cnh" | "rg" | "passaporte" | undefined,
+        numeroPassaporte: form.tipoDocumento === "passaporte" ? (form.numeroPassaporte || undefined) : undefined,
+        phone: phone || undefined,
+        email: form.email || undefined,
+        instagram: form.instagram || undefined,
+        zipCode: form.zipCode || undefined,
+        street: form.street || undefined,
+        number: form.number || undefined,
+        complement: form.complement || undefined,
+        neighborhood: form.neighborhood || undefined,
+        city: form.city || undefined,
+        state: form.state || undefined,
+        country: form.country || "Brasil",
+        pedalFrequency: form.pedalFrequency || undefined,
+        origin: form.origin || undefined,
+        accommodation: form.accommodation || undefined,
+        notes: form.notes || undefined,
+        height: form.height || undefined,
+        weight: form.weight || undefined,
+        lgpdConsent: form.lgpdConsent,
+      });
+
+      // Upload documents if selected
+      if (docFrenteFile) {
+        const b64 = await fileToBase64(docFrenteFile);
+        await uploadDocMutation.mutateAsync({ clientId, base64: b64, side: "front", mimeType: docFrenteFile.type || "image/jpeg" });
+      }
+      if (docVersoFile) {
+        const b64 = await fileToBase64(docVersoFile);
+        await uploadDocMutation.mutateAsync({ clientId, base64: b64, side: "back", mimeType: docVersoFile.type || "image/jpeg" });
+      }
+
+      toast.success("Cliente atualizado com sucesso!");
+      utils.clients.byId.invalidate({ id: clientId });
+      onSuccess();
+      onClose();
+    } catch (err: any) {
+      toast.error(err?.message ?? "Erro ao salvar cliente.");
+    }
   }
 
   if (!open) return null;
