@@ -427,43 +427,34 @@ const clientsRouter = router({
     }))
     .mutation(async ({ input }) => {
       const { id, ...data } = input;
-      validarDocumentoCliente({
-        nacionalidade: data.nacionalidade,
-        cpf: data.cpf,
-        rg: data.rg,
-        tipoDocumento: data.tipoDocumento,
-        numeroPassaporte: data.numeroPassaporte,
-      });
-      const sanitized: any = {
-        ...data,
-        cpf: sanitize(data.cpf),
-        rg: sanitize(data.rg),
-        birthDate: sanitize(data.birthDate),
-        gender: sanitize(data.gender),
-        height: sanitize(data.height),
-        pedalFrequency: sanitize(data.pedalFrequency),
-        origin: sanitize(data.origin),
-        phone: sanitize(data.phone),
-        email: sanitize(data.email),
-        instagram: sanitize(data.instagram),
-        accommodation: sanitize(data.accommodation),
-        zipCode: sanitize(data.zipCode),
-        street: sanitize(data.street),
-        number: sanitize(data.number),
-        neighborhood: sanitize(data.neighborhood),
-        city: sanitize(data.city),
-        state: sanitize(data.state),
-        country: sanitize(data.country),
-        notes: sanitize(data.notes),
-        nacionalidade: sanitize(data.nacionalidade),
-        tipoDocumento: sanitize(data.tipoDocumento),
-        numeroPassaporte: sanitize(data.numeroPassaporte),
-        complement: sanitize(data.complement),
-        ...(data.lgpdConsent !== undefined ? {
-          lgpdConsent: data.lgpdConsent,
-          lgpdConsentAt: data.lgpdConsent ? new Date() : null,
-        } : {}),
-      };
+
+      // Validar documento SO quando campos de documento foram enviados
+      const tocaDoc = data.nacionalidade !== undefined || data.cpf !== undefined
+        || data.rg !== undefined || data.tipoDocumento !== undefined
+        || data.numeroPassaporte !== undefined;
+      if (tocaDoc) {
+        validarDocumentoCliente({
+          nacionalidade: data.nacionalidade,
+          cpf: data.cpf,
+          rg: data.rg,
+          tipoDocumento: data.tipoDocumento,
+          numeroPassaporte: data.numeroPassaporte,
+        });
+      }
+
+      // Gravar APENAS os campos realmente enviados.
+      // sanitize() só transforma "" -> null (limpeza intencional de campo enviado).
+      // Campos undefined não entram no objeto, preservando o que já está no banco.
+      const sanitized: Record<string, unknown> = {};
+      for (const [key, value] of Object.entries(data)) {
+        if (value === undefined) continue;
+        sanitized[key] = sanitize(value);
+      }
+      if (data.lgpdConsent !== undefined) {
+        sanitized.lgpdConsent = data.lgpdConsent;
+        sanitized.lgpdConsentAt = data.lgpdConsent ? new Date() : null;
+      }
+
       await updateClient(id, sanitized);
       return { success: true };
     }),

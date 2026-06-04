@@ -700,6 +700,7 @@ export default function ClientProfile() {
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
   const [lightboxAlt, setLightboxAlt] = useState("");
   const [showEditModal, setShowEditModal] = useState(false);
+  const [localNotes, setLocalNotes] = useState<string | null>(null);
   const utils = trpc.useUtils();
 
   const openLightbox = (src: string, alt: string) => { setLightboxSrc(src); setLightboxAlt(alt); };
@@ -882,16 +883,26 @@ export default function ClientProfile() {
               Observações
             </p>
             <Textarea
-              defaultValue={client.notes ?? ""}
+              value={localNotes ?? (client.notes ?? "")}
               rows={4}
               className="text-xs bg-secondary border-border resize-none"
               placeholder="Adicione observações sobre o cliente..."
-              onBlur={(e) => {
-                if (e.target.value !== client.notes) {
-                  updateMutation.mutate({ id: clientId, notes: e.target.value });
+              onChange={(e) => setLocalNotes(e.target.value)}
+            />
+            <button
+              className="mt-2 text-xs px-3 py-1.5 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors"
+              disabled={updateMutation.isPending || (localNotes === null || localNotes === (client.notes ?? ""))}
+              onClick={() => {
+                if (localNotes !== null) {
+                  updateMutation.mutate(
+                    { id: clientId, notes: localNotes },
+                    { onSuccess: () => { toast.success("Observações salvas!"); setLocalNotes(null); } }
+                  );
                 }
               }}
-            />
+            >
+              {updateMutation.isPending ? "Salvando..." : "Salvar observações"}
+            </button>
           </div>
         </div>
 

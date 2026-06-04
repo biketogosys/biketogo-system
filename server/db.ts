@@ -1,4 +1,4 @@
-import { and, between, desc, eq, gte, isNull, like, lte, or, sql } from "drizzle-orm";
+import { and, between, desc, eq, gte, ilike, isNull, lte, or, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import {
@@ -186,7 +186,7 @@ export async function getClients(opts?: {
   if (opts?.search) {
     const q = `%${opts.search}%`;
     conditions.push(
-      or(like(clients.name, q), like(clients.cpf, q), like(clients.rg, q))
+      or(ilike(clients.name, q), ilike(clients.cpf, q), ilike(clients.rg, q))
     );
   }
   const where = and(...conditions);
@@ -278,7 +278,7 @@ export async function getBikes(opts?: { status?: Bike["status"]; search?: string
   if (opts?.category) conditions.push(eq(bikes.category, opts.category as any));
   if (opts?.search) {
     const q = `%${opts.search}%`;
-    conditions.push(or(like(bikes.model, q), like(bikes.serialNumber, q), like(bikes.brand, q)));
+    conditions.push(or(ilike(bikes.model, q), ilike(bikes.serialNumber, q), ilike(bikes.brand, q)));
   }
   const where = conditions.length > 0 ? and(...conditions) : undefined;
   return db.select().from(bikes).where(where).orderBy(desc(bikes.createdAt));
@@ -462,7 +462,7 @@ export async function getAccessories(opts?: {
   if (opts?.category) conditions.push(eq(accessories.category, opts.category));
   if (opts?.search) {
     const q = `%${opts.search}%`;
-    conditions.push(or(like(accessories.name, q), like(accessories.serialNumber, q)));
+    conditions.push(or(ilike(accessories.name, q), ilike(accessories.serialNumber, q)));
   }
   const where = conditions.length > 0 ? and(...conditions) : undefined;
   return db.select().from(accessories).where(where).orderBy(desc(accessories.createdAt));
