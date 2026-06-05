@@ -673,30 +673,16 @@ const bikesRouter = router({
       quantity: z.number().min(1).default(1),
     }))
     .query(async ({ input }) => {
-      const db = await (await import("./db")).getDb();
-      if (!db) return true; // fail open
-      const { rentals: rt, bikeSizes: bs } = await import("../drizzle/schema");
-      const { eq, inArray, isNull: isNullOp, and: andOp, lte: lteOp, gte: gteOp } = await import("drizzle-orm");
-
+      const { getSizeAvailability } = await import("./db");
       if (input.bikeSizeId) {
-        // Check availability for a specific size
-        const [size] = await db.select({ quantidadeTotal: bs.quantidadeTotal, quantidadeDisponivel: bs.quantidadeDisponivel })
-          .from(bs).where(eq(bs.id, input.bikeSizeId));
-        if (!size) return false;
-        const activeRentals = await db
-          .select({ id: rt.id })
-          .from(rt)
-          .where(andOp(
-            eq(rt.bikeSizeId, input.bikeSizeId),
-            inArray(rt.status, ["active", "overdue"]),
-            isNullOp(rt.deletedAt),
-            lteOp(rt.startDate, input.endDate),
-            gteOp(rt.endDate, input.startDate),
-          ));
-        const available = Math.max(0, (size.quantidadeDisponivel ?? 0) - activeRentals.length);
+        const available = await getSizeAvailability(input.bikeSizeId, input.startDate, input.endDate);
         return available >= input.quantity;
       } else {
-        // Fallback: check by bikeId (legacy)
+        // Fallback: check by bikeId (legacy) — sem tamanho, verifica se ha algum aluguel ativo
+        const db = await (await import("./db")).getDb();
+        if (!db) return true;
+        const { rentals: rt } = await import("../drizzle/schema");
+        const { eq, inArray, isNull: isNullOp, and: andOp, lte: lteOp, gte: gteOp } = await import("drizzle-orm");
         const result = await db
           .select({ id: rt.id })
           .from(rt)
@@ -710,7 +696,7 @@ const bikesRouter = router({
         return result.length === 0;
       }
     }),
-  // ─── Bike Sizes ──────────────────────────────────────────────────────────
+  // ─── Bike Sizes ──────────────────────────────────────────────────────────────
   listSizes: adminAuthProcedure
     .input(z.object({ bikeId: z.number() }))
     .query(async ({ input }) => {
@@ -1787,26 +1773,16 @@ const publicApiRouter = router({
       const { eq, inArray, isNull: isNullOp, and: andOp } = await import("drizzle-orm");
       // Get all sizes for this bike
       const allSizes = await db.select().from(bs).where(eq(bs.bikeId, input.bikeId));
-      // For each size, count active rentals with that specific bikeSizeId
+      // Derivar disponibilidade pelo modelo de fonte única de verdade
+      const { getSizeAvailability } = await import("./db");
       const sizeAvailability = await Promise.all(
-        allSizes.map(async (size) => {
-          const activeRentalsForSize = await db
-            .select({ id: rt.id })
-            .from(rt)
-            .where(andOp(
-              eq(rt.bikeSizeId, size.id),
-              inArray(rt.status, ["active", "overdue"]),
-              isNullOp(rt.deletedAt),
-            ));
-          const activeCount = activeRentalsForSize.length;
-          return {
-            id: size.id,
-            bikeId: size.bikeId,
-            tamanho: size.tamanho,
-            quantidadeTotal: size.quantidadeTotal,
-            quantidadeDisponivel: Math.max(0, (size.quantidadeDisponivel ?? 0) - activeCount),
-          };
-        })
+        allSizes.map(async (size) => ({
+          id: size.id,
+          bikeId: size.bikeId,
+          tamanho: size.tamanho,
+          quantidadeTotal: size.quantidadeTotal,
+          quantidadeDisponivel: await getSizeAvailability(size.id),
+        }))
       );
       return sizeAvailability;
     }),
@@ -1825,30 +1801,16 @@ const publicApiRouter = router({
       quantity: z.number().min(1).default(1),
     }))
     .query(async ({ input }) => {
-      const db = await (await import("./db")).getDb();
-      if (!db) return true; // fail open
-      const { rentals: rt, bikeSizes: bs } = await import("../drizzle/schema");
-      const { eq, inArray, isNull: isNullOp, and: andOp, lte: lteOp, gte: gteOp } = await import("drizzle-orm");
-
+      const { getSizeAvailability } = await import("./db");
       if (input.bikeSizeId) {
-        // Check availability for a specific size
-        const [size] = await db.select({ quantidadeTotal: bs.quantidadeTotal, quantidadeDisponivel: bs.quantidadeDisponivel })
-          .from(bs).where(eq(bs.id, input.bikeSizeId));
-        if (!size) return false;
-        const activeRentals = await db
-          .select({ id: rt.id })
-          .from(rt)
-          .where(andOp(
-            eq(rt.bikeSizeId, input.bikeSizeId),
-            inArray(rt.status, ["active", "overdue"]),
-            isNullOp(rt.deletedAt),
-            lteOp(rt.startDate, input.endDate),
-            gteOp(rt.endDate, input.startDate),
-          ));
-        const available = Math.max(0, (size.quantidadeDisponivel ?? 0) - activeRentals.length);
+        const available = await getSizeAvailability(input.bikeSizeId, input.startDate, input.endDate);
         return available >= input.quantity;
       } else {
-        // Fallback: check by bikeId (legacy)
+        // Fallback: check by bikeId (legacy) — sem tamanho, verifica se ha algum aluguel ativo
+        const db = await (await import("./db")).getDb();
+        if (!db) return true;
+        const { rentals: rt } = await import("../drizzle/schema");
+        const { eq, inArray, isNull: isNullOp, and: andOp, lte: lteOp, gte: gteOp } = await import("drizzle-orm");
         const result = await db
           .select({ id: rt.id })
           .from(rt)
@@ -2935,26 +2897,12 @@ const contractsRouter = router({
       if (client.status !== "verified")
         throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Apenas clientes verificados podem ter contratos criados manualmente." });
 
-      // Validate availability for each bike size BEFORE creating anything
+      // Validate availability for each bike size BEFORE creating anything (modelo derivado)
       {
-        const { rentals: rtSchema, bikeSizes: bsSchema } = await import("../drizzle/schema");
-        const { eq: eqOp, inArray: inArrayOp, isNull: isNullOp, and: andOp, lte: lteOp, gte: gteOp } = await import("drizzle-orm");
+        const { getSizeAvailability } = await import("./db");
         for (const b of input.bikes) {
           if (!b.bikeSizeId) continue;
-          const [size] = await db.select({ quantidadeDisponivel: bsSchema.quantidadeDisponivel })
-            .from(bsSchema).where(eqOp(bsSchema.id, b.bikeSizeId));
-          if (!size) throw new TRPCError({ code: "NOT_FOUND", message: "Tamanho de bike não encontrado." });
-          const activeRentals = await db
-            .select({ id: rtSchema.id })
-            .from(rtSchema)
-            .where(andOp(
-              eqOp(rtSchema.bikeSizeId, b.bikeSizeId),
-              inArrayOp(rtSchema.status, ["active", "overdue"]),
-              isNullOp(rtSchema.deletedAt),
-              lteOp(rtSchema.startDate, b.endDate),
-              gteOp(rtSchema.endDate, b.startDate),
-            ));
-          const available = Math.max(0, (size.quantidadeDisponivel ?? 0) - activeRentals.length);
+          const available = await getSizeAvailability(b.bikeSizeId, b.startDate, b.endDate);
           if (b.quantity > available) {
             throw new TRPCError({
               code: "PRECONDITION_FAILED",

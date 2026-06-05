@@ -1,4 +1,4 @@
-import { and, between, desc, eq, gte, ilike, isNull, lte, or, sql } from "drizzle-orm";
+import { and, between, desc, eq, gte, ilike, inArray, isNull, lte, ne, or, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import {
@@ -33,6 +33,8 @@ import {
   adminUsers,
   auditLogs,
   bikeDiscountRules,
+  bikeSizes,
+  bikeMaintenanceLogs,
   bikes,
   clientDocuments,
   clients,
@@ -80,6 +82,69 @@ export async function getDb() {
 }
 
 // ─── Users (Manus auth — backward compat) ───────────────────────────────────
+// ─── Disponibilidade derivada de bikes (fonte única de verdade) ─────────────────
+/**
+ * Calcula a disponibilidade real de um tamanho de bike derivando dos alugueis
+ * e manutencoes ativos — sem depender do contador quantidadeDisponivel.
+ *
+ * @param bikeSizeId  ID do tamanho
+ * @param startDate   Inicio do periodo desejado (opcional)
+ * @param endDate     Fim do periodo desejado (opcional)
+ * @param excludeRentalId  ID de aluguel a ignorar (util ao editar)
+ */
+export async function getSizeAvailability(
+  bikeSizeId: number,
+  startDate?: string,
+  endDate?: string,
+  excludeRentalId?: number,
+): Promise<number> {
+  const db = await getDb();
+  if (!db) return 0;
+
+  const [size] = await db
+    .select({ total: bikeSizes.quantidadeTotal, bikeId: bikeSizes.bikeId })
+    .from(bikeSizes)
+    .where(eq(bikeSizes.id, bikeSizeId));
+  if (!size) return 0;
+
+  // Alugueis ativos sobrepostos ao periodo
+  const rentalConds: Parameters<typeof and>[0][] = [
+    eq(rentals.bikeSizeId, bikeSizeId),
+    inArray(rentals.status, ["active", "overdue"]),
+    isNull(rentals.deletedAt),
+  ];
+  if (excludeRentalId) rentalConds.push(ne(rentals.id, excludeRentalId));
+  if (startDate && endDate) {
+    rentalConds.push(lte(rentals.startDate, endDate));
+    rentalConds.push(or(isNull(rentals.endDate), gte(rentals.endDate, startDate))!);
+  }
+  const rentedRows = await db
+    .select({ q: rentals.quantity })
+    .from(rentals)
+    .where(and(...rentalConds));
+  const rented = rentedRows.reduce((s, r) => s + (r.q ?? 1), 0);
+
+  // Manutencoes em andamento para este tamanho (ou para a bike sem tamanho especifico)
+  const maintRows = await db
+    .select({ q: bikeMaintenanceLogs.quantidadeAfetada })
+    .from(bikeMaintenanceLogs)
+    .where(
+      and(
+        eq(bikeMaintenanceLogs.status, "em_andamento"),
+        or(
+          eq(bikeMaintenanceLogs.tamanhoBikeId, bikeSizeId),
+          and(
+            isNull(bikeMaintenanceLogs.tamanhoBikeId),
+            eq(bikeMaintenanceLogs.bikeId, size.bikeId),
+          ),
+        ),
+      ),
+    );
+  const maintenance = maintRows.reduce((s, m) => s + (m.q ?? 1), 0);
+
+  return Math.max(0, (size.total ?? 0) - rented - maintenance);
+}
+
 export async function upsertUser(user: InsertUser): Promise<void> {
   if (!user.openId) throw new Error("User openId is required for upsert");
   const db = await getDb();
