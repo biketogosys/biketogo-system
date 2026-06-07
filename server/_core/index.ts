@@ -148,23 +148,16 @@ async function startServer() {
           return res.json({ disponivel: false, status: "manutencao", tamanhos: [] });
         }
 
-        // Buscar tamanhos com disponibilidade real
-        const { bikeSizes: bs, rentals: rt } = await import("../../drizzle/schema");
-        const { eq, inArray, isNull: isNullOp, and: andOp2 } = await import("drizzle-orm");
+        // Buscar tamanhos com disponibilidade derivada (modelo fonte única de verdade)
+        const { bikeSizes: bs } = await import("../../drizzle/schema");
+        const { eq } = await import("drizzle-orm");
+        const { getSizeAvailability } = await import("../db");
 
         const allSizes = await db.select().from(bs).where(eq(bs.bikeId, bikeId));
 
         const tamanhos = await Promise.all(
           allSizes.map(async (size) => {
-            const activeRentals = await db
-              .select({ id: rt.id })
-              .from(rt)
-              .where(andOp2(
-                eq(rt.bikeSizeId, size.id),
-                inArray(rt.status, ["active", "overdue"]),
-                isNullOp(rt.deletedAt),
-              ));
-            const disponivel = Math.max(0, (size.quantidadeDisponivel ?? 0) - activeRentals.length);
+            const disponivel = await getSizeAvailability(size.id);
             return { tamanho: size.tamanho, quantidadeDisponivel: disponivel };
           })
         );

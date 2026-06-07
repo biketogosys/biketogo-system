@@ -109,13 +109,12 @@ function BikeSizesTab({ bikeId }: { bikeId: number }) {
   const { data: sizes = [], isLoading } = trpc.bikes.listSizes.useQuery({ bikeId });
   const [tamanho, setTamanho] = useState("");
   const [qtTotal, setQtTotal] = useState("1");
-  const [qtDisp, setQtDisp] = useState("1");
   const [obs, setObs] = useState("");
   const [editId, setEditId] = useState<number | null>(null);
-  const [editData, setEditData] = useState<{ tamanho: string; quantidadeTotal: string; quantidadeDisponivel: string }>({ tamanho: "", quantidadeTotal: "", quantidadeDisponivel: "" });
+  const [editData, setEditData] = useState<{ tamanho: string; quantidadeTotal: string }>({ tamanho: "", quantidadeTotal: "" });
 
   const addMut = trpc.bikes.addSize.useMutation({
-    onSuccess: () => { utils.bikes.listSizes.invalidate(); setTamanho(""); setQtTotal("1"); setQtDisp("1"); setObs(""); toast.success("Tamanho adicionado!"); },
+    onSuccess: () => { utils.bikes.listSizes.invalidate(); setTamanho(""); setQtTotal("1"); setObs(""); toast.success("Tamanho adicionado!"); },
     onError: (e) => toast.error(e.message),
   });
   const updateMut = trpc.bikes.updateSize.useMutation({
@@ -127,7 +126,7 @@ function BikeSizesTab({ bikeId }: { bikeId: number }) {
     onError: (e) => toast.error(e.message),
   });
 
-  const startEdit = (s: any) => { setEditId(s.id); setEditData({ tamanho: s.tamanho, quantidadeTotal: String(s.quantidadeTotal), quantidadeDisponivel: String(s.quantidadeDisponivel) }); };
+  const startEdit = (s: any) => { setEditId(s.id); setEditData({ tamanho: s.tamanho, quantidadeTotal: String(s.quantidadeTotal) }); };
 
   return (
     <div className="space-y-4">
@@ -137,10 +136,9 @@ function BikeSizesTab({ bikeId }: { bikeId: number }) {
           {(sizes as any[]).map((s: any) => (
             <div key={s.id} className="flex items-center justify-between p-3 bg-secondary rounded-lg">
               {editId === s.id ? (
-                <div className="flex-1 grid grid-cols-3 gap-2 mr-2">
+                <div className="flex-1 grid grid-cols-2 gap-2 mr-2">
                   <Input value={editData.tamanho} onChange={e => setEditData(d => ({ ...d, tamanho: e.target.value }))} className="h-8 text-sm" placeholder="Tamanho" />
                   <Input type="number" value={editData.quantidadeTotal} onChange={e => setEditData(d => ({ ...d, quantidadeTotal: e.target.value }))} className="h-8 text-sm" placeholder="Total" />
-                  <Input type="number" value={editData.quantidadeDisponivel} onChange={e => setEditData(d => ({ ...d, quantidadeDisponivel: e.target.value }))} className="h-8 text-sm" placeholder="Disponível" />
                 </div>
               ) : (
                 <div className="flex-1">
@@ -152,7 +150,7 @@ function BikeSizesTab({ bikeId }: { bikeId: number }) {
               <div className="flex gap-1">
                 {editId === s.id ? (
                   <>
-                    <Button size="sm" className="h-7 text-xs" onClick={() => updateMut.mutate({ id: s.id, tamanho: editData.tamanho, quantidadeTotal: parseInt(editData.quantidadeTotal), quantidadeDisponivel: parseInt(editData.quantidadeDisponivel) })}>Salvar</Button>
+                    <Button size="sm" className="h-7 text-xs" onClick={() => updateMut.mutate({ id: s.id, tamanho: editData.tamanho, quantidadeTotal: parseInt(editData.quantidadeTotal) })}>Salvar</Button>
                     <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setEditId(null)}>Cancelar</Button>
                   </>
                 ) : (
@@ -167,13 +165,12 @@ function BikeSizesTab({ bikeId }: { bikeId: number }) {
         </div>
       )}
       <Separator />
-      <div className="grid grid-cols-3 gap-2">
+      <div className="grid grid-cols-2 gap-2">
         <div><Label className="text-xs">Tamanho *</Label><Input value={tamanho} onChange={e => setTamanho(e.target.value)} placeholder="P / M / G / 29" className="h-8 text-sm" /></div>
         <div><Label className="text-xs">Qtd. Total</Label><Input type="number" value={qtTotal} onChange={e => setQtTotal(e.target.value)} className="h-8 text-sm" /></div>
-        <div><Label className="text-xs">Qtd. Disponível</Label><Input type="number" value={qtDisp} onChange={e => setQtDisp(e.target.value)} className="h-8 text-sm" /></div>
       </div>
       <Input value={obs} onChange={e => setObs(e.target.value)} placeholder="Observação (opcional)" className="h-8 text-sm" />
-      <Button size="sm" onClick={() => { if (!tamanho) return toast.error("Informe o tamanho."); addMut.mutate({ bikeId, tamanho, quantidadeTotal: parseInt(qtTotal), quantidadeDisponivel: parseInt(qtDisp), observacao: obs || undefined }); }} disabled={addMut.isPending} className="w-full">
+      <Button size="sm" onClick={() => { if (!tamanho) return toast.error("Informe o tamanho."); addMut.mutate({ bikeId, tamanho, quantidadeTotal: parseInt(qtTotal), observacao: obs || undefined }); }} disabled={addMut.isPending} className="w-full">
         <Plus className="w-3.5 h-3.5 mr-1" />Adicionar Tamanho
       </Button>
     </div>

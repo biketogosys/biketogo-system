@@ -700,18 +700,23 @@ const bikesRouter = router({
   listSizes: adminAuthProcedure
     .input(z.object({ bikeId: z.number() }))
     .query(async ({ input }) => {
+      const { getDb, getSizeAvailability } = await import("./db");
+      const db = await getDb();
+      if (!db) return [];
       const { bikeSizes } = await import("../drizzle/schema");
       const { eq } = await import("drizzle-orm");
-      const db = await (await import("./db")).getDb();
-      if (!db) return [];
-      return db.select().from(bikeSizes).where(eq(bikeSizes.bikeId, input.bikeId));
+      const rows = await db.select().from(bikeSizes).where(eq(bikeSizes.bikeId, input.bikeId));
+      return Promise.all(rows.map(async (s) => ({
+        ...s,
+        quantidadeDisponivel: await getSizeAvailability(s.id),
+      })));
     }),
   addSize: adminAuthProcedure
     .input(z.object({
       bikeId: z.number(),
       tamanho: z.string().min(1),
       quantidadeTotal: z.number().min(1).default(1),
-      quantidadeDisponivel: z.number().min(0).default(1),
+      quantidadeDisponivel: z.number().min(0).optional(), // inerte — disponibilidade é derivada
       observacao: z.string().optional(),
     }))
     .mutation(async ({ input }) => {
@@ -722,7 +727,7 @@ const bikesRouter = router({
         bikeId: input.bikeId,
         tamanho: input.tamanho,
         quantidadeTotal: input.quantidadeTotal,
-        quantidadeDisponivel: input.quantidadeDisponivel,
+        quantidadeDisponivel: input.quantidadeTotal, // espelho do total; valor inerte (disponibilidade é derivada)
         observacao: sanitize(input.observacao) as string | null,
       }).returning();
       return row;
@@ -732,7 +737,7 @@ const bikesRouter = router({
       id: z.number(),
       tamanho: z.string().optional(),
       quantidadeTotal: z.number().optional(),
-      quantidadeDisponivel: z.number().optional(),
+      quantidadeDisponivel: z.number().optional(), // inerte — disponibilidade é derivada
       observacao: z.string().optional(),
     }))
     .mutation(async ({ input }) => {
@@ -740,11 +745,16 @@ const bikesRouter = router({
       const { eq } = await import("drizzle-orm");
       const db = await (await import("./db")).getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
-      const { id, ...data } = input;
-      await db.update(bikeSizes).set({
-        ...data,
-        observacao: sanitize(data.observacao) as string | null,
-      }).where(eq(bikeSizes.id, id));
+      const { id, quantidadeDisponivel: _ignored, ...data } = input;
+      const updateSet: Record<string, unknown> = {};
+      if (data.tamanho !== undefined) updateSet.tamanho = data.tamanho;
+      if (data.quantidadeTotal !== undefined) {
+        updateSet.quantidadeTotal = data.quantidadeTotal;
+        updateSet.quantidadeDisponivel = data.quantidadeTotal; // espelho inerte
+      }
+      if (data.observacao !== undefined) updateSet.observacao = sanitize(data.observacao);
+      if (Object.keys(updateSet).length > 0)
+        await db.update(bikeSizes).set(updateSet).where(eq(bikeSizes.id, id));
       return { success: true };
     }),
   deleteSize: adminAuthProcedure
