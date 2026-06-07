@@ -92,20 +92,20 @@ export async function getDb() {
  * @param endDate     Fim do periodo desejado (opcional)
  * @param excludeRentalId  ID de aluguel a ignorar (util ao editar)
  */
-export async function getSizeAvailability(
+export async function getSizeBreakdown(
   bikeSizeId: number,
   startDate?: string,
   endDate?: string,
   excludeRentalId?: number,
-): Promise<number> {
+): Promise<{ total: number; alugada: number; manutencao: number; disponivel: number }> {
   const db = await getDb();
-  if (!db) return 0;
+  if (!db) return { total: 0, alugada: 0, manutencao: 0, disponivel: 0 };
 
   const [size] = await db
     .select({ total: bikeSizes.quantidadeTotal, bikeId: bikeSizes.bikeId })
     .from(bikeSizes)
     .where(eq(bikeSizes.id, bikeSizeId));
-  if (!size) return 0;
+  if (!size) return { total: 0, alugada: 0, manutencao: 0, disponivel: 0 };
 
   // Alugueis ativos sobrepostos ao periodo
   const rentalConds: Parameters<typeof and>[0][] = [
@@ -122,7 +122,7 @@ export async function getSizeAvailability(
     .select({ q: rentals.quantity })
     .from(rentals)
     .where(and(...rentalConds));
-  const rented = rentedRows.reduce((s, r) => s + (r.q ?? 1), 0);
+  const alugada = rentedRows.reduce((s, r) => s + (r.q ?? 1), 0);
 
   // Manutencoes em andamento para este tamanho (ou para a bike sem tamanho especifico)
   const maintRows = await db
@@ -140,9 +140,20 @@ export async function getSizeAvailability(
         ),
       ),
     );
-  const maintenance = maintRows.reduce((s, m) => s + (m.q ?? 1), 0);
+  const manutencao = maintRows.reduce((s, m) => s + (m.q ?? 1), 0);
 
-  return Math.max(0, (size.total ?? 0) - rented - maintenance);
+  const total = size.total ?? 0;
+  const disponivel = Math.max(0, total - alugada - manutencao);
+  return { total, alugada, manutencao, disponivel };
+}
+
+export async function getSizeAvailability(
+  bikeSizeId: number,
+  startDate?: string,
+  endDate?: string,
+  excludeRentalId?: number,
+): Promise<number> {
+  return (await getSizeBreakdown(bikeSizeId, startDate, endDate, excludeRentalId)).disponivel;
 }
 
 export async function upsertUser(user: InsertUser): Promise<void> {

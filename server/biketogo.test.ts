@@ -4,6 +4,9 @@ import type { TrpcContext } from "./_core/context";
 
 // ─── Mock database helpers ────────────────────────────────────────────────────
 vi.mock("./db", () => ({
+  getDb: vi.fn().mockResolvedValue(null),
+  getSizeBreakdown: vi.fn().mockResolvedValue({ total: 0, alugada: 0, manutencao: 0, disponivel: 0 }),
+  getSizeAvailability: vi.fn().mockResolvedValue(0),
   getClients: vi.fn().mockResolvedValue({ items: [], total: 0 }),
   getClientById: vi.fn().mockResolvedValue(undefined),
   createClient: vi.fn().mockResolvedValue(1),

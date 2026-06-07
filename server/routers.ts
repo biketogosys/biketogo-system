@@ -555,7 +555,23 @@ const bikesRouter = router({
       const total = allBikes.length;
       const totalPages = Math.ceil(total / limit);
       const offset = (page - 1) * limit;
-      const data = allBikes.slice(offset, offset + limit);
+      const pageBikes = allBikes.slice(offset, offset + limit);
+
+      // Derivar disponibilidade agregada por bike (soma dos tamanhos)
+      const { getDb, getSizeBreakdown } = await import("./db");
+      const db = await getDb();
+      const { bikeSizes: bsTable } = await import("../drizzle/schema");
+      const { eq } = await import("drizzle-orm");
+      const data = await Promise.all(pageBikes.map(async (bike) => {
+        if (!db) return { ...bike, disponivelTotal: 0, qtdTotal: 0 };
+        const sizes = await db.select({ id: bsTable.id }).from(bsTable).where(eq(bsTable.bikeId, bike.id));
+        if (sizes.length === 0) return { ...bike, disponivelTotal: 0, qtdTotal: 0 };
+        const breakdowns = await Promise.all(sizes.map((s) => getSizeBreakdown(s.id)));
+        const disponivelTotal = breakdowns.reduce((acc, bd) => acc + bd.disponivel, 0);
+        const qtdTotal = breakdowns.reduce((acc, bd) => acc + bd.total, 0);
+        return { ...bike, disponivelTotal, qtdTotal };
+      }));
+
       return { data, total, totalPages, page };
     }),
 
@@ -700,16 +716,16 @@ const bikesRouter = router({
   listSizes: adminAuthProcedure
     .input(z.object({ bikeId: z.number() }))
     .query(async ({ input }) => {
-      const { getDb, getSizeAvailability } = await import("./db");
+      const { getDb, getSizeBreakdown } = await import("./db");
       const db = await getDb();
       if (!db) return [];
       const { bikeSizes } = await import("../drizzle/schema");
       const { eq } = await import("drizzle-orm");
       const rows = await db.select().from(bikeSizes).where(eq(bikeSizes.bikeId, input.bikeId));
-      return Promise.all(rows.map(async (s) => ({
-        ...s,
-        quantidadeDisponivel: await getSizeAvailability(s.id),
-      })));
+      return Promise.all(rows.map(async (s) => {
+        const bd = await getSizeBreakdown(s.id);
+        return { ...s, quantidadeDisponivel: bd.disponivel, alugada: bd.alugada, manutencao: bd.manutencao };
+      }));
     }),
   addSize: adminAuthProcedure
     .input(z.object({

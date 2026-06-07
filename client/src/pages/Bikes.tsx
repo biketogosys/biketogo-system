@@ -143,7 +143,27 @@ function BikeSizesTab({ bikeId }: { bikeId: number }) {
               ) : (
                 <div className="flex-1">
                   <span className="font-medium text-sm">{s.tamanho}</span>
-                  <span className="text-xs text-muted-foreground ml-2">Total: {s.quantidadeTotal} | Disponível: {s.quantidadeDisponivel}</span>
+                  <span className="text-xs text-muted-foreground ml-2">Total: {s.quantidadeTotal}</span>
+                  <span className="flex flex-wrap gap-x-2 gap-y-0.5 mt-0.5">
+                    {((s as any).disponivel ?? s.quantidadeDisponivel) > 0 && (
+                      <span className="text-[11px] text-emerald-600 dark:text-emerald-400 flex items-center gap-0.5">
+                        <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                        {(s as any).disponivel ?? s.quantidadeDisponivel} disponível
+                      </span>
+                    )}
+                    {(s as any).alugada > 0 && (
+                      <span className="text-[11px] flex items-center gap-0.5" style={{ color: '#C8920A' }}>
+                        <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ background: '#C8920A' }} />
+                        {(s as any).alugada} alugada
+                      </span>
+                    )}
+                    {(s as any).manutencao > 0 && (
+                      <span className="text-[11px] text-orange-500 flex items-center gap-0.5">
+                        <span className="inline-block w-1.5 h-1.5 rounded-full bg-orange-500" />
+                        {(s as any).manutencao} manutenção
+                      </span>
+                    )}
+                  </span>
                   {s.observacao && <p className="text-xs text-muted-foreground mt-0.5">{s.observacao}</p>}
                 </div>
               )}
@@ -672,9 +692,13 @@ export default function Bikes() {
                       {bike.category && <span className="px-1.5 py-0.5 bg-primary/10 text-primary rounded text-[10px] uppercase font-medium">{categoryLabels[bike.category as BikeCategory] || bike.category}</span>}
                     </td>
                     <td className="px-3 py-2.5">
-                      <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${statusConfig[bike.status as BikeStatus]?.cls ?? "bg-secondary text-secondary-foreground"}`}>
-                        {statusConfig[bike.status as BikeStatus]?.label ?? bike.status}
-                      </span>
+                      {(() => {
+                        const disp = (bike as any).disponivelTotal;
+                        const qtd = (bike as any).qtdTotal;
+                        if (qtd === 0) return <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-secondary text-secondary-foreground">Sem tamanhos</span>;
+                        if (disp > 0) return <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-emerald-100 text-emerald-700 border border-emerald-200">{disp}/{qtd} disp.</span>;
+                        return <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-red-100 text-red-700 border border-red-200">Indisponível</span>;
+                      })()}
                     </td>
                     <td className="px-3 py-2.5 text-[13px] font-semibold text-primary">
                       {bike.dailyRate ? `R$ ${parseFloat(bike.dailyRate).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}` : '—'}
@@ -709,9 +733,13 @@ export default function Bikes() {
                     <p className="text-xs text-muted-foreground">{bike.brand} {bike.category && `• ${categoryLabels[bike.category as BikeCategory] || bike.category}`}</p>
                     {bike.dailyRate && <p className="text-xs font-semibold text-primary mt-0.5">R$ {parseFloat(bike.dailyRate).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}/dia</p>}
                   </div>
-                  <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium flex-shrink-0 ${statusConfig[bike.status as BikeStatus]?.cls ?? "bg-secondary text-secondary-foreground"}`}>
-                    {statusConfig[bike.status as BikeStatus]?.label ?? bike.status}
-                  </span>
+                  {(() => {
+                    const disp = (bike as any).disponivelTotal;
+                    const qtd = (bike as any).qtdTotal;
+                    if (qtd === 0) return <span className="text-[10px] px-2 py-0.5 rounded-full font-medium flex-shrink-0 bg-secondary text-secondary-foreground">Sem tamanhos</span>;
+                    if (disp > 0) return <span className="text-[10px] px-2 py-0.5 rounded-full font-medium flex-shrink-0 bg-emerald-100 text-emerald-700 border border-emerald-200">{disp}/{qtd} disp.</span>;
+                    return <span className="text-[10px] px-2 py-0.5 rounded-full font-medium flex-shrink-0 bg-red-100 text-red-700 border border-red-200">Indisponível</span>;
+                  })()}
                 </div>
                 <div className="flex gap-3 pt-2 mt-2 border-t border-border/50">
                   <button onClick={() => { setEditBike(bike); setShowForm(true); }} className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary"><Pencil className="w-3 h-3" />Editar</button>
