@@ -350,7 +350,7 @@ export async function getBikes(opts?: { status?: Bike["status"]; search?: string
   const db = await getDb();
   if (!db) return [];
   const conditions = [];
-  if (opts?.status) conditions.push(eq(bikes.status, opts.status));
+  // status filter removed — availability is fully derived from getSizeBreakdown
   if (opts?.category) conditions.push(eq(bikes.category, opts.category as any));
   if (opts?.search) {
     const q = `%${opts.search}%`;

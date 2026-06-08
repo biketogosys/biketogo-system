@@ -144,6 +144,7 @@ export const bikes = pgTable("bikes", {
   photoUrl: text("photoUrl"),
   quantity: integer("quantity").default(1).notNull(),
   notes: text("notes"),
+  /** @deprecated availability is now fully derived from getSizeBreakdown; this column is no longer written or read by the application */
   status: bikeStatusEnum("status").default("available").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().notNull(),
@@ -318,6 +319,7 @@ export const bikeSizes = pgTable("bike_sizes", {
   bikeId: integer("bikeId").notNull(),
   tamanho: varchar("tamanho", { length: 20 }).notNull(),
   quantidadeTotal: integer("quantidadeTotal").default(1).notNull(),
+  /** @deprecated availability is now fully derived from getSizeBreakdown; this column is no longer written or read by the application */
   quantidadeDisponivel: integer("quantidadeDisponivel").default(1).notNull(),
   observacao: text("observacao"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),

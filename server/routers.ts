@@ -546,31 +546,45 @@ const bikesRouter = router({
     }))
     .query(async ({ input }) => {
       const { page, limit, ...rawFilters } = input;
-      const filters = {
-        status: rawFilters.status ?? undefined,
+      // Fetch all bikes matching search/category (status filter is now derived)
+      const allBikesRaw = await getBikes({
         search: rawFilters.search ?? undefined,
         category: rawFilters.category ?? undefined,
-      };
-      const allBikes = await getBikes(filters);
-      const total = allBikes.length;
-      const totalPages = Math.ceil(total / limit);
-      const offset = (page - 1) * limit;
-      const pageBikes = allBikes.slice(offset, offset + limit);
+      });
 
-      // Derivar disponibilidade agregada por bike (soma dos tamanhos)
+      // Compute derived breakdown for ALL bikes before filtering
       const { getDb, getSizeBreakdown } = await import("./db");
       const db = await getDb();
       const { bikeSizes: bsTable } = await import("../drizzle/schema");
       const { eq } = await import("drizzle-orm");
-      const data = await Promise.all(pageBikes.map(async (bike) => {
-        if (!db) return { ...bike, disponivelTotal: 0, qtdTotal: 0 };
+
+      const allBikes = await Promise.all(allBikesRaw.map(async (bike) => {
+        if (!db) return { ...bike, disponivelTotal: 0, alugadaTotal: 0, manutencaoTotal: 0, qtdTotal: 0 };
         const sizes = await db.select({ id: bsTable.id }).from(bsTable).where(eq(bsTable.bikeId, bike.id));
-        if (sizes.length === 0) return { ...bike, disponivelTotal: 0, qtdTotal: 0 };
+        if (sizes.length === 0) return { ...bike, disponivelTotal: 0, alugadaTotal: 0, manutencaoTotal: 0, qtdTotal: 0 };
         const breakdowns = await Promise.all(sizes.map((s) => getSizeBreakdown(s.id)));
         const disponivelTotal = breakdowns.reduce((acc, bd) => acc + bd.disponivel, 0);
+        const alugadaTotal = breakdowns.reduce((acc, bd) => acc + bd.alugada, 0);
+        const manutencaoTotal = breakdowns.reduce((acc, bd) => acc + bd.manutencao, 0);
         const qtdTotal = breakdowns.reduce((acc, bd) => acc + bd.total, 0);
-        return { ...bike, disponivelTotal, qtdTotal };
+        return { ...bike, disponivelTotal, alugadaTotal, manutencaoTotal, qtdTotal };
       }));
+
+      // Apply derived status filter
+      const statusFilter = rawFilters.status ?? undefined;
+      const filtered = statusFilter
+        ? allBikes.filter((bike) => {
+            if (statusFilter === "available") return bike.disponivelTotal > 0;
+            if (statusFilter === "rented") return bike.alugadaTotal > 0;
+            if (statusFilter === "maintenance") return bike.manutencaoTotal > 0;
+            return true;
+          })
+        : allBikes;
+
+      const total = filtered.length;
+      const totalPages = Math.ceil(total / limit);
+      const offset = (page - 1) * limit;
+      const data = filtered.slice(offset, offset + limit);
 
       return { data, total, totalPages, page };
     }),
@@ -823,22 +837,7 @@ const bikesRouter = router({
         status: input.status,
         fotos: input.fotos ?? null,
       }).returning();
-      if (input.status === "em_andamento") {
-        // Decrement quantidadeDisponivel for affected sizes
-        if (input.tamanhoBikeId) {
-          // Specific size: decrement by quantidadeAfetada
-          await db.update(bikeSizes)
-            .set({ quantidadeDisponivel: sql`GREATEST(0, ${bikeSizes.quantidadeDisponivel} - ${input.quantidadeAfetada})` })
-            .where(eq(bikeSizes.id, input.tamanhoBikeId));
-        } else {
-          // All sizes of this bike: decrement each by quantidadeAfetada
-          const { eq: eqOp } = await import("drizzle-orm");
-          await db.update(bikeSizes)
-            .set({ quantidadeDisponivel: sql`GREATEST(0, ${bikeSizes.quantidadeDisponivel} - ${input.quantidadeAfetada})` })
-            .where(eqOp(bikeSizes.bikeId, input.bikeId));
-        }
-        await db.update(bikes).set({ status: "maintenance" }).where(eq(bikes.id, input.bikeId));
-      }
+      // availability is fully derived — no writes to quantidadeDisponivel or bikes.status needed
       return row;
     }),
   updateMaintenance: adminAuthProcedure
@@ -867,31 +866,7 @@ const bikesRouter = router({
         ...(data.fotos !== undefined ? { fotos: data.fotos } : {}),
         updatedAt: new Date(),
       }).where(eq(bikeMaintenanceLogs.id, id));
-      if (data.status === "concluida" && currentLog) {
-        // Restore quantidadeDisponivel for the affected sizes
-        const qty = currentLog.quantidadeAfetada ?? 1;
-        if (currentLog.tamanhoBikeId) {
-          // Restore specific size
-          const sizeRow = await db.select({ total: bikeSizes.quantidadeTotal })
-            .from(bikeSizes).where(eq(bikeSizes.id, currentLog.tamanhoBikeId));
-          const maxQty = sizeRow[0]?.total ?? qty;
-          await db.update(bikeSizes)
-            .set({ quantidadeDisponivel: sql`LEAST(${maxQty}, ${bikeSizes.quantidadeDisponivel} + ${qty})` })
-            .where(eq(bikeSizes.id, currentLog.tamanhoBikeId));
-        } else {
-          // Restore all sizes of this bike
-          await db.update(bikeSizes)
-            .set({ quantidadeDisponivel: sql`LEAST(${bikeSizes.quantidadeTotal}, ${bikeSizes.quantidadeDisponivel} + ${qty})` })
-            .where(eq(bikeSizes.bikeId, bikeId));
-        }
-        const remaining = await db.select({ id: bikeMaintenanceLogs.id, status: bikeMaintenanceLogs.status })
-          .from(bikeMaintenanceLogs)
-          .where(eq(bikeMaintenanceLogs.bikeId, bikeId));
-        const hasOngoing = remaining.some((r: any) => r.id !== id && r.status === "em_andamento");
-        if (!hasOngoing) {
-          await db.update(bikes).set({ status: "available" }).where(eq(bikes.id, bikeId));
-        }
-      }
+      // availability is fully derived — no writes to quantidadeDisponivel or bikes.status needed
       return { success: true };
     }),
   uploadBikePhoto: adminAuthProcedure
@@ -939,30 +914,7 @@ const bikesRouter = router({
       // Fetch the log before deleting so we can restore quantities
       const [log] = await db.select().from(bikeMaintenanceLogs).where(eq(bikeMaintenanceLogs.id, input.logId));
       if (!log) throw new TRPCError({ code: "NOT_FOUND", message: "Registro de manutenção não encontrado." });
-      // If the log was still active, restore quantidadeDisponivel
-      if (log.status === "em_andamento") {
-        const qty = log.quantidadeAfetada ?? 1;
-        if (log.tamanhoBikeId) {
-          const sizeRow = await db.select({ total: bikeSizes.quantidadeTotal })
-            .from(bikeSizes).where(eq(bikeSizes.id, log.tamanhoBikeId));
-          const maxQty = sizeRow[0]?.total ?? qty;
-          await db.update(bikeSizes)
-            .set({ quantidadeDisponivel: sql`LEAST(${maxQty}, ${bikeSizes.quantidadeDisponivel} + ${qty})` })
-            .where(eq(bikeSizes.id, log.tamanhoBikeId));
-        } else {
-          await db.update(bikeSizes)
-            .set({ quantidadeDisponivel: sql`LEAST(${bikeSizes.quantidadeTotal}, ${bikeSizes.quantidadeDisponivel} + ${qty})` })
-            .where(eq(bikeSizes.bikeId, input.bikeId));
-        }
-        // Check if there are other active maintenance logs; if not, restore bike status
-        const remaining = await db.select({ id: bikeMaintenanceLogs.id, status: bikeMaintenanceLogs.status })
-          .from(bikeMaintenanceLogs)
-          .where(eq(bikeMaintenanceLogs.bikeId, input.bikeId));
-        const hasOngoing = remaining.some((r: any) => r.id !== input.logId && r.status === "em_andamento");
-        if (!hasOngoing) {
-          await db.update(bikes).set({ status: "available" }).where(eq(bikes.id, input.bikeId));
-        }
-      }
+      // availability is fully derived — no writes to quantidadeDisponivel or bikes.status needed
       // Delete the log
       await db.delete(bikeMaintenanceLogs).where(eq(bikeMaintenanceLogs.id, input.logId));
       // Audit log
@@ -1044,9 +996,6 @@ const rentalsRouter = router({
 
       const id = await createRental(data);
 
-      // Mark bike as rented
-      await updateBike(input.bikeId, { status: "rented" });
-
       // Add accessories
       if (rentalAccs && rentalAccs.length > 0) {
         for (const acc of rentalAccs) {
@@ -1091,10 +1040,7 @@ const rentalsRouter = router({
 
       await updateRental(id, updateData);
 
-      // If returned or cancelled, free the bike
-      if (data.status === "returned" || data.status === "cancelled") {
-        await updateBike(rental.bikeId, { status: "available" });
-      }
+      // availability is fully derived — no bikes.status flip needed on return/cancel
       return { success: true };
     }),
 
@@ -1116,7 +1062,6 @@ const rentalsRouter = router({
         notes: input.returnNotes || null,
       } as any);
 
-      await updateBike(rental.bikeId, { status: "available" });
       return { success: true };
     }),
 
@@ -1124,9 +1069,7 @@ const rentalsRouter = router({
     .input(z.object({ id: z.number() }))
     .mutation(async ({ ctx, input }) => {
       const rental = await getRentalById(input.id);
-      if (rental && rental.status === "active") {
-        await updateBike(rental.bikeId, { status: "available" });
-      }
+      // availability is fully derived — no bikes.status flip needed on delete
       await archiveRental(input.id);
       await createAuditLog({ adminId: (ctx as any).adminUser?.id ?? null, acao: "arquivou_aluguel", tabela: "rentals", registroId: input.id });
       return { success: true };
@@ -2971,15 +2914,7 @@ const contractsRouter = router({
           notes: input.notes ?? null,
         } as any);
         rentalIds.push(rentalId);
-        // Mark bike as rented
-        await updateBike(b.bikeId, { status: "rented" });
-        // Decrease available quantity for the size
-        if (b.bikeSizeId) {
-          const { bikeSizes } = await import("../drizzle/schema");
-          await db.update(bikeSizes)
-            .set({ quantidadeDisponivel: drizzleSql`GREATEST(0, ${bikeSizes.quantidadeDisponivel} - ${b.quantity})` })
-            .where(eq(bikeSizes.id, b.bikeSizeId));
-        }
+        // availability is fully derived — no writes to quantidadeDisponivel or bikes.status needed
       }
 
       // Add accessories to contract_accessories and rental_accessories
