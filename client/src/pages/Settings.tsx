@@ -1,4 +1,3 @@
-import { trpc } from "@/lib/trpc";
 import { useState, useEffect, useMemo } from "react";
 import { maskPhone } from "@/hooks/useMask";
 import { toast } from "sonner";
@@ -10,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { trpc } from "@/lib/trpc";
 
 const GOLD = "oklch(0.68 0.12 65)";
 const GOLD_FG = "oklch(0.10 0.005 240)";
@@ -19,69 +19,72 @@ const DEFAULT_DELIVERY_HOURS = [
   "08:00","09:00","10:00","11:00","13:00","14:00","15:00","16:00","17:00","18:00",
 ];
 
-function SaveBtn({ onClick, disabled }: { onClick: () => void; disabled: boolean }) {
+// ── Section save button ──────────────────────────────────────────────────────
+function SectionSaveBtn({ onClick, saving }: { onClick: () => void; saving: boolean }) {
   return (
-    <Button size="sm" onClick={onClick} disabled={disabled} style={{ background: GOLD, color: GOLD_FG }}>
-      <Save className="w-3.5 h-3.5" />
+    <Button
+      size="sm"
+      onClick={onClick}
+      disabled={saving}
+      style={{ background: GOLD, color: GOLD_FG }}
+      className="gap-1.5"
+    >
+      {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+      Salvar
     </Button>
   );
 }
 
-function SettingField({
-  label, value, onChange, onSave, saving, placeholder, type = "text", hint, mono, secret,
+// ── Simple field (no save button) ───────────────────────────────────────────
+function Field({
+  label, value, onChange, placeholder, type = "text", hint, mono, secret,
 }: {
-  label: string; value: string; onChange: (v: string) => void; onSave: () => void;
-  saving: boolean; placeholder?: string; type?: string; hint?: string; mono?: boolean; secret?: boolean;
+  label: string; value: string; onChange: (v: string) => void;
+  placeholder?: string; type?: string; hint?: string; mono?: boolean; secret?: boolean;
 }) {
   const [show, setShow] = useState(false);
   return (
     <div>
       <Label className="text-xs text-muted-foreground mb-1.5 block">{label}</Label>
-      <div className="flex gap-2">
-        <div className="relative flex-1">
-          <Input
-            type={secret && !show ? "password" : type}
-            value={value}
-            onChange={(e) => onChange(e.target.value)}
-            className={`bg-secondary border-border ${mono ? "font-mono text-xs" : ""} ${secret ? "pr-9" : ""}`}
-            placeholder={placeholder}
-          />
-          {secret && (
-            <button
-              type="button"
-              onClick={() => setShow(!show)}
-              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-            >
-              {show ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-            </button>
-          )}
-        </div>
-        <SaveBtn onClick={onSave} disabled={saving} />
+      <div className="relative">
+        <Input
+          type={secret && !show ? "password" : type}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          className={`bg-secondary border-border ${mono ? "font-mono text-xs" : ""} ${secret ? "pr-9" : ""}`}
+          placeholder={placeholder}
+        />
+        {secret && (
+          <button
+            type="button"
+            onClick={() => setShow(!show)}
+            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+          >
+            {show ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+          </button>
+        )}
       </div>
       {hint && <p className="text-xs text-muted-foreground mt-1.5">{hint}</p>}
     </div>
   );
 }
 
-function SettingTextarea({
-  label, value, onChange, onSave, saving, placeholder, hint, rows = 4,
+function FieldTextarea({
+  label, value, onChange, placeholder, hint, rows = 4,
 }: {
-  label: string; value: string; onChange: (v: string) => void; onSave: () => void;
-  saving: boolean; placeholder?: string; hint?: string; rows?: number;
+  label: string; value: string; onChange: (v: string) => void;
+  placeholder?: string; hint?: string; rows?: number;
 }) {
   return (
     <div>
       <Label className="text-xs text-muted-foreground mb-1.5 block">{label}</Label>
-      <div className="flex gap-2 items-start">
-        <Textarea
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          className="bg-secondary border-border flex-1 text-sm resize-y"
-          placeholder={placeholder}
-          rows={rows}
-        />
-        <SaveBtn onClick={onSave} disabled={saving} />
-      </div>
+      <Textarea
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="bg-secondary border-border w-full text-sm resize-y"
+        placeholder={placeholder}
+        rows={rows}
+      />
       {hint && <p className="text-xs text-muted-foreground mt-1.5">{hint}</p>}
     </div>
   );
@@ -89,8 +92,8 @@ function SettingTextarea({
 
 export default function Settings() {
   const { data: settings, isLoading } = trpc.settings.getAll.useQuery();
-  const setMutation = trpc.settings.set.useMutation({
-    onSuccess: () => toast.success("Configuração salva!"),
+  const setManyMutation = trpc.settings.setMany.useMutation({
+    onSuccess: () => toast.success("Configurações salvas!"),
     onError: (e) => toast.error(e.message),
   });
 
@@ -104,7 +107,6 @@ export default function Settings() {
   const [companyPhone, setCompanyPhone] = useState("");
   const [companyEmail, setCompanyEmail] = useState("");
   const [companyWebsite, setCompanyWebsite] = useState("");
-  // New PDF fields
   const [companyForo, setCompanyForo] = useState("");
   const [companyTerms, setCompanyTerms] = useState("");
   const [companyCaucao, setCompanyCaucao] = useState("");
@@ -114,7 +116,6 @@ export default function Settings() {
   const [deliveryMargin, setDeliveryMargin] = useState("30");
 
   // ── Delivery Hours ───────────────────────────────────────────────────────────
-  // Each entry: { time: "HH:MM", active: boolean, custom: boolean }
   type HourEntry = { time: string; active: boolean; custom: boolean };
   const [deliveryHours, setDeliveryHours] = useState<HourEntry[]>(() =>
     DEFAULT_DELIVERY_HOURS.map((t) => ({ time: t, active: true, custom: false }))
@@ -147,6 +148,17 @@ export default function Settings() {
 
   // ── Shopify ──────────────────────────────────────────────────────────────────
   const [shopifyApiKey, setShopifyApiKey] = useState("");
+
+  // ── Section saving flags ─────────────────────────────────────────────────────
+  const [savingCompany, setSavingCompany] = useState(false);
+  const [savingDelivery, setSavingDelivery] = useState(false);
+  const [savingOperating, setSavingOperating] = useState(false);
+  const [savingNotifications, setSavingNotifications] = useState(false);
+  const [savingResend, setSavingResend] = useState(false);
+  const [savingZapi, setSavingZapi] = useState(false);
+  const [savingWaCloud, setSavingWaCloud] = useState(false);
+  const [savingShopify, setSavingShopify] = useState(false);
+  const [savingArchive, setSavingArchive] = useState(false);
 
   // ── Load settings ────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -181,11 +193,9 @@ export default function Settings() {
     setCompanyTerms(map["company_terms"] || "");
     setCompanyCaucao(map["company_caucao"] || "");
 
-    // Load delivery hours
     if (map["delivery_hours"]) {
       try {
         const saved: string[] = JSON.parse(map["delivery_hours"]);
-        // Merge: default hours + custom hours from saved, mark active/inactive
         const allTimes = new Set([...DEFAULT_DELIVERY_HOURS, ...saved]);
         const entries: HourEntry[] = Array.from(allTimes)
           .sort()
@@ -201,8 +211,23 @@ export default function Settings() {
     }
   }, [settings]);
 
-  const save = (key: string, value: string) => setMutation.mutate({ key, value });
-  const saving = setMutation.isPending;
+  // ── Section save helpers ─────────────────────────────────────────────────────
+  async function saveSection(
+    entries: Array<{ key: string; value: string }>,
+    setSaving: (v: boolean) => void,
+    validate?: () => string | null
+  ) {
+    if (validate) {
+      const err = validate();
+      if (err) { toast.error(err); return; }
+    }
+    setSaving(true);
+    try {
+      await setManyMutation.mutateAsync({ entries });
+    } finally {
+      setSaving(false);
+    }
+  }
 
   // ── Delivery hours helpers ───────────────────────────────────────────────────
   const activeHours = useMemo(() => deliveryHours.filter((h) => h.active).map((h) => h.time), [deliveryHours]);
@@ -226,7 +251,7 @@ export default function Settings() {
   async function saveDeliveryHours() {
     setHoursSaving(true);
     try {
-      await setMutation.mutateAsync({ key: "delivery_hours", value: JSON.stringify(activeHours) });
+      await setManyMutation.mutateAsync({ entries: [{ key: "delivery_hours", value: JSON.stringify(activeHours) }] });
     } finally {
       setHoursSaving(false);
     }
@@ -254,123 +279,71 @@ export default function Settings() {
       <div className="space-y-6">
         {/* ─── Dados da Empresa ────────────────────────────────────────────── */}
         <div className="bg-card border border-border rounded-xl p-6">
-          <div className="flex items-center gap-2 mb-4">
-            <Building2 className="w-5 h-5 text-primary" />
-            <h2 className="text-base font-semibold text-foreground">Dados da Empresa</h2>
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <Building2 className="w-5 h-5 text-primary" />
+              <h2 className="text-base font-semibold text-foreground">Dados da Empresa</h2>
+            </div>
+            <SectionSaveBtn
+              saving={savingCompany}
+              onClick={() => saveSection([
+                { key: "company_name", value: companyName },
+                { key: "company_cnpj", value: companyCnpj },
+                { key: "company_address", value: companyAddress },
+                { key: "company_city", value: companyCity },
+                { key: "company_state", value: companyState },
+                { key: "company_cep", value: companyCep },
+                { key: "company_phone", value: companyPhone },
+                { key: "company_email", value: companyEmail },
+                { key: "company_website", value: companyWebsite },
+                { key: "company_foro", value: companyForo },
+                { key: "company_caucao", value: companyCaucao },
+                { key: "company_terms", value: companyTerms },
+              ], setSavingCompany)}
+            />
           </div>
           <p className="text-xs text-muted-foreground mb-4">
             Informações usadas no cabeçalho do contrato PDF e nos e-mails automáticos.
           </p>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <SettingField
-              label="Nome da empresa"
-              value={companyName}
-              onChange={setCompanyName}
-              onSave={() => save("company_name", companyName)}
-              saving={saving}
-              placeholder="Bike To Go Floripa"
-            />
-            <SettingField
-              label="CNPJ"
-              value={companyCnpj}
-              onChange={setCompanyCnpj}
-              onSave={() => save("company_cnpj", companyCnpj)}
-              saving={saving}
-              placeholder="00.000.000/0001-00"
-              mono
-            />
+            <Field label="Nome da empresa" value={companyName} onChange={setCompanyName} placeholder="Bike To Go Floripa" />
+            <Field label="CNPJ" value={companyCnpj} onChange={setCompanyCnpj} placeholder="00.000.000/0001-00" mono />
             <div className="sm:col-span-2">
-              <SettingField
-                label="Endereço (rua, número, complemento)"
-                value={companyAddress}
-                onChange={setCompanyAddress}
-                onSave={() => save("company_address", companyAddress)}
-                saving={saving}
-                placeholder="Rua das Flores, 123 — Sala 2"
-              />
+              <Field label="Endereço (rua, número, complemento)" value={companyAddress} onChange={setCompanyAddress} placeholder="Rua das Flores, 123 — Sala 2" />
             </div>
-            <SettingField
-              label="Cidade"
-              value={companyCity}
-              onChange={setCompanyCity}
-              onSave={() => save("company_city", companyCity)}
-              saving={saving}
-              placeholder="Florianópolis"
-            />
-            <SettingField
-              label="Estado (UF)"
-              value={companyState}
-              onChange={setCompanyState}
-              onSave={() => save("company_state", companyState)}
-              saving={saving}
-              placeholder="SC"
-            />
-            <SettingField
-              label="CEP"
-              value={companyCep}
-              onChange={setCompanyCep}
-              onSave={() => save("company_cep", companyCep)}
-              saving={saving}
-              placeholder="88000-000"
-              mono
-            />
-            <SettingField
-              label="Telefone da empresa"
-              value={companyPhone}
-              onChange={(v) => setCompanyPhone(maskPhone(v))}
-              onSave={() => save("company_phone", companyPhone)}
-              saving={saving}
-              placeholder="(48) 99999-9999"
-            />
-            <SettingField
-              label="E-mail da empresa"
-              value={companyEmail}
-              onChange={setCompanyEmail}
-              onSave={() => save("company_email", companyEmail)}
-              saving={saving}
-              placeholder="contato@biketogo.com.br"
-              type="email"
-            />
-            <SettingField
-              label="Site"
-              value={companyWebsite}
-              onChange={setCompanyWebsite}
-              onSave={() => save("company_website", companyWebsite)}
-              saving={saving}
-              placeholder="https://biketogo.com.br"
-            />
-            {/* ── Novos campos para o PDF ── */}
+            <Field label="Cidade" value={companyCity} onChange={setCompanyCity} placeholder="Florianópolis" />
+            <Field label="Estado (UF)" value={companyState} onChange={setCompanyState} placeholder="SC" />
+            <Field label="CEP" value={companyCep} onChange={setCompanyCep} placeholder="88000-000" mono />
+            <Field label="Telefone da empresa" value={companyPhone} onChange={(v) => setCompanyPhone(maskPhone(v))} placeholder="(48) 99999-9999" />
+            <Field label="E-mail da empresa" value={companyEmail} onChange={setCompanyEmail} placeholder="contato@biketogo.com.br" type="email" />
+            <Field label="Site" value={companyWebsite} onChange={setCompanyWebsite} placeholder="https://biketogo.com.br" />
+
+            {/* ── Campos do Contrato PDF ── */}
             <div className="sm:col-span-2 border-t border-border pt-4 mt-2">
               <p className="text-xs text-muted-foreground mb-3 font-medium">Campos do Contrato PDF</p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <SettingField
+                <Field
                   label="Foro (comarca)"
                   value={companyForo}
                   onChange={setCompanyForo}
-                  onSave={() => save("company_foro", companyForo)}
-                  saving={saving}
                   placeholder="Florianópolis/SC"
                   hint="Foro de eleição para resolução de conflitos"
                 />
-                <SettingField
+                <Field
                   label="Valor de caução (R$)"
                   value={companyCaucao}
                   onChange={setCompanyCaucao}
-                  onSave={() => save("company_caucao", companyCaucao)}
-                  saving={saving}
                   placeholder="500.00"
                   type="number"
                   hint="Caução exigida no contrato (opcional)"
                 />
                 <div className="sm:col-span-2">
-                  <SettingTextarea
+                  <FieldTextarea
                     label="Termos e condições do contrato"
                     value={companyTerms}
                     onChange={setCompanyTerms}
-                    onSave={() => save("company_terms", companyTerms)}
-                    saving={saving}
                     placeholder="Cláusulas e condições gerais do contrato de aluguel..."
-                    hint="Texto exibido na seção de Termos e Condições do PDF"
+                    hint="Texto exibido na seção de Termos e Condições do PDF. Use linhas em branco para separar cláusulas."
                     rows={6}
                   />
                 </div>
@@ -381,29 +354,22 @@ export default function Settings() {
 
         {/* ─── Delivery ─────────────────────────────────────────────────────── */}
         <div className="bg-card border border-border rounded-xl p-6">
-          <div className="flex items-center gap-2 mb-4">
-            <Truck className="w-5 h-5 text-primary" />
-            <h2 className="text-base font-semibold text-foreground">Entrega</h2>
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <Truck className="w-5 h-5 text-primary" />
+              <h2 className="text-base font-semibold text-foreground">Entrega</h2>
+            </div>
+            <SectionSaveBtn
+              saving={savingDelivery}
+              onClick={() => saveSection([
+                { key: "delivery_fee", value: deliveryFee },
+                { key: "delivery_margin_min", value: deliveryMargin },
+              ], setSavingDelivery)}
+            />
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <SettingField
-              label="Taxa de entrega (R$)"
-              value={deliveryFee}
-              onChange={setDeliveryFee}
-              onSave={() => save("delivery_fee", deliveryFee)}
-              saving={saving}
-              type="number"
-              placeholder="30.00"
-            />
-            <SettingField
-              label="Margem de trânsito (min)"
-              value={deliveryMargin}
-              onChange={setDeliveryMargin}
-              onSave={() => save("delivery_margin_min", deliveryMargin)}
-              saving={saving}
-              type="number"
-              placeholder="30"
-            />
+            <Field label="Taxa de entrega (R$)" value={deliveryFee} onChange={setDeliveryFee} type="number" placeholder="30.00" />
+            <Field label="Margem de trânsito (min)" value={deliveryMargin} onChange={setDeliveryMargin} type="number" placeholder="30" />
           </div>
         </div>
 
@@ -418,7 +384,6 @@ export default function Settings() {
             Apenas os horários <strong>ativos</strong> (marcados) serão exibidos.
           </p>
 
-          {/* Grid de toggles */}
           <div className="grid grid-cols-3 sm:grid-cols-5 gap-2 mb-4">
             {deliveryHours.map((h) => (
               <div key={h.time} className="relative group">
@@ -448,7 +413,6 @@ export default function Settings() {
             ))}
           </div>
 
-          {/* Adicionar horário personalizado */}
           <div className="flex gap-2 mb-4">
             <Input
               type="time"
@@ -457,19 +421,12 @@ export default function Settings() {
               className="bg-secondary border-border w-36 font-mono text-sm"
               placeholder="HH:MM"
             />
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              onClick={addCustomHour}
-              className="gap-1.5"
-            >
+            <Button type="button" size="sm" variant="outline" onClick={addCustomHour} className="gap-1.5">
               <Plus className="w-3.5 h-3.5" />
               Adicionar horário
             </Button>
           </div>
 
-          {/* Resumo + salvar */}
           <div className="flex items-center justify-between pt-3 border-t border-border">
             <p className="text-xs text-muted-foreground">
               {activeHours.length} horário(s) ativo(s) de {deliveryHours.length} total
@@ -489,68 +446,67 @@ export default function Settings() {
 
         {/* ─── Operating Hours ──────────────────────────────────────────────── */}
         <div className="bg-card border border-border rounded-xl p-6">
-          <div className="flex items-center gap-2 mb-4">
-            <Clock className="w-5 h-5 text-primary" />
-            <h2 className="text-base font-semibold text-foreground">Horário de Funcionamento</h2>
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <Clock className="w-5 h-5 text-primary" />
+              <h2 className="text-base font-semibold text-foreground">Horário de Funcionamento</h2>
+            </div>
+            <SectionSaveBtn
+              saving={savingOperating}
+              onClick={() => saveSection([
+                { key: "opening_time", value: openingTime },
+                { key: "closing_time", value: closingTime },
+              ], setSavingOperating)}
+            />
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <SettingField
-              label="Abertura"
-              value={openingTime}
-              onChange={setOpeningTime}
-              onSave={() => save("opening_time", openingTime)}
-              saving={saving}
-              type="time"
-            />
-            <SettingField
-              label="Fechamento"
-              value={closingTime}
-              onChange={setClosingTime}
-              onSave={() => save("closing_time", closingTime)}
-              saving={saving}
-              type="time"
-            />
+            <Field label="Abertura" value={openingTime} onChange={setOpeningTime} type="time" />
+            <Field label="Fechamento" value={closingTime} onChange={setClosingTime} type="time" />
           </div>
         </div>
 
         {/* ─── Notifications (contact) ──────────────────────────────────────── */}
         <div className="bg-card border border-border rounded-xl p-6">
-          <div className="flex items-center gap-2 mb-4">
-            <Phone className="w-5 h-5 text-primary" />
-            <h2 className="text-base font-semibold text-foreground">Contato & Notificações</h2>
-          </div>
-          <div className="space-y-4">
-            <SettingField
-              label="Número WhatsApp para receber notificações"
-              value={whatsappNumber}
-              onChange={(v) => setWhatsappNumber(maskPhone(v))}
-              onSave={() => {
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <Phone className="w-5 h-5 text-primary" />
+              <h2 className="text-base font-semibold text-foreground">Contato & Notificações</h2>
+            </div>
+            <SectionSaveBtn
+              saving={savingNotifications}
+              onClick={() => {
                 const digits = whatsappNumber.replace(/\D/g, "");
                 if (whatsappNumber && digits.length < 10) {
                   toast.error("Número de WhatsApp inválido. Informe DDD + número.");
                   return;
                 }
-                save("whatsapp_number", whatsappNumber);
+                saveSection([
+                  { key: "whatsapp_number", value: whatsappNumber },
+                  { key: "notification_email", value: notificationEmail },
+                  { key: "admin_notification_email", value: adminNotificationEmail },
+                ], setSavingNotifications);
               }}
-              saving={saving}
+            />
+          </div>
+          <div className="space-y-4">
+            <Field
+              label="Número WhatsApp para receber notificações"
+              value={whatsappNumber}
+              onChange={(v) => setWhatsappNumber(maskPhone(v))}
               placeholder="(48) 99999-9999"
               hint="Formato: (48) 99999-9999 — DDD + número"
             />
-            <SettingField
+            <Field
               label="Email de contato / remetente"
               value={notificationEmail}
               onChange={setNotificationEmail}
-              onSave={() => save("notification_email", notificationEmail)}
-              saving={saving}
               placeholder="biketogo.floripa@gmail.com"
               hint="Email usado como remetente nas confirmações de reserva para clientes"
             />
-            <SettingField
+            <Field
               label="E-mail de notificação do admin"
               value={adminNotificationEmail}
               onChange={setAdminNotificationEmail}
-              onSave={() => save("admin_notification_email", adminNotificationEmail)}
-              saving={saving}
               placeholder="admin@empresa.com"
               hint="Receba alertas de novas reservas pendentes neste e-mail"
             />
@@ -559,12 +515,18 @@ export default function Settings() {
 
         {/* ─── Email API (Resend) ───────────────────────────────────────────── */}
         <div className="bg-card border border-border rounded-xl p-6">
-          <div className="flex items-center gap-2 mb-4">
-            <Mail className="w-5 h-5 text-primary" />
-            <h2 className="text-base font-semibold text-foreground">Email Automático (Resend)</h2>
-            <span className="text-[10px] px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20">
-              Opcional
-            </span>
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <Mail className="w-5 h-5 text-primary" />
+              <h2 className="text-base font-semibold text-foreground">Email Automático (Resend)</h2>
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20">
+                Opcional
+              </span>
+            </div>
+            <SectionSaveBtn
+              saving={savingResend}
+              onClick={() => saveSection([{ key: "resend_api_key", value: resendApiKey }], setSavingResend)}
+            />
           </div>
           <p className="text-xs text-muted-foreground mb-4">
             Configure a API do{" "}
@@ -574,12 +536,10 @@ export default function Settings() {
             para enviar emails automáticos de confirmação de reserva para os clientes.
             Crie uma conta gratuita (100 emails/dia) e gere uma API key.
           </p>
-          <SettingField
+          <Field
             label="Resend API Key"
             value={resendApiKey}
             onChange={setResendApiKey}
-            onSave={() => save("resend_api_key", resendApiKey)}
-            saving={saving}
             placeholder="re_xxxxxxxxxxxxxxxxx"
             mono
             secret
@@ -602,10 +562,19 @@ export default function Settings() {
 
           {/* Z-API */}
           <div className="mb-5 pb-5 border-b border-border">
-            <h3 className="text-xs font-semibold text-foreground mb-3 flex items-center gap-1.5">
-              <Link className="w-3.5 h-3.5" />
-              Opção 1: Z-API (Recomendado para Brasil)
-            </h3>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+                <Link className="w-3.5 h-3.5" />
+                Opção 1: Z-API (Recomendado para Brasil)
+              </h3>
+              <SectionSaveBtn
+                saving={savingZapi}
+                onClick={() => saveSection([
+                  { key: "zapi_instance_id", value: zapiInstanceId },
+                  { key: "zapi_token", value: zapiToken },
+                ], setSavingZapi)}
+              />
+            </div>
             <p className="text-xs text-muted-foreground mb-3">
               Crie uma conta em{" "}
               <a href="https://z-api.io" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">
@@ -614,34 +583,26 @@ export default function Settings() {
               e conecte seu WhatsApp. Copie o Instance ID e Token do painel.
             </p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <SettingField
-                label="Z-API Instance ID"
-                value={zapiInstanceId}
-                onChange={setZapiInstanceId}
-                onSave={() => save("zapi_instance_id", zapiInstanceId)}
-                saving={saving}
-                placeholder="XXXXXX"
-                mono
-              />
-              <SettingField
-                label="Z-API Token"
-                value={zapiToken}
-                onChange={setZapiToken}
-                onSave={() => save("zapi_token", zapiToken)}
-                saving={saving}
-                placeholder="Token da instância"
-                mono
-                secret
-              />
+              <Field label="Z-API Instance ID" value={zapiInstanceId} onChange={setZapiInstanceId} placeholder="XXXXXX" mono />
+              <Field label="Z-API Token" value={zapiToken} onChange={setZapiToken} placeholder="Token da instância" mono secret />
             </div>
           </div>
 
           {/* WhatsApp Cloud API */}
           <div>
-            <h3 className="text-xs font-semibold text-foreground mb-3 flex items-center gap-1.5">
-              <Link className="w-3.5 h-3.5" />
-              Opção 2: WhatsApp Cloud API (Meta)
-            </h3>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+                <Link className="w-3.5 h-3.5" />
+                Opção 2: WhatsApp Cloud API (Meta)
+              </h3>
+              <SectionSaveBtn
+                saving={savingWaCloud}
+                onClick={() => saveSection([
+                  { key: "whatsapp_api_token", value: waApiToken },
+                  { key: "whatsapp_phone_id", value: waPhoneId },
+                ], setSavingWaCloud)}
+              />
+            </div>
             <p className="text-xs text-muted-foreground mb-3">
               Configure pelo{" "}
               <a href="https://developers.facebook.com" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">
@@ -650,34 +611,23 @@ export default function Settings() {
               . Requer conta Business verificada.
             </p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <SettingField
-                label="Access Token"
-                value={waApiToken}
-                onChange={setWaApiToken}
-                onSave={() => save("whatsapp_api_token", waApiToken)}
-                saving={saving}
-                placeholder="Bearer token"
-                mono
-                secret
-              />
-              <SettingField
-                label="Phone Number ID"
-                value={waPhoneId}
-                onChange={setWaPhoneId}
-                onSave={() => save("whatsapp_phone_id", waPhoneId)}
-                saving={saving}
-                placeholder="ID do número"
-                mono
-              />
+              <Field label="Access Token" value={waApiToken} onChange={setWaApiToken} placeholder="Bearer token" mono secret />
+              <Field label="Phone Number ID" value={waPhoneId} onChange={setWaPhoneId} placeholder="ID do número" mono />
             </div>
           </div>
         </div>
 
         {/* ─── Shopify Integration ──────────────────────────────────────────── */}
         <div className="bg-card border border-border rounded-xl p-6">
-          <div className="flex items-center gap-2 mb-4">
-            <SettingsIcon className="w-5 h-5 text-primary" />
-            <h2 className="text-base font-semibold text-foreground">Integração Shopify</h2>
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <SettingsIcon className="w-5 h-5 text-primary" />
+              <h2 className="text-base font-semibold text-foreground">Integração Shopify</h2>
+            </div>
+            <SectionSaveBtn
+              saving={savingShopify}
+              onClick={() => saveSection([{ key: "shopify_api_key", value: shopifyApiKey }], setSavingShopify)}
+            />
           </div>
           <div>
             <Label className="text-xs text-muted-foreground mb-1.5 block">
@@ -691,6 +641,7 @@ export default function Settings() {
                 placeholder="Gere uma chave segura"
               />
               <Button
+                type="button"
                 size="sm"
                 variant="outline"
                 onClick={() => {
@@ -700,7 +651,6 @@ export default function Settings() {
               >
                 Gerar
               </Button>
-              <SaveBtn onClick={() => save("shopify_api_key", shopifyApiKey)} disabled={saving} />
             </div>
             <p className="text-xs text-muted-foreground mt-1.5">
               Use esta chave no formulário do Shopify para autenticar as requisições
@@ -710,9 +660,22 @@ export default function Settings() {
 
         {/* ─── Archive Retention ─────────────────────────────────────────────── */}
         <div className="bg-card border border-border rounded-xl p-6">
-          <div className="flex items-center gap-2 mb-4">
-            <SettingsIcon className="w-5 h-5 text-primary" />
-            <h2 className="text-base font-semibold text-foreground">Arquivamento de Registros</h2>
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <SettingsIcon className="w-5 h-5 text-primary" />
+              <h2 className="text-base font-semibold text-foreground">Arquivamento de Registros</h2>
+            </div>
+            <SectionSaveBtn
+              saving={savingArchive}
+              onClick={() => {
+                const v = parseInt(archiveRetentionDays);
+                if (isNaN(v) || v < 3 || v > 30) {
+                  toast.error("Informe um valor entre 3 e 30 dias.");
+                  return;
+                }
+                saveSection([{ key: "archive_retention_days", value: archiveRetentionDays }], setSavingArchive);
+              }}
+            />
           </div>
           <p className="text-xs text-muted-foreground mb-4">
             Registros arquivados (clientes e aluguéis) são excluídos automaticamente após o prazo configurado.
@@ -733,17 +696,6 @@ export default function Settings() {
                 className="bg-secondary border-border w-24"
               />
               <span className="text-sm text-muted-foreground">dias (mín. 3, máx. 30)</span>
-              <SaveBtn
-                onClick={() => {
-                  const v = parseInt(archiveRetentionDays);
-                  if (isNaN(v) || v < 3 || v > 30) {
-                    toast.error("Informe um valor entre 3 e 30 dias.");
-                    return;
-                  }
-                  save("archive_retention_days", archiveRetentionDays);
-                }}
-                disabled={saving}
-              />
             </div>
             <p className="text-xs text-muted-foreground mt-1.5">
               Padrão: 5 dias. Badges de expiração aparecem nas abas Arquivados de Clientes e Aluguéis.
@@ -759,7 +711,7 @@ export default function Settings() {
           </div>
           <p className="text-xs text-muted-foreground mb-3">
             Compartilhe este link com seus clientes ou integre no Shopify via iframe.
-            O formulário permite que clientes escolham a bike, período e façam a reserva online.
+            O formulário permite que clientes façam o pré-cadastro online.
           </p>
           <div className="flex gap-2">
             <Input

@@ -32,6 +32,31 @@ export interface ContractPdfData {
   }>;
 }
 
+/**
+ * Renderiza os termos e condições no PDF.
+ * Parágrafos separados por linha em branco recebem espaçamento extra.
+ * Linhas que começam com número seguido de ponto/hífen são tratadas como cláusulas (negrito).
+ */
+function renderTerms(doc: PDFKit.PDFDocument, text: string, width: number): void {
+  const paragraphs = text.split(/\n{2,}/).map((p) => p.trim()).filter(Boolean);
+  for (let i = 0; i < paragraphs.length; i++) {
+    const para = paragraphs[i];
+    const isClause = /^\d+[.\-)\s]/.test(para);
+    if (isClause) {
+      const lines = para.split("\n");
+      const firstLine = lines[0];
+      const rest = lines.slice(1).join("\n").trim();
+      doc.fontSize(8).fillColor("#1f2937").font("Helvetica-Bold").text(firstLine, { width });
+      if (rest) {
+        doc.fontSize(8).fillColor("#374151").font("Helvetica").text(rest, { width });
+      }
+    } else {
+      doc.fontSize(8).fillColor("#374151").font("Helvetica").text(para, { width });
+    }
+    if (i < paragraphs.length - 1) doc.moveDown(0.4);
+  }
+}
+
 function formatDate(d: Date | string | null | undefined): string {
   if (!d) return "—";
   const dt = typeof d === "string" ? new Date(d) : d;
@@ -205,7 +230,7 @@ export async function generateContractPdf(data: ContractPdfData): Promise<Buffer
       doc.moveDown(0.5);
       doc.fontSize(10).fillColor(primaryColor).font("Helvetica-Bold").text("TERMOS E CONDIÇÕES");
       doc.moveDown(0.3);
-      doc.fontSize(8).fillColor("#374151").font("Helvetica").text(empresaTermos, { width: pageWidth });
+      renderTerms(doc, empresaTermos, pageWidth);
       doc.moveDown(1);
     }
 
