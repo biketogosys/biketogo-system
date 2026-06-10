@@ -992,7 +992,25 @@ const rentalsRouter = router({
       const offset = (input.page - 1) * input.limit;
       const result = await getRentals({ ...input, offset });
       const totalPages = Math.ceil(result.total / input.limit);
-      return { ...result, page: input.page, totalPages };
+      // Enrich each rental with bikeSize.tamanho (avoids "Não informado" in the UI)
+      const sizeIdsSet = new Set<number>();
+      for (const r of result.items) { if ((r as any).bikeSizeId) sizeIdsSet.add((r as any).bikeSizeId); }
+      const sizeIds = Array.from(sizeIdsSet);
+      let sizeMap = new Map<number, string>();
+      if (sizeIds.length > 0) {
+        const db = await getDb();
+        if (db) {
+          const { bikeSizes: bsTable } = await import("../drizzle/schema");
+          const { inArray: inArrayOp } = await import("drizzle-orm");
+          const rows = await db.select({ id: bsTable.id, tamanho: bsTable.tamanho }).from(bsTable).where(inArrayOp(bsTable.id, sizeIds));
+          sizeMap = new Map(rows.map(r => [r.id, r.tamanho]));
+        }
+      }
+      const enriched = result.items.map((r: any) => ({
+        ...r,
+        bikeSize: r.bikeSizeId ? { tamanho: sizeMap.get(r.bikeSizeId) ?? null } : null,
+      }));
+      return { ...result, items: enriched, page: input.page, totalPages };
     }),
 
   byId: adminAuthProcedure
@@ -2882,6 +2900,23 @@ const contractsRouter = router({
           }
         } catch {
           // Z-API not configured or unavailable — do not break contract closure
+        }
+      }
+      // Mark all active/overdue bike rentals as returned (releases stock)
+      {
+        const activeRentals = await db
+          .select({ id: rentalsTable.id })
+          .from(rentalsTable)
+          .where(
+            and(
+              eq(rentalsTable.contractId, input.id),
+              isNull(rentalsTable.deletedAt),
+              // status IN ('active','overdue')
+              drizzleSql`${rentalsTable.status} IN ('active','overdue')`,
+            )
+          );
+        for (const r of activeRentals) {
+          await updateRental(r.id, { status: "returned", returnedAt: new Date() } as any);
         }
       }
       // Recalc status (may set to encerrado if all rentals returned)

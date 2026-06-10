@@ -560,7 +560,7 @@ export default function Rentals() {
                   </td>
                   <td className="px-4 py-3 text-xs text-muted-foreground capitalize">
                     {rental.paymentMethod
-                      ? { pix: "PIX", credit_card: "Crédito", debit_card: "Débito", cash: "Dinheiro", stripe: "Stripe", other: "Outro" }[rental.paymentMethod] ?? rental.paymentMethod
+                      ? ({ pix: "PIX", credit_card: "Crédito", debit_card: "Débito", cash: "Dinheiro", stripe: "Stripe", other: "Outro" } as Record<string, string>)[rental.paymentMethod] ?? rental.paymentMethod
                       : "—"}
                   </td>
                   <td className="px-4 py-3">
