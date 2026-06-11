@@ -196,15 +196,8 @@ describe("rentals.list", () => {
 });
 
 // ─── Public API test ─────────────────────────────────────────────────────────
-describe("publicApi.availableBikes", () => {
-  it("returns an array without authentication", async () => {
-    const { ctx } = createUnauthContext();
-    const caller = appRouter.createCaller(ctx);
-
-    const result = await caller.publicApi.availableBikes();
-    expect(Array.isArray(result)).toBe(true);
-  });
-});
+// publicApi.availableBikes was removed in Lote L0 (dead code cleanup)
+// Bike availability is now derived via getSizeAvailability helper in db.ts
 
 // ─── Public API: additional endpoints ────────────────────────────────────────
 describe("publicApi.availableAccessories", () => {
@@ -227,20 +220,9 @@ describe("publicApi.deliveryFee", () => {
   });
 });
 
-describe("publicApi.checkAvailability", () => {
-  it("returns a boolean without authentication", async () => {
-    const { ctx } = createUnauthContext();
-    const caller = appRouter.createCaller(ctx);
-
-    // Use a non-existent bike ID so it returns true (no conflicts)
-    const result = await caller.publicApi.checkAvailability({
-      bikeId: 99999,
-      startDate: "2026-06-01",
-      endDate: "2026-06-05",
-    });
-    expect(typeof result).toBe("boolean");
-  });
-});
+// publicApi.checkAvailability was removed in Lote L0 (dead code cleanup)
+// The bikes.checkAvailability procedure was also removed in Lote 3a
+// Availability is now derived via getSizeAvailability helper in db.ts
 
 describe("publicApi.bikeDiscountRules", () => {
   it("returns an array without authentication", async () => {

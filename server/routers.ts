@@ -83,7 +83,6 @@ import { notifyOwner } from "./_core/notification";
 import { sendEmail, buildReservationEmailHtml } from "./email";
 import { buildProfessionalReservationEmail } from "./email-templates";
 import { sendWhatsApp, buildOwnerReservationMessage } from "./whatsapp";
-import { createStripeCheckout } from "./stripe";
 import { COOKIE_NAME } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
@@ -676,47 +675,11 @@ const bikesRouter = router({
       for (const rule of input.rules) {
         await createBikeDiscountRule({ bikeId: input.bikeId, ...rule });
       }
-      return { success: true };
-    }),
-
-  // Check availability for a date range
-  checkAvailability: publicProcedure
-    .input(z.object({
-      bikeId: z.number(),
-      bikeSizeId: z.number().optional(),
-      startDate: z.string(),
-      endDate: z.string(),
-      quantity: z.number().min(1).default(1),
-    }))
-    .query(async ({ input }) => {
-      const { getSizeAvailability } = await import("./db");
-      if (input.bikeSizeId) {
-        const available = await getSizeAvailability(input.bikeSizeId, input.startDate, input.endDate);
-        return available >= input.quantity;
-      } else {
-        // Fallback: check by bikeId (legacy) — sem tamanho, verifica se ha algum aluguel ativo
-        const db = await (await import("./db")).getDb();
-        if (!db) return true;
-        const { rentals: rt } = await import("../drizzle/schema");
-        const { eq, inArray, isNull: isNullOp, and: andOp, lte: lteOp, gte: gteOp } = await import("drizzle-orm");
-        const result = await db
-          .select({ id: rt.id })
-          .from(rt)
-          .where(andOp(
-            eq(rt.bikeId, input.bikeId),
-            inArray(rt.status, ["active", "overdue"]),
-            isNullOp(rt.deletedAt),
-            lteOp(rt.startDate, input.endDate),
-            gteOp(rt.endDate, input.startDate),
-          ));
-        return result.length === 0;
-      }
-    }),
-  // ─── Bike Sizes ──────────────────────────────────────────────────────────────
+      return { success: tru    }),
+  // ─── Bike Sizes ────────────────────────────────────────────────────────────────────────────
   listSizes: adminAuthProcedure
     .input(z.object({ bikeId: z.number() }))
-    .query(async ({ input }) => {
-      const { getDb, getSizeBreakdown } = await import("./db");
+    .query(async ({ input }) => {  const { getDb, getSizeBreakdown } = await import("./db");
       const db = await getDb();
       if (!db) return [];
       const { bikeSizes } = await import("../drizzle/schema");
@@ -1802,24 +1765,6 @@ const settingsRouter = router({
 
 // ─── Public API (for Shopify integration) ────────────────────────────────────
 const publicApiRouter = router({
-  // Get available bikes for the public form
-  availableBikes: publicProcedure.query(async () => {
-    const allBikes = await getBikes();
-    return allBikes.map((b) => ({
-      id: b.id,
-      model: b.model,
-      brand: (b as any).brand || null,
-      category: (b as any).category || null,
-      size: b.size,
-      sizes: (b as any).sizes || null,
-      dailyRate: (b as any).dailyRate || null,
-      photoUrl: (b as any).photoUrl || null,
-      status: b.status,
-      description: (b as any).description || null,
-      weight: (b as any).weight || null,
-      weightLimit: (b as any).weightLimit || null,
-    }));
-   }),
   // Get bike sizes with real-time availability
   bikeSizes: publicProcedure
     .input(z.object({ bikeId: z.number() }))
@@ -1848,15 +1793,6 @@ const publicApiRouter = router({
     .input(z.object({ bikeId: z.number() }))
     .query(({ input }) => getBikeDiscountRules(input.bikeId)),
 
-  // Check bike availability for dates
-  checkAvailability: publicProcedure
-    .input(z.object({
-      bikeId: z.number(),
-      bikeSizeId: z.number().optional(),
-      startDate: z.string(),
-      endDate: z.string(),
-      quantity: z.number().min(1).default(1),
-    }))
     .query(async ({ input }) => {
       const { getSizeAvailability } = await import("./db");
       if (input.bikeSizeId) {
@@ -1951,85 +1887,7 @@ const publicApiRouter = router({
     return fee || "0";
   }),
 
-  // Get configured delivery hours (for public reservation form)
-  getDeliveryHours: publicProcedure.query(async () => {
-    const raw = await getSetting("delivery_hours");
-    if (raw) {
-      try {
-        const parsed: string[] = JSON.parse(raw);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-      } catch { /* fall through */ }
-    }
-    // Default: half-hour slots from 09:00 to 19:00
-    const defaults: string[] = [];
-    for (let h = 9; h <= 19; h++) {
-      defaults.push(`${String(h).padStart(2, "0")}:00`);
-      if (h < 19) defaults.push(`${String(h).padStart(2, "0")}:30`);
-    }
-    return defaults;
-  }),
 
-  // Submit reservation from Shopify
-  submitReservation: publicProcedure
-    .input(z.object({
-      // Client data
-      name: z.string().min(2),
-      cpf: z.string().optional(),
-      rg: z.string().optional(),
-      birthDate: z.string().optional(),
-      gender: z.string().optional(),
-      height: z.string().optional(),
-      weight: z.string().optional(),
-      phone: z.string().optional(),
-      email: z.string().email().optional().or(z.literal("")),
-      instagram: z.string().optional(),
-      accommodation: z.string().optional(),
-      // Address
-      zipCode: z.string().optional(),
-      street: z.string().optional(),
-      number: z.string().optional(),
-      complement: z.string().optional(),
-      neighborhood: z.string().optional(),
-      city: z.string().optional(),
-      state: z.string().optional(),
-      country: z.string().optional(),
-      // Profile
-      docOrigin: z.string().optional(),
-      pedalFreq: z.string().optional(),
-      howFound: z.string().optional(),
-      lgpdConsent: z.boolean().optional(),
-      // Cart: array of bikes (multi-bike support)
-      cart: z.array(z.object({
-        bikeId: z.number(),
-        bikeSizeId: z.number().optional(),
-        bikeQuantity: z.number().min(1).default(1),
-        startDate: z.string(),
-        endDate: z.string(),
-        deliveryTime: z.string().optional(),
-        totalAmount: z.string().optional(),
-        discountPercent: z.string().optional(),
-        deliveryFee: z.string().optional(),
-      })).optional(),
-      // Legacy single-bike fields (backward compat)
-      bikeId: z.number().optional(),
-      bikeSizeId: z.number().optional(),
-      bikeQuantity: z.number().min(1).default(1).optional(),
-      startDate: z.string().optional(),
-      endDate: z.string().optional(),
-      deliveryTime: z.string().optional(),
-      totalAmount: z.string().optional(),
-      discountPercent: z.string().optional(),
-      deliveryFee: z.string().optional(),
-      paymentMethod: z.enum(["pix", "credit_card", "debit_card", "cash", "stripe", "other"]).optional(),
-      notes: z.string().optional(),
-      // Accessories
-      accessories: z.array(z.object({
-        accessoryId: z.number(),
-        quantity: z.number().min(1).default(1),
-      })).optional(),
-      // API key for security
-      apiKey: z.string().optional(),
-    }))
     .mutation(async ({ input }) => {
       // Verify API key
       const storedKey = await getSetting("shopify_api_key");
@@ -2258,41 +2116,8 @@ const publicApiRouter = router({
         console.warn("[Notification] Error sending notifications:", err);
       }
 
-      return { clientId, rentalIds, contractId, success: true };
-    }),
-
-  // ─── Create Stripe Checkout Session ────────────────────────────────────────
-  createCheckout: publicProcedure
-    .input(z.object({
-      rentalId: z.number(),
-      clientId: z.number(),
-      clientName: z.string(),
-      clientEmail: z.string().optional(),
-      bikeModel: z.string(),
-      startDate: z.string(),
-      endDate: z.string(),
-      totalAmountBRL: z.number(),
-      paymentType: z.enum(["card", "pix"]),
-      origin: z.string(),
-    }))
-    .mutation(async ({ input }) => {
-      const result = await createStripeCheckout({
-        rentalId: input.rentalId,
-        clientId: input.clientId,
-        clientName: input.clientName,
-        clientEmail: input.clientEmail,
-        bikeModel: input.bikeModel,
-        startDate: input.startDate,
-        endDate: input.endDate,
-        totalAmountBRL: input.totalAmountBRL,
-        paymentType: input.paymentType,
-        origin: input.origin,
-      });
-      return result;
-    }),
-
-  // ─── Pré-cadastro: cria apenas o cliente como Lead (sem reserva) ─────────────
-  submitPreRegistration: publicProcedure
+      return { clientId, rentalIds, contractId, success: true }    }),
+  // ─── Pré-cadastro: cria apenas o cliente como Lead (sem reserva) ─────────────────────ubmitPreRegistration: publicProcedure
     .input(z.object({
       // Identificação
       name: z.string().min(2),
