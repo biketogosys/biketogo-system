@@ -675,11 +675,14 @@ const bikesRouter = router({
       for (const rule of input.rules) {
         await createBikeDiscountRule({ bikeId: input.bikeId, ...rule });
       }
-      return { success: tru    }),
-  // ─── Bike Sizes ────────────────────────────────────────────────────────────────────────────
+      return { success: true };
+    }),
+
+  // ─── Bike Sizes ──────────────────────────────────────────────────────────────
   listSizes: adminAuthProcedure
     .input(z.object({ bikeId: z.number() }))
-    .query(async ({ input }) => {  const { getDb, getSizeBreakdown } = await import("./db");
+    .query(async ({ input }) => {
+      const { getDb, getSizeBreakdown } = await import("./db");
       const db = await getDb();
       if (!db) return [];
       const { bikeSizes } = await import("../drizzle/schema");
@@ -1793,30 +1796,6 @@ const publicApiRouter = router({
     .input(z.object({ bikeId: z.number() }))
     .query(({ input }) => getBikeDiscountRules(input.bikeId)),
 
-    .query(async ({ input }) => {
-      const { getSizeAvailability } = await import("./db");
-      if (input.bikeSizeId) {
-        const available = await getSizeAvailability(input.bikeSizeId, input.startDate, input.endDate);
-        return available >= input.quantity;
-      } else {
-        // Fallback: check by bikeId (legacy) — sem tamanho, verifica se ha algum aluguel ativo
-        const db = await (await import("./db")).getDb();
-        if (!db) return true;
-        const { rentals: rt } = await import("../drizzle/schema");
-        const { eq, inArray, isNull: isNullOp, and: andOp, lte: lteOp, gte: gteOp } = await import("drizzle-orm");
-        const result = await db
-          .select({ id: rt.id })
-          .from(rt)
-          .where(andOp(
-            eq(rt.bikeId, input.bikeId),
-            inArray(rt.status, ["active", "overdue"]),
-            isNullOp(rt.deletedAt),
-            lteOp(rt.startDate, input.endDate),
-            gteOp(rt.endDate, input.startDate),
-          ));
-        return result.length === 0;
-      }
-    }),
 
   // Get available accessories (with real-time availability)
   availableAccessories: publicProcedure.query(async () => {
@@ -1888,236 +1867,10 @@ const publicApiRouter = router({
   }),
 
 
-    .mutation(async ({ input }) => {
-      // Verify API key
-      const storedKey = await getSetting("shopify_api_key");
-      if (storedKey && input.apiKey !== storedKey) {
-        throw new TRPCError({ code: "UNAUTHORIZED", message: "Chave de API inválida." });
-      }
-      // Validate CPF and RG
-      if (input.cpf && input.cpf.replace(/\D/g, "").length > 0) {
-        if (!validarCPF(input.cpf)) {
-          throw new TRPCError({ code: "BAD_REQUEST", message: "CPF inválido." });
-        }
-      }
-      if (input.rg && input.rg.replace(/[.\-\s]/g, "").length > 0) {
-        if (!validarRG(input.rg)) {
-          throw new TRPCError({ code: "BAD_REQUEST", message: "RG inválido." });
-        }
-      }
 
-      // Build cart items (support legacy single-bike or new multi-bike)
-      const cartItems = input.cart && input.cart.length > 0
-        ? input.cart
-        : input.bikeId
-          ? [{
-              bikeId: input.bikeId,
-              bikeSizeId: input.bikeSizeId,
-              bikeQuantity: input.bikeQuantity || 1,
-              startDate: input.startDate!,
-              endDate: input.endDate!,
-              deliveryTime: input.deliveryTime,
-              totalAmount: input.totalAmount,
-              discountPercent: input.discountPercent,
-              deliveryFee: input.deliveryFee,
-            }]
-          : [];
 
-      if (cartItems.length === 0) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "Nenhuma bike selecionada." });
-      }
-
-      // Create client
-      const clientId = await createClient({
-        name: input.name,
-        cpf: sanitize(input.cpf) as string | null,
-        rg: sanitize(input.rg) as string | null,
-        birthDate: sanitize(input.birthDate) as string | null,
-        gender: sanitize(input.gender) as string | null,
-        height: sanitize(input.height) as string | null,
-        weight: sanitize(input.weight) as string | null,
-        phone: sanitize(input.phone) as string | null,
-        email: sanitize(input.email) as string | null,
-        instagram: sanitize(input.instagram) as string | null,
-        accommodation: sanitize(input.accommodation) as string | null,
-        zipCode: sanitize(input.zipCode) as string | null,
-        street: sanitize(input.street) as string | null,
-        number: sanitize(input.number) as string | null,
-        complement: sanitize(input.complement) as string | null,
-        neighborhood: sanitize(input.neighborhood) as string | null,
-        city: sanitize(input.city) as string | null,
-        state: sanitize(input.state) as string | null,
-        country: sanitize(input.country) as string | null || "Brasil",
-        pedalFrequency: sanitize(input.pedalFreq) as string | null,
-        origin: sanitize(input.howFound) as string | null,
-        source: "shopify",
-        status: "lead",
-      } as any);
-
-      // Calculate grand total for contract
-      const grandTotal = cartItems.reduce((sum, item) => {
-        const amt = parseFloat(item.totalAmount || "0") || 0;
-        return sum + amt;
-      }, 0);
-
-      // Create contract first (all rentals link to same contract)
-      let contractId: number | null = null;
-      try {
-        const db = await (await import("./db")).getDb();
-        if (db) {
-          const { contracts: contractsSchema } = await import("../drizzle/schema");
-          const [newContract] = await db.insert(contractsSchema).values({
-            clientId,
-            valorTotal: grandTotal > 0 ? grandTotal.toFixed(2) : null,
-            status: "ativo",
-          }).returning({ id: contractsSchema.id });
-          contractId = newContract.id;
-        }
-      } catch (err) {
-        console.warn("[submitReservation] Failed to create contract:", err);
-      }
-
-      // Create one rental per cart item, all with status 'pending'
-      const rentalIds: number[] = [];
-      for (const item of cartItems) {
-        const rentalId = await createRental({
-          clientId,
-          bikeId: item.bikeId,
-          bikeSizeId: item.bikeSizeId || null,
-          quantity: item.bikeQuantity || 1,
-          startDate: sanitizeDateString(item.startDate) as string,
-          endDate: sanitizeDateString(item.endDate),
-          deliveryTime: sanitize(item.deliveryTime) as string | null,
-          totalAmount: sanitizeNumeric(item.totalAmount),
-          discountPercent: sanitizeNumeric(item.discountPercent),
-          deliveryFee: sanitizeNumeric(item.deliveryFee),
-          paymentMethod: input.paymentMethod || null,
-          paymentStatus: "pending",
-          status: "pending",
-          source: "shopify",
-          notes: sanitize(input.notes) as string | null,
-          contractId,
-        } as any);
-        rentalIds.push(rentalId);
-      }
-
-      // Add accessories: link to contract_accessories (for contract detail) AND rental_accessories (for rental detail)
-      if (input.accessories && input.accessories.length > 0) {
-        const dbForAcc = await (await import("./db")).getDb();
-        const { contractAccessories: caSchema } = await import("../drizzle/schema");
-        for (const acc of input.accessories) {
-          const accessory = await getAccessoryById(acc.accessoryId);
-          // 1. Link to first rental (rental_accessories)
-          await createRentalAccessory({
-            rentalId: rentalIds[0],
-            accessoryId: acc.accessoryId,
-            quantity: acc.quantity,
-            dailyRate: accessory?.dailyRate || null,
-          } as any);
-          // 2. Link to contract (contract_accessories) — required for contract detail view
-          if (contractId && dbForAcc) {
-            try {
-              await dbForAcc.insert(caSchema).values({
-                contractId,
-                accessoryId: acc.accessoryId,
-                qty: acc.quantity,
-                status: "ok",
-              });
-            } catch (err) {
-              console.warn("[submitReservation] Failed to insert contract_accessory:", err);
-            }
-          }
-        }
-      }
-
-      // Notify owner via all channels
-      try {
-        const bikeNames: string[] = [];
-        for (const item of cartItems) {
-          const bike = await getBikeById(item.bikeId);
-          bikeNames.push(bike?.model || "N/A");
-        }
-        const bikeSummary = bikeNames.join(", ");
-        const firstItem = cartItems[0];
-
-        // 1. Manus built-in notification
-        await notifyOwner({
-          title: "Nova Reserva pelo Site!",
-          content: `Cliente: ${input.name}\nBikes: ${bikeSummary}\nPeríodo: ${firstItem.startDate} a ${firstItem.endDate}\nValor Total: R$ ${grandTotal.toFixed(2)}\nPagamento: ${input.paymentMethod || "N/A"}\n\n⚠️ Reserva PENDENTE — verificar e confirmar no painel.`,
-        });
-
-        // 2. WhatsApp notification to owner (with deep-link to contract)
-        const contractLink = contractId
-          ? `\nAcesse o painel: /contratos?contractId=${contractId}`
-          : "";
-        const waMessage = `🚲 *Nova reserva PENDENTE — Bike To Go*\n\n*Cliente:* ${input.name}\n*Bikes:* ${bikeSummary}\n*Período:* ${firstItem.startDate} a ${firstItem.endDate}\n*Valor Total:* R$ ${grandTotal.toFixed(2)}\n⚠️ Aguardando verificação e confirmação.${contractLink}`;
-        // Sanitize owner phone before sending
-        const rawOwnerPhone = await getSetting("whatsapp_number");
-        const ownerPhone = sanitizePhone(rawOwnerPhone) ?? rawOwnerPhone ?? undefined;
-        await sendWhatsApp({ text: waMessage, to: ownerPhone });
-
-        // 3. Fetch company settings for professional email
-        const [companyName, companyEmail2, companyPhone2, logoUrl] = await Promise.all([
-          getSetting("company_name"),
-          getSetting("company_email"),
-          getSetting("company_phone"),
-          getSetting("logo_url"),
-        ]);
-        const cartEmailItems = await Promise.all(cartItems.map(async (item) => {
-          const bike = await getBikeById(item.bikeId);
-          return {
-            bikeModel: bike?.model || "N/A",
-            bikeBrand: bike?.brand || undefined,
-            startDate: item.startDate,
-            endDate: item.endDate,
-            deliveryTime: item.deliveryTime,
-            totalAmount: item.totalAmount,
-          };
-        }));
-        const accessoryNames: string[] = [];
-        if (input.accessories && input.accessories.length > 0) {
-          for (const acc of input.accessories) {
-            const accessory = await getAccessoryById(acc.accessoryId);
-            if (accessory?.name) accessoryNames.push(`${accessory.name} ×${acc.quantity}`);
-          }
-        }
-        const professionalEmailHtml = buildProfessionalReservationEmail({
-          clientName: input.name,
-          cartItems: cartEmailItems,
-          accessories: accessoryNames,
-          grandTotal: grandTotal.toFixed(2),
-          paymentMethod: input.paymentMethod,
-          companyName: companyName || "Bike To Go",
-          companyEmail: companyEmail2 || undefined,
-          companyPhone: companyPhone2 || undefined,
-          logoUrl: logoUrl || undefined,
-        });
-        // Send to client
-        if (input.email) {
-          await sendEmail({
-            to: input.email,
-            subject: `Reserva Recebida — ${bikeSummary} | ${companyName || "Bike To Go"}`,
-            html: professionalEmailHtml,
-          });
-        }
-        // 4. Send copy to company_email (owner receives copy of every reservation)
-        const ownerCopyEmail = companyEmail2 || await getSetting("notification_email");
-        if (ownerCopyEmail && ownerCopyEmail !== input.email) {
-          const contractPath = contractId ? `/contratos?contractId=${contractId}` : "/contratos";
-          const ownerSubject = `⚠️ Cópia da Reserva — ${input.name} | ${companyName || "Bike To Go"}`;
-          // Append admin note to the same professional template
-          const ownerHtml = professionalEmailHtml.replace(
-            "</body>",
-            `<div style="max-width:620px;margin:0 auto;padding:0 16px 24px;"><div style="padding:12px 16px;background:#1a0a0a;border-left:3px solid #e74c3c;border-radius:4px;"><p style="margin:0;font-size:13px;color:#e74c3c;"><strong>Nota para o admin:</strong> Esta é uma cópia automática. Acesse o painel para confirmar ou recusar: <a href="${contractPath}" style="color:#C8920A;">${contractPath}</a></p></div></div></body>`
-          );
-          await sendEmail({ to: ownerCopyEmail, subject: ownerSubject, html: ownerHtml });
-        }
-      } catch (err) {
-        console.warn("[Notification] Error sending notifications:", err);
-      }
-
-      return { clientId, rentalIds, contractId, success: true }    }),
-  // ─── Pré-cadastro: cria apenas o cliente como Lead (sem reserva) ─────────────────────ubmitPreRegistration: publicProcedure
+  // ─── Pré-cadastro: cria apenas o cliente como Lead (sem reserva) ─────────────
+  submitPreRegistration: publicProcedure
     .input(z.object({
       // Identificação
       name: z.string().min(2),
