@@ -17,7 +17,7 @@ import {
 export const userRoleEnum = pgEnum("user_role", ["user", "admin"]);
 export const adminRoleEnum = pgEnum("admin_role", ["admin", "operator"]);
 export const clientStatusEnum = pgEnum("client_status", ["lead", "verified", "blocked"]);
-export const clientSourceEnum = pgEnum("client_source", ["shopify", "manual"]);
+export const clientSourceEnum = pgEnum("client_source", ["shopify", "manual", "site"]);
 export const docTypeEnum = pgEnum("doc_type", ["rg_front", "rg_back", "other"]);
 export const bikeCategoryEnum = pgEnum("bike_category", ["mtb", "speed", "gravel"]);
 export const bikeStatusEnum = pgEnum("bike_status", ["available", "rented", "maintenance"]);
@@ -144,7 +144,6 @@ export const bikes = pgTable("bikes", {
   photoUrl: text("photoUrl"),
   quantity: integer("quantity").default(1).notNull(),
   notes: text("notes"),
-  /** @deprecated availability is now fully derived from getSizeBreakdown; this column is no longer written or read by the application */
   status: bikeStatusEnum("status").default("available").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().notNull(),
@@ -319,7 +318,6 @@ export const bikeSizes = pgTable("bike_sizes", {
   bikeId: integer("bikeId").notNull(),
   tamanho: varchar("tamanho", { length: 20 }).notNull(),
   quantidadeTotal: integer("quantidadeTotal").default(1).notNull(),
-  /** @deprecated availability is now fully derived from getSizeBreakdown; this column is no longer written or read by the application */
   quantidadeDisponivel: integer("quantidadeDisponivel").default(1).notNull(),
   observacao: text("observacao"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
