@@ -411,6 +411,15 @@ function ContractDetail({
     onError: (e) => toast.error("Erro ao recusar: " + e.message),
   });
 
+  const returnRentalMutation = trpc.rentals.returnRental.useMutation({
+    onSuccess: () => {
+      toast.success("Devolução registrada!");
+      utils.contracts.getById.invalidate({ id: contractId });
+      utils.contracts.list.invalidate();
+    },
+    onError: (e) => toast.error("Erro ao devolver: " + e.message),
+  });
+
   const confirmPaymentMutation = trpc.contracts.confirmPayment.useMutation({
     onSuccess: (res) => {
       toast.success(`Pagamento confirmado para ${res.paid} aluguel(is). Receita registrada.`);
@@ -598,6 +607,7 @@ function ContractDetail({
                 <TableHead>Valor</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Condição</TableHead>
+                <TableHead></TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -631,11 +641,28 @@ function ContractDetail({
                   <TableCell className="text-xs text-muted-foreground">
                     {r.returnCondition ?? "—"}
                   </TableCell>
+                  <TableCell>
+                    {r.status === "active" && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-7 text-xs gap-1 border-amber-500/40 text-amber-600 hover:bg-amber-50"
+                        disabled={returnRentalMutation.isPending}
+                        onClick={() => {
+                          if (confirm(`Confirmar devolução da bike ${r.bikeBrand ?? ""} ${r.bikeModel ?? ""}?`)) {
+                            returnRentalMutation.mutate({ id: r.id, bikeCondition: "ok" });
+                          }
+                        }}
+                      >
+                        Devolver
+                      </Button>
+                    )}
+                  </TableCell>
                 </TableRow>
               ))}
               {(!data.rentals || data.rentals.length === 0) && (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center text-muted-foreground py-6">
+                  <TableCell colSpan={7} className="text-center text-muted-foreground py-6">
                     Nenhuma bike vinculada.
                   </TableCell>
                 </TableRow>
