@@ -1307,6 +1307,75 @@ const rentalsRouter = router({
       await createAuditLog({ adminId: (ctx as any).adminUser?.id ?? null, acao: "recusou_reserva", tabela: "contracts", registroId: input.contractId });
       return { success: true, rejected: pendingRentals.length };
     }),
+
+  // List rentals grouped by contract (for /alugueis refactored view)
+  listGroupedByContract: adminAuthProcedure
+    .input(z.object({
+      contractStatus: z.enum(["pendente", "ativo", "parcialmente_devolvido", "encerrado", "cancelado"]).optional(),
+      page: z.number().min(1).default(1),
+      limit: z.number().min(1).max(100).default(20),
+    }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return { items: [], total: 0, totalPages: 0 };
+      const { contracts: contractsTable, rentals: rentalsTable, clients: clientsTable, bikes: bikesTable, bikeSizes: bikeSizesTable } = await import("../drizzle/schema");
+      const { eq: eqOp, and: andOp, isNull: isNullOp, desc: descOp, sql: sqlOp } = await import("drizzle-orm");
+      
+      // Build where clause for contracts
+      const contractWhere: Parameters<typeof andOp>[0][] = [];
+      if (input.contractStatus) contractWhere.push(eqOp(contractsTable.status, input.contractStatus));
+      
+      // Get total count
+      const countResult = await db.select({ count: sqlOp<number>`count(distinct ${contractsTable.id})` })
+        .from(contractsTable)
+        .where(contractWhere.length > 0 ? andOp(...contractWhere) : undefined);
+      const total = Number(countResult[0]?.count ?? 0);
+      const totalPages = Math.ceil(total / input.limit);
+      const offset = (input.page - 1) * input.limit;
+      
+      // Get contracts with pagination
+      const contracts = await db.select({
+        id: contractsTable.id,
+        clientId: contractsTable.clientId,
+        status: contractsTable.status,
+        valorTotal: contractsTable.valorTotal,
+        criadoEm: contractsTable.criadoEm,
+        clientName: clientsTable.name,
+        clientPhone: clientsTable.phone,
+        clientEmail: clientsTable.email,
+      })
+        .from(contractsTable)
+        .leftJoin(clientsTable, eqOp(contractsTable.clientId, clientsTable.id))
+        .where(contractWhere.length > 0 ? andOp(...contractWhere) : undefined)
+        .orderBy(descOp(contractsTable.criadoEm))
+        .limit(input.limit)
+        .offset(offset);
+      
+      // For each contract, get its rentals
+      const contractsWithRentals = await Promise.all(contracts.map(async (contract) => {
+        const rentals = await db.select({
+          id: rentalsTable.id,
+          bikeId: rentalsTable.bikeId,
+          bikeSizeId: rentalsTable.bikeSizeId,
+          startDate: rentalsTable.startDate,
+          endDate: rentalsTable.endDate,
+          status: rentalsTable.status,
+          paymentStatus: rentalsTable.paymentStatus,
+          totalAmount: rentalsTable.totalAmount,
+          bikeModel: bikesTable.model,
+          bikeBrand: bikesTable.brand,
+          bikeSerialNumber: bikesTable.serialNumber,
+          bikeSize: bikeSizesTable.tamanho,
+        })
+          .from(rentalsTable)
+          .leftJoin(bikesTable, eqOp(rentalsTable.bikeId, bikesTable.id))
+          .leftJoin(bikeSizesTable, eqOp(rentalsTable.bikeSizeId, bikeSizesTable.id))
+          .where(andOp(eqOp(rentalsTable.contractId, contract.id), isNullOp(rentalsTable.deletedAt)));
+        return { ...contract, rentals };
+      }));
+      
+      return { items: contractsWithRentals, total, totalPages, page: input.page };
+    }),
 });
 // ─── Accessories routerr ─────────────────────────────────────────────────────
 const accessoriesRouter = router({
@@ -1338,7 +1407,7 @@ const accessoriesRouter = router({
           .select({ accessoryId: ra.accessoryId, qty: ra.quantity })
           .from(ra)
           .innerJoin(rt, eq(ra.rentalId, rt.id))
-          .where(andOp(inArray(ra.accessoryId, ids), inArray(rt.status, ["active", "overdue"])));
+          .where(andOp(inArray(ra.accessoryId, ids), inArray(rt.status, ["pending", "active", "overdue"])));
         const usageMap: Record<number, number> = {};
         for (const row of activeUsage) {
           usageMap[row.accessoryId] = (usageMap[row.accessoryId] ?? 0) + (row.qty ?? 1);
@@ -1838,7 +1907,7 @@ const publicApiRouter = router({
           .select({ accessoryId: ra.accessoryId, qty: ra.quantity })
           .from(ra)
           .innerJoin(rt, eq(ra.rentalId, rt.id))
-          .where(andOp(inArray(ra.accessoryId, ids), inArray(rt.status, ["active", "overdue"])));
+          .where(andOp(inArray(ra.accessoryId, ids), inArray(rt.status, ["pending", "active", "overdue"])));
         for (const row of activeUsage) { availMap[row.accessoryId] = (availMap[row.accessoryId] ?? 0) + (row.qty ?? 1); }
       }
     }
@@ -2325,6 +2394,7 @@ const contractsRouter = router({
         startDate: rentalsTable.startDate,
         endDate: rentalsTable.endDate,
         status: rentalsTable.status,
+        paymentStatus: rentalsTable.paymentStatus,
         returnCondition: rentalsTable.returnCondition,
         totalAmount: rentalsTable.totalAmount,
         notes: rentalsTable.notes,
@@ -2570,14 +2640,14 @@ const contractsRouter = router({
         if (b.totalAmount) totalValue += parseFloat(b.totalAmount);
       }
 
-      // Create contract
+      // Create contract with status "pendente" (not yet paid)
       const [contract] = await db.insert(contracts).values({
         clientId: input.clientId,
         valorTotal: totalValue > 0 ? totalValue.toFixed(2) : null,
-        status: "ativo",
+        status: "pendente",
       }).returning({ id: contracts.id });
 
-      // Create one rental per bike entry
+      // Create one rental per bike entry with status "pending" (not yet active)
       const rentalIds: number[] = [];
       for (const b of input.bikes) {
         const rentalId = await createRental({
@@ -2591,21 +2661,14 @@ const contractsRouter = router({
           totalAmount: b.totalAmount ?? null,
           paymentType: "presential",
           paymentStatus: "pending",
-          status: "active",
+          status: "pending",
           source: "manual",
           contractId: contract.id,
           notes: input.notes ?? null,
         } as any);
         rentalIds.push(rentalId);
-        // Mark bike as rented
-        await updateBike(b.bikeId, { status: "rented" });
-        // Decrease available quantity for the size
-        if (b.bikeSizeId) {
-          const { bikeSizes } = await import("../drizzle/schema");
-          await db.update(bikeSizes)
-            .set({ quantidadeDisponivel: drizzleSql`GREATEST(0, ${bikeSizes.quantidadeDisponivel} - ${b.quantity})` })
-            .where(eq(bikeSizes.id, b.bikeSizeId));
-        }
+        // Note: Do NOT mark bike as rented or decrease availability here
+        // Availability is derived and pending status reserves the stock
       }
 
       // Add accessories to contract_accessories and rental_accessories
@@ -2770,35 +2833,78 @@ const contractsRouter = router({
       return { id: contract.id };
     }),
 
+  // Cancel contract: only allowed if status is "pendente"
+  cancel: adminOnlyProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+      
+      // Get contract and verify it's in "pendente" status
+      const [contract] = await db.select()
+        .from(contracts)
+        .where(eq(contracts.id, input.id));
+      if (!contract)
+        throw new TRPCError({ code: "NOT_FOUND", message: "Contrato não encontrado." });
+      if (contract.status !== "pendente")
+        throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Apenas contratos em status 'pendente' podem ser cancelados." });
+      
+      // Cancel contract
+      await db.update(contracts)
+        .set({ status: "cancelado" })
+        .where(eq(contracts.id, input.id));
+      
+      // Cancel all pending rentals for this contract
+      await db.update(rentalsTable)
+        .set({ status: "cancelled" })
+        .where(and(eq(rentalsTable.contractId, input.id), isNull(rentalsTable.deletedAt)));
+      
+      await createAuditLog({
+        adminId: (ctx as any).adminUser?.id ?? null,
+        acao: "cancelou_contrato",
+        tabela: "contracts",
+        registroId: input.id,
+      });
+      
+      return { success: true };
+    }),
+
   confirmPayment: adminOnlyProcedure
     .input(z.object({ contractId: z.number() }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
-      // Get all active (or pending) rentals for this contract that are not yet paid
+      
+      // Get contract and verify it's in "pendente" status
+      const [contract] = await db.select()
+        .from(contracts)
+        .where(eq(contracts.id, input.contractId));
+      if (!contract)
+        throw new TRPCError({ code: "NOT_FOUND", message: "Contrato não encontrado." });
+      if (contract.status !== "pendente")
+        throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Contrato deve estar em status 'pendente' para confirmar pagamento." });
+      
+      // Get all pending rentals for this contract
       const contractRentals = await db.select()
         .from(rentalsTable)
         .where(and(eq(rentalsTable.contractId, input.contractId), isNull(rentalsTable.deletedAt)));
       if (contractRentals.length === 0)
         throw new TRPCError({ code: "NOT_FOUND", message: "Nenhum aluguel encontrado para este contrato." });
-      const unpaidRentals = contractRentals.filter((r) => r.paymentStatus !== "paid");
-      if (unpaidRentals.length === 0)
-        throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Todos os alugueis já estão pagos." });
-      // Mark all rentals as paid
+      
+      // Mark all rentals as paid and transition from pending to active
       await db.update(rentalsTable)
-        .set({ paymentStatus: "paid" })
+        .set({ paymentStatus: "paid", status: "active" })
         .where(and(eq(rentalsTable.contractId, input.contractId), isNull(rentalsTable.deletedAt)));
-      // Activate bikes if rental is still pending (presential payment before confirmation)
-      for (const rental of unpaidRentals) {
-        if (rental.status === "pending") {
-          await updateRental(rental.id, { status: "active" } as any);
-          await updateBike(rental.bikeId, { status: "rented" });
-        }
-      }
+      
+      // Transition contract from "pendente" to "ativo"
+      await db.update(contracts)
+        .set({ status: "ativo" })
+        .where(eq(contracts.id, input.contractId));
+      
       // Register revenue in financial module
       try {
         const today = new Date().toISOString().split("T")[0];
-        const totalAmt = unpaidRentals.reduce((sum, r) => sum + parseFloat(r.totalAmount || "0"), 0);
+        const totalAmt = contractRentals.reduce((sum, r) => sum + parseFloat(r.totalAmount || "0"), 0);
         if (totalAmt > 0) {
           await createRevenue({
             categoryId: 1,
@@ -2808,13 +2914,14 @@ const contractsRouter = router({
           } as any);
         }
       } catch (err) { console.warn("[confirmPayment] Revenue error:", err); }
+      
       await createAuditLog({
         adminId: (ctx as any).adminUser?.id ?? null,
         acao: "confirmou_pagamento_presencial",
         tabela: "contracts",
         registroId: input.contractId,
       });
-      return { success: true, paid: unpaidRentals.length };
+      return { success: true, paid: contractRentals.length };
     }),
 });
 

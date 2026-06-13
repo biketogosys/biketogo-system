@@ -107,10 +107,11 @@ export async function getSizeBreakdown(
     .where(eq(bikeSizes.id, bikeSizeId));
   if (!size) return { total: 0, alugada: 0, manutencao: 0, disponivel: 0 };
 
-  // Alugueis ativos sobrepostos ao periodo
+  // Alugueis ativos, pendentes e atrasados sobrepostos ao periodo
+  // (pending status also reserves stock — created manually on counter)
   const rentalConds: Parameters<typeof and>[0][] = [
     eq(rentals.bikeSizeId, bikeSizeId),
-    inArray(rentals.status, ["active", "overdue"]),
+    inArray(rentals.status, ["pending", "active", "overdue"]),
     isNull(rentals.deletedAt),
   ];
   if (excludeRentalId) rentalConds.push(ne(rentals.id, excludeRentalId));
@@ -350,7 +351,7 @@ export async function getBikes(opts?: { status?: Bike["status"]; search?: string
   const db = await getDb();
   if (!db) return [];
   const conditions = [];
-  // status filter removed — availability is fully derived from getSizeBreakdown
+  if (opts?.status) conditions.push(eq(bikes.status, opts.status));
   if (opts?.category) conditions.push(eq(bikes.category, opts.category as any));
   if (opts?.search) {
     const q = `%${opts.search}%`;
