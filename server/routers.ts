@@ -2833,6 +2833,134 @@ const contractsRouter = router({
       return { id: contract.id };
     }),
 
+  // Update contract: only allowed if status is "pendente"
+  update: adminOnlyProcedure
+    .input(z.object({
+      id: z.number(),
+      clientId: z.number(),
+      notes: z.string().optional(),
+      bikes: z.array(z.object({
+        bikeId: z.number(),
+        bikeSizeId: z.number().nullable().optional(),
+        startDate: z.string(),
+        endDate: z.string(),
+        quantity: z.number().min(1).default(1),
+        dailyRate: z.string().optional(),
+        totalAmount: z.string().optional(),
+      })).min(1),
+      accessories: z.array(z.object({
+        accessoryId: z.number(),
+        qty: z.number().min(1).default(1),
+        variante: z.string().optional(),
+        unitId: z.number().optional(),
+      })).optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+
+      // Verify contract exists and is pendente
+      const [contract] = await db.select().from(contracts).where(eq(contracts.id, input.id));
+      if (!contract) throw new TRPCError({ code: "NOT_FOUND", message: "Contrato não encontrado." });
+      if (contract.status !== "pendente")
+        throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Apenas contratos pendentes podem ser editados nesta versão." });
+
+      // Validate availability for each bike size, EXCLUDING current rentals of this contract
+      {
+        const { getSizeAvailability } = await import("./db");
+        for (const b of input.bikes) {
+          if (!b.bikeSizeId) continue;
+          const available = await getSizeAvailability(b.bikeSizeId, b.startDate, b.endDate, undefined, input.id);
+          if (b.quantity > available) {
+            throw new TRPCError({
+              code: "PRECONDITION_FAILED",
+              message: `Quantidade indisponível para o tamanho selecionado. Disponível: ${available}.`,
+            });
+          }
+        }
+      }
+
+      // Recalculate total value
+      let totalValue = 0;
+      for (const b of input.bikes) {
+        if (b.totalAmount) totalValue += parseFloat(b.totalAmount);
+      }
+
+      // Update contract header
+      await db.update(contracts)
+        .set({
+          clientId: input.clientId,
+          valorTotal: totalValue > 0 ? totalValue.toFixed(2) : null,
+        })
+        .where(eq(contracts.id, input.id));
+
+      // Soft-delete all current rentals for this contract
+      await db.update(rentalsTable)
+        .set({ deletedAt: new Date() })
+        .where(and(eq(rentalsTable.contractId, input.id), isNull(rentalsTable.deletedAt)));
+
+      // Recreate rentals from input.bikes
+      for (const b of input.bikes) {
+        await createRental({
+          clientId: input.clientId,
+          bikeId: b.bikeId,
+          bikeSizeId: b.bikeSizeId ?? null,
+          quantity: b.quantity,
+          startDate: b.startDate,
+          endDate: b.endDate,
+          dailyRate: b.dailyRate ?? null,
+          totalAmount: b.totalAmount ?? null,
+          paymentType: "presential",
+          paymentStatus: "pending",
+          status: "pending",
+          source: "manual",
+          contractId: input.id,
+          notes: input.notes ?? null,
+        } as any);
+      }
+
+      // Reconcile accessories: delete old contract_accessories, recreate
+      await db.delete(contractAccessories).where(eq(contractAccessories.contractId, input.id));
+
+      if (input.accessories && input.accessories.length > 0) {
+        // Get new rental ids for this contract
+        const newRentals = await db.select({ id: rentalsTable.id })
+          .from(rentalsTable)
+          .where(and(eq(rentalsTable.contractId, input.id), isNull(rentalsTable.deletedAt)))
+          .limit(1);
+        const firstRentalId = newRentals[0]?.id;
+
+        for (const acc of input.accessories) {
+          const accessory = await getAccessoryById(acc.accessoryId);
+          if (firstRentalId) {
+            await createRentalAccessory({
+              rentalId: firstRentalId,
+              accessoryId: acc.accessoryId,
+              quantity: acc.qty,
+              dailyRate: accessory?.dailyRate ?? null,
+            } as any);
+          }
+          await db.insert(contractAccessories).values({
+            contractId: input.id,
+            accessoryId: acc.accessoryId,
+            qty: acc.qty,
+            unitId: acc.unitId ?? null,
+            status: "ok",
+          });
+        }
+      }
+
+      await createAuditLog({
+        adminId: (ctx as any).adminUser?.id ?? null,
+        acao: "editou_contrato_pendente",
+        tabela: "contracts",
+        registroId: input.id,
+        dadosDepois: { clientId: input.clientId, bikes: input.bikes.length, accessories: input.accessories?.length ?? 0 },
+      });
+
+      return { id: input.id };
+    }),
+
   // Cancel contract: only allowed if status is "pendente"
   cancel: adminOnlyProcedure
     .input(z.object({ id: z.number() }))

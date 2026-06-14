@@ -97,6 +97,7 @@ export async function getSizeBreakdown(
   startDate?: string,
   endDate?: string,
   excludeRentalId?: number,
+  excludeContractId?: number,
 ): Promise<{ total: number; alugada: number; manutencao: number; disponivel: number }> {
   const db = await getDb();
   if (!db) return { total: 0, alugada: 0, manutencao: 0, disponivel: 0 };
@@ -115,6 +116,7 @@ export async function getSizeBreakdown(
     isNull(rentals.deletedAt),
   ];
   if (excludeRentalId) rentalConds.push(ne(rentals.id, excludeRentalId));
+  if (excludeContractId) rentalConds.push(or(isNull(rentals.contractId), ne(rentals.contractId, excludeContractId))!);
   if (startDate && endDate) {
     rentalConds.push(lte(rentals.startDate, endDate));
     rentalConds.push(or(isNull(rentals.endDate), gte(rentals.endDate, startDate))!);
@@ -153,8 +155,9 @@ export async function getSizeAvailability(
   startDate?: string,
   endDate?: string,
   excludeRentalId?: number,
+  excludeContractId?: number,
 ): Promise<number> {
-  return (await getSizeBreakdown(bikeSizeId, startDate, endDate, excludeRentalId)).disponivel;
+  return (await getSizeBreakdown(bikeSizeId, startDate, endDate, excludeRentalId, excludeContractId)).disponivel;
 }
 
 export async function upsertUser(user: InsertUser): Promise<void> {

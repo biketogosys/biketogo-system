@@ -153,15 +153,44 @@ function VerifiedClientAutocomplete({
 }
 
 // ─── NewContractModal ─────────────────────────────────────────────────────────
-export function NewContractModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+type EditPrefill = {
+  contractId: number;
+  clientId: number;
+  clientName: string;
+  bikes: BikeEntry[];
+  accessories: AccessoryEntry[];
+};
+
+export function NewContractModal({
+  open,
+  onClose,
+  editPrefill,
+}: {
+  open: boolean;
+  onClose: () => void;
+  editPrefill?: EditPrefill;
+}) {
+  const isEditMode = !!editPrefill;
   const utils = trpc.useUtils();
   const [step, setStep] = useState(1);
   const [clientId, setClientId] = useState("");
   const [clientName, setClientName] = useState("");
-  const [clientStatus, setClientStatus] = useState("");
+  const [clientStatus, setClientStatus] = useState("verified"); // prefill always verified
   const [bikeEntries, setBikeEntries] = useState<BikeEntry[]>([]);
   const [accessories, setAccessories] = useState<AccessoryEntry[]>([]);
   const [notes, setNotes] = useState("");
+
+  // Prefill state when edit mode opens
+  useEffect(() => {
+    if (open && isEditMode && editPrefill) {
+      setClientId(String(editPrefill.clientId));
+      setClientName(editPrefill.clientName);
+      setClientStatus("verified");
+      setBikeEntries(editPrefill.bikes);
+      setAccessories(editPrefill.accessories);
+      setStep(1);
+    }
+  }, [open, isEditMode]);
 
   // Bike selection state
   const [selBikeId, setSelBikeId] = useState("");
@@ -284,6 +313,18 @@ export function NewContractModal({ open, onClose }: { open: boolean; onClose: ()
     onError: (e) => toast.error("Erro ao criar contrato: " + e.message),
   });
 
+  const updateMutation = trpc.contracts.update.useMutation({
+    onSuccess: (res) => {
+      toast.success(`Contrato #${res.id} atualizado!`);
+      utils.contracts.getById.invalidate({ id: res.id });
+      utils.contracts.list.invalidate();
+      utils.rentals.listGroupedByContract.invalidate();
+      handleReset();
+      onClose();
+    },
+    onError: (e) => toast.error("Erro ao atualizar contrato: " + e.message),
+  });
+
   function handleReset() {
     setStep(1); setClientId(""); setClientName(""); setClientStatus("");
     setBikeEntries([]); setAccessories([]); setNotes("");
@@ -293,20 +334,31 @@ export function NewContractModal({ open, onClose }: { open: boolean; onClose: ()
   function handleSubmit() {
     if (!clientId) { toast.error("Selecione um cliente."); return; }
     if (bikeEntries.length === 0) { toast.error("Adicione pelo menos uma bike."); return; }
-    createMutation.mutate({
-      clientId: Number(clientId),
-      bikes: bikeEntries.map((b) => ({
-        bikeId: b.bikeId,
-        bikeSizeId: b.bikeSizeId,
-        startDate: b.startDate,
-        endDate: b.endDate,
-        quantity: b.quantity,
-        dailyRate: b.dailyRate,
-        totalAmount: b.totalAmount,
-      })),
-      accessories: accessories.map((a) => ({ accessoryId: a.accessoryId, qty: a.qty, variante: a.variante, unitId: a.unitId })),
-      notes: notes || undefined,
-    });
+    const bikePayload = bikeEntries.map((b) => ({
+      bikeId: b.bikeId,
+      bikeSizeId: b.bikeSizeId,
+      startDate: b.startDate,
+      endDate: b.endDate,
+      quantity: b.quantity,
+      dailyRate: b.dailyRate,
+      totalAmount: b.totalAmount,
+    }));
+    const accPayload = accessories.map((a) => ({ accessoryId: a.accessoryId, qty: a.qty, variante: a.variante, unitId: a.unitId }));
+    if (isEditMode && editPrefill) {
+      updateMutation.mutate({
+        id: editPrefill.contractId,
+        clientId: Number(clientId),
+        bikes: bikePayload,
+        accessories: accPayload,
+      });
+    } else {
+      createMutation.mutate({
+        clientId: Number(clientId),
+        bikes: bikePayload,
+        accessories: accPayload,
+        notes: notes || undefined,
+      });
+    }
   }
 
   const stepLabels = ["Cliente", "Bikes", "Acessórios", "Resumo"];
@@ -317,7 +369,7 @@ export function NewContractModal({ open, onClose }: { open: boolean; onClose: ()
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <FileText className="h-5 w-5 text-primary" />
-            Novo Contrato Manual
+            {isEditMode ? `Editar Contrato #${editPrefill?.contractId}` : "Novo Contrato Manual"}
           </DialogTitle>
         </DialogHeader>
 
@@ -602,10 +654,10 @@ export function NewContractModal({ open, onClose }: { open: boolean; onClose: ()
                 size="sm"
                 className="bg-primary text-primary-foreground hover:bg-primary/90"
                 onClick={handleSubmit}
-                disabled={createMutation.isPending}
+                disabled={createMutation.isPending || updateMutation.isPending}
               >
-                {createMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <CheckCircle2 className="h-4 w-4 mr-1" />}
-                Criar Contrato
+                {(createMutation.isPending || updateMutation.isPending) ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <CheckCircle2 className="h-4 w-4 mr-1" />}
+                {isEditMode ? "Salvar Alterações" : "Criar Contrato"}
               </Button>
             )}
           </div>

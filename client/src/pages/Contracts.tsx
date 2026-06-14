@@ -364,7 +364,7 @@ function CloseContractDialog({
   );
 }
 
-// ─── Contract Detail Panel ────────────────────────────────────────────────────
+// // ─── Contract Detail Panel ────────────────────────────────────────────────
 function ContractDetail({
   contractId,
   onBack,
@@ -375,6 +375,7 @@ function ContractDetail({
   const utils = trpc.useUtils();
   const { data, isLoading } = trpc.contracts.getById.useQuery({ id: contractId });
   const [closeOpen, setCloseOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
 
   const archiveMutation = trpc.contracts.archive.useMutation({
     onSuccess: () => {
@@ -465,6 +466,15 @@ function ContractDetail({
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <ContractStatusBadge status={data.status as ContractStatus} />
+          {data.status === "pendente" && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setEditOpen(true)}
+            >
+              <FileText className="h-4 w-4 mr-1" /> Editar contrato
+            </Button>
+          )}
           {(data.status === "pendente" || data.rentals?.some((r: any) => r.status === "pending")) && (
             <>
               {data.clientStatus && data.clientStatus !== "verified" && (
@@ -728,6 +738,41 @@ function ContractDetail({
         open={closeOpen}
         onClose={() => setCloseOpen(false)}
       />
+
+      {/* Edit modal (only for pendente contracts) */}
+      {data.status === "pendente" && (
+        <NewContractModal
+          open={editOpen}
+          onClose={() => setEditOpen(false)}
+          editPrefill={{
+            contractId: data.id,
+            clientId: data.clientId,
+            clientName: data.clientName ?? `Cliente #${data.clientId}`,
+            bikes: (data.rentals ?? []).map((r: any) => ({
+              bikeId: r.bikeId,
+              bikeModel: r.bikeModel ?? "",
+              bikeBrand: r.bikeBrand ?? "",
+              bikeSizeId: r.bikeSizeId ?? null,
+              tamanho: r.tamanho ?? "",
+              startDate: r.startDate ?? "",
+              endDate: r.endDate ?? "",
+              quantity: r.quantity ?? 1,
+              dailyRate: r.dailyRate ?? "0",
+              numDays: r.startDate && r.endDate
+                ? Math.max(1, Math.ceil((new Date(r.endDate).getTime() - new Date(r.startDate).getTime()) / 86400000))
+                : 1,
+              totalAmount: r.totalAmount ?? "0.00",
+            })),
+            accessories: (data.accessories ?? []).map((a: any) => ({
+              accessoryId: a.accessoryId,
+              name: a.accessoryName ?? `Acessório #${a.accessoryId}`,
+              qty: a.qty ?? 1,
+              obrigatorio: false,
+              unitId: a.unitId ?? undefined,
+            })),
+          }}
+        />
+      )}
     </div>
   );
 }
