@@ -36,6 +36,8 @@ import {
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type BikeEntry = {
+  rentalId?: number;      // present for existing rentals in ativo/parcial edit mode
+  locked?: boolean;       // true for returned rentals — cannot be edited or removed
   bikeId: number;
   bikeModel: string;
   bikeBrand: string;
@@ -155,6 +157,7 @@ function VerifiedClientAutocomplete({
 // ─── NewContractModal ─────────────────────────────────────────────────────────
 type EditPrefill = {
   contractId: number;
+  contractStatus: string; // "pendente" | "ativo" | "parcialmente_devolvido"
   clientId: number;
   clientName: string;
   bikes: BikeEntry[];
@@ -331,10 +334,17 @@ export function NewContractModal({
     setSelBikeId(""); setSelBikeSizeId(""); setSelStartDate(""); setSelEndDate(""); setSelQty(1);
   }
 
+  const isAtivoParcial = isEditMode && editPrefill && editPrefill.contractStatus !== "pendente";
+
   function handleSubmit() {
     if (!clientId) { toast.error("Selecione um cliente."); return; }
-    if (bikeEntries.length === 0) { toast.error("Adicione pelo menos uma bike."); return; }
+    // For ativo/parcial, non-locked entries must be at least 1
+    const editableBikes = bikeEntries.filter(b => !b.locked);
+    if (editableBikes.length === 0 && !bikeEntries.some(b => b.locked)) {
+      toast.error("Adicione pelo menos uma bike."); return;
+    }
     const bikePayload = bikeEntries.map((b) => ({
+      rentalId: b.rentalId,
       bikeId: b.bikeId,
       bikeSizeId: b.bikeSizeId,
       startDate: b.startDate,
@@ -490,21 +500,34 @@ export function NewContractModal({
               <Plus className="h-4 w-4 mr-1" /> Adicionar bike ao contrato
             </Button>
 
+            {/* Financial warning for ativo/parcial edit */}
+            {isAtivoParcial && (
+              <div className="flex items-start gap-2 p-2.5 rounded-md bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 text-xs text-amber-700 dark:text-amber-400">
+                <span className="shrink-0 mt-0.5">⚠️</span>
+                <span>Alterar valores lançará um ajuste no financeiro e o contrato será regenerado em PDF.</span>
+              </div>
+            )}
+
             {bikeEntries.length > 0 && (
               <div className="space-y-2">
                 <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Bikes adicionadas</p>
                 {bikeEntries.map((b, i) => (
-                  <div key={i} className="flex items-center justify-between p-2.5 rounded-md bg-muted/50 border">
+                  <div key={i} className={`flex items-center justify-between p-2.5 rounded-md border ${
+                    b.locked ? "bg-muted/30 opacity-70" : "bg-muted/50"
+                  }`}>
                     <div className="text-sm">
                       <span className="font-medium">{b.bikeModel}</span>
                       {b.tamanho && <span className="text-muted-foreground"> · {b.tamanho}</span>}
                       <span className="text-muted-foreground"> · {b.numDays}d · {b.quantity}x</span>
+                      {b.locked && <span className="ml-1.5 text-xs text-muted-foreground">(devolvida)</span>}
                     </div>
                     <div className="flex items-center gap-2">
                       <span className="text-sm font-medium">R$ {b.totalAmount}</span>
-                      <button type="button" onClick={() => handleRemoveBike(i)} className="text-muted-foreground hover:text-destructive">
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
+                      {!b.locked && (
+                        <button type="button" onClick={() => handleRemoveBike(i)} className="text-muted-foreground hover:text-destructive">
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      )}
                     </div>
                   </div>
                 ))}

@@ -2840,6 +2840,7 @@ const contractsRouter = router({
       clientId: z.number(),
       notes: z.string().optional(),
       bikes: z.array(z.object({
+        rentalId: z.number().optional(), // present for existing rentals (ativo/parcial mode)
         bikeId: z.number(),
         bikeSizeId: z.number().nullable().optional(),
         startDate: z.string(),
@@ -2859,103 +2860,233 @@ const contractsRouter = router({
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
 
-      // Verify contract exists and is pendente
+      // Verify contract exists and is editable
       const [contract] = await db.select().from(contracts).where(eq(contracts.id, input.id));
       if (!contract) throw new TRPCError({ code: "NOT_FOUND", message: "Contrato não encontrado." });
-      if (contract.status !== "pendente")
-        throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Apenas contratos pendentes podem ser editados nesta versão." });
+      const editableStatuses = ["pendente", "ativo", "parcialmente_devolvido"];
+      if (!editableStatuses.includes(contract.status ?? ""))
+        throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Apenas contratos pendentes, ativos ou parcialmente devolvidos podem ser editados." });
 
-      // Validate availability for each bike size, EXCLUDING current rentals of this contract
-      {
-        const { getSizeAvailability } = await import("./db");
+      const isPendente = contract.status === "pendente";
+
+      // ─── RAMO PENDENTE: substituição total (comportamento original) ───────────
+      if (isPendente) {
+        // Validate availability for each bike size, EXCLUDING current rentals of this contract
+        {
+          const { getSizeAvailability } = await import("./db");
+          for (const b of input.bikes) {
+            if (!b.bikeSizeId) continue;
+            const available = await getSizeAvailability(b.bikeSizeId, b.startDate, b.endDate, undefined, input.id);
+            if (b.quantity > available) {
+              throw new TRPCError({
+                code: "PRECONDITION_FAILED",
+                message: `Quantidade indisponível para o tamanho selecionado. Disponível: ${available}.`,
+              });
+            }
+          }
+        }
+
+        // Recalculate total value
+        let totalValue = 0;
         for (const b of input.bikes) {
-          if (!b.bikeSizeId) continue;
-          const available = await getSizeAvailability(b.bikeSizeId, b.startDate, b.endDate, undefined, input.id);
-          if (b.quantity > available) {
-            throw new TRPCError({
-              code: "PRECONDITION_FAILED",
-              message: `Quantidade indisponível para o tamanho selecionado. Disponível: ${available}.`,
+          if (b.totalAmount) totalValue += parseFloat(b.totalAmount);
+        }
+
+        // Update contract header
+        await db.update(contracts)
+          .set({ clientId: input.clientId, valorTotal: totalValue > 0 ? totalValue.toFixed(2) : null })
+          .where(eq(contracts.id, input.id));
+
+        // Soft-delete all current rentals for this contract
+        await db.update(rentalsTable)
+          .set({ deletedAt: new Date() })
+          .where(and(eq(rentalsTable.contractId, input.id), isNull(rentalsTable.deletedAt)));
+
+        // Recreate rentals from input.bikes
+        for (const b of input.bikes) {
+          await createRental({
+            clientId: input.clientId,
+            bikeId: b.bikeId,
+            bikeSizeId: b.bikeSizeId ?? null,
+            quantity: b.quantity,
+            startDate: b.startDate,
+            endDate: b.endDate,
+            dailyRate: b.dailyRate ?? null,
+            totalAmount: b.totalAmount ?? null,
+            paymentType: "presential",
+            paymentStatus: "pending",
+            status: "pending",
+            source: "manual",
+            contractId: input.id,
+            notes: input.notes ?? null,
+          } as any);
+        }
+
+        // Reconcile accessories: delete old contract_accessories, recreate
+        await db.delete(contractAccessories).where(eq(contractAccessories.contractId, input.id));
+        if (input.accessories && input.accessories.length > 0) {
+          const newRentals = await db.select({ id: rentalsTable.id })
+            .from(rentalsTable)
+            .where(and(eq(rentalsTable.contractId, input.id), isNull(rentalsTable.deletedAt)))
+            .limit(1);
+          const firstRentalId = newRentals[0]?.id;
+          for (const acc of input.accessories) {
+            const accessory = await getAccessoryById(acc.accessoryId);
+            if (firstRentalId) {
+              await createRentalAccessory({
+                rentalId: firstRentalId,
+                accessoryId: acc.accessoryId,
+                quantity: acc.qty,
+                dailyRate: accessory?.dailyRate ?? null,
+              } as any);
+            }
+            await db.insert(contractAccessories).values({
+              contractId: input.id,
+              accessoryId: acc.accessoryId,
+              qty: acc.qty,
+              unitId: acc.unitId ?? null,
+              status: "ok",
             });
           }
         }
+
+        await createAuditLog({
+          adminId: (ctx as any).adminUser?.id ?? null,
+          acao: "editou_contrato_pendente",
+          tabela: "contracts",
+          registroId: input.id,
+          dadosDepois: { clientId: input.clientId, bikes: input.bikes.length, accessories: input.accessories?.length ?? 0 },
+        });
+
+        return { id: input.id };
       }
 
-      // Recalculate total value
-      let totalValue = 0;
-      for (const b of input.bikes) {
-        if (b.totalAmount) totalValue += parseFloat(b.totalAmount);
-      }
+      // ─── RAMO ATIVO / PARCIALMENTE DEVOLVIDO: modelo de diferença ────────────
+      // oldTotal for financial delta
+      const oldTotal = parseFloat(contract.valorTotal ?? "0");
+      const newTotal = input.bikes.reduce((s, b) => s + parseFloat(b.totalAmount ?? "0"), 0);
 
-      // Update contract header
-      await db.update(contracts)
-        .set({
-          clientId: input.clientId,
-          valorTotal: totalValue > 0 ? totalValue.toFixed(2) : null,
-        })
-        .where(eq(contracts.id, input.id));
-
-      // Soft-delete all current rentals for this contract
-      await db.update(rentalsTable)
-        .set({ deletedAt: new Date() })
+      // Fetch current non-deleted rentals for this contract
+      const currentRentals = await db.select()
+        .from(rentalsTable)
         .where(and(eq(rentalsTable.contractId, input.id), isNull(rentalsTable.deletedAt)));
 
-      // Recreate rentals from input.bikes
-      for (const b of input.bikes) {
-        await createRental({
-          clientId: input.clientId,
-          bikeId: b.bikeId,
-          bikeSizeId: b.bikeSizeId ?? null,
-          quantity: b.quantity,
-          startDate: b.startDate,
-          endDate: b.endDate,
-          dailyRate: b.dailyRate ?? null,
-          totalAmount: b.totalAmount ?? null,
-          paymentType: "presential",
-          paymentStatus: "pending",
-          status: "pending",
-          source: "manual",
-          contractId: input.id,
-          notes: input.notes ?? null,
-        } as any);
-      }
+      const inputRentalIds = new Set(input.bikes.filter(b => b.rentalId).map(b => b.rentalId!));
 
-      // Reconcile accessories: delete old contract_accessories, recreate
-      await db.delete(contractAccessories).where(eq(contractAccessories.contractId, input.id));
-
-      if (input.accessories && input.accessories.length > 0) {
-        // Get new rental ids for this contract
-        const newRentals = await db.select({ id: rentalsTable.id })
-          .from(rentalsTable)
-          .where(and(eq(rentalsTable.contractId, input.id), isNull(rentalsTable.deletedAt)))
-          .limit(1);
-        const firstRentalId = newRentals[0]?.id;
-
-        for (const acc of input.accessories) {
-          const accessory = await getAccessoryById(acc.accessoryId);
-          if (firstRentalId) {
-            await createRentalAccessory({
-              rentalId: firstRentalId,
-              accessoryId: acc.accessoryId,
-              quantity: acc.qty,
-              dailyRate: accessory?.dailyRate ?? null,
-            } as any);
-          }
-          await db.insert(contractAccessories).values({
-            contractId: input.id,
-            accessoryId: acc.accessoryId,
-            qty: acc.qty,
-            unitId: acc.unitId ?? null,
-            status: "ok",
-          });
+      // Soft-delete rentals NOT present in input (user removed them)
+      for (const r of currentRentals) {
+        if (!inputRentalIds.has(r.id)) {
+          await db.update(rentalsTable)
+            .set({ deletedAt: new Date() })
+            .where(eq(rentalsTable.id, r.id));
         }
       }
 
+      // UPDATE existing rentals / INSERT new ones
+      for (const b of input.bikes) {
+        if (b.rentalId) {
+          // UPDATE existing rental (preserve status — do NOT change 'returned')
+          await db.update(rentalsTable)
+            .set({
+              startDate: b.startDate,
+              endDate: b.endDate,
+              totalAmount: b.totalAmount ?? null,
+              dailyRate: b.dailyRate ?? null,
+            })
+            .where(and(eq(rentalsTable.id, b.rentalId), isNull(rentalsTable.deletedAt)));
+        } else {
+          // INSERT new rental (ativo, paid)
+          await createRental({
+            clientId: input.clientId,
+            bikeId: b.bikeId,
+            bikeSizeId: b.bikeSizeId ?? null,
+            quantity: b.quantity,
+            startDate: b.startDate,
+            endDate: b.endDate,
+            dailyRate: b.dailyRate ?? null,
+            totalAmount: b.totalAmount ?? null,
+            paymentType: "presential",
+            paymentStatus: "paid",
+            status: "active",
+            source: "manual",
+            contractId: input.id,
+            notes: input.notes ?? null,
+          } as any);
+        }
+      }
+
+      // Update contract header with new total
+      await db.update(contracts)
+        .set({ clientId: input.clientId, valorTotal: newTotal > 0 ? newTotal.toFixed(2) : null })
+        .where(eq(contracts.id, input.id));
+
+      // Financial adjustment (delta)
+      try {
+        const delta = newTotal - oldTotal;
+        if (Math.abs(delta) > 0.001) {
+          const today = new Date().toISOString().split("T")[0];
+          await createRevenue({
+            categoryId: 1,
+            description: `Ajuste — Contrato #${input.id} (edição)`,
+            amount: delta.toFixed(2),
+            date: today,
+          } as any);
+        }
+      } catch (err) { console.warn("[contracts.update] Revenue adjustment error:", err); }
+
+      // Regenerate PDF (non-blocking)
+      try {
+        const { generateContractPdf } = await import("./pdf");
+        const { storagePut } = await import("./storage");
+        const { contracts: cTable2, clients: clTable2, accessories: accTable2, contractAccessories: caTable3, accessoryUnits: auTable3 } = await import("../drizzle/schema");
+        const { eq: eqPdf, and: andPdf, isNull: isNullPdf } = await import("drizzle-orm");
+        const [contractRow] = await db.select().from(cTable2).where(eqPdf(cTable2.id, input.id));
+        const [clientRow] = contractRow?.clientId
+          ? await db.select().from(clTable2).where(eqPdf(clTable2.id, contractRow.clientId))
+          : [null];
+        const rentalsForPdf = await db.select({
+          bikeId: rentalsTable.bikeId, startDate: rentalsTable.startDate, endDate: rentalsTable.endDate,
+          totalAmount: rentalsTable.totalAmount,
+        }).from(rentalsTable).where(andPdf(eqPdf(rentalsTable.contractId, input.id), isNullPdf(rentalsTable.deletedAt)));
+        const { bikes: bikesT } = await import("../drizzle/schema");
+        const rentalsWithBike = await Promise.all(rentalsForPdf.map(async (r) => {
+          const [bike] = r.bikeId ? await db.select({ model: bikesT.model, brand: bikesT.brand, serialNumber: bikesT.serialNumber }).from(bikesT).where(eqPdf(bikesT.id, r.bikeId)) : [null];
+          return { ...r, bikeModel: bike?.model, bikeBrand: bike?.brand, bikeSerialNumber: bike?.serialNumber };
+        }));
+        const caRows3 = await db.select({
+          accessoryId: caTable3.accessoryId, qty: caTable3.qty, unitId: caTable3.unitId,
+          accessoryName: accTable2.name,
+        }).from(caTable3).leftJoin(accTable2, eqPdf(caTable3.accessoryId, accTable2.id)).where(eqPdf(caTable3.contractId, input.id));
+        const accWithSerial = await Promise.all(caRows3.map(async (ca) => {
+          let serialNumber: string | null = null;
+          if (ca.unitId) {
+            const [unit] = await db.select({ serialNumber: auTable3.serialNumber }).from(auTable3).where(eqPdf(auTable3.id, ca.unitId));
+            serialNumber = unit?.serialNumber ?? null;
+          }
+          return { accessoryName: ca.accessoryName, qty: ca.qty, serialNumber };
+        }));
+        const pdfBuffer = await generateContractPdf({
+          contractId: input.id,
+          clientName: clientRow?.name ?? "—",
+          clientCpf: clientRow?.cpf ?? null,
+          clientPhone: clientRow?.phone ?? null,
+          clientEmail: clientRow?.email ?? null,
+          criadoEm: contractRow?.criadoEm ?? new Date(),
+          valorTotal: contractRow?.valorTotal ?? null,
+          rentals: rentalsWithBike,
+          accessories: accWithSerial,
+        });
+        const suffix = Date.now().toString(36);
+        const { url } = await storagePut(`contracts/contrato-${input.id}-${suffix}.pdf`, pdfBuffer, "application/pdf");
+        await db.update(cTable2).set({ pdfUrl: url }).where(eqPdf(cTable2.id, input.id));
+      } catch (err) { console.warn("[contracts.update] PDF regeneration error:", err); }
+
       await createAuditLog({
         adminId: (ctx as any).adminUser?.id ?? null,
-        acao: "editou_contrato_pendente",
+        acao: "editou_contrato_ativo",
         tabela: "contracts",
         registroId: input.id,
-        dadosDepois: { clientId: input.clientId, bikes: input.bikes.length, accessories: input.accessories?.length ?? 0 },
+        dadosDepois: { clientId: input.clientId, bikes: input.bikes.length, oldTotal, newTotal },
       });
 
       return { id: input.id };

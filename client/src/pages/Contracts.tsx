@@ -466,7 +466,7 @@ function ContractDetail({
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <ContractStatusBadge status={data.status as ContractStatus} />
-          {data.status === "pendente" && (
+          {["pendente", "ativo", "parcialmente_devolvido"].includes(data.status) && (
             <Button
               size="sm"
               variant="outline"
@@ -739,16 +739,19 @@ function ContractDetail({
         onClose={() => setCloseOpen(false)}
       />
 
-      {/* Edit modal (only for pendente contracts) */}
-      {data.status === "pendente" && (
+      {/* Edit modal (pendente, ativo, parcialmente_devolvido) */}
+      {["pendente", "ativo", "parcialmente_devolvido"].includes(data.status) && (
         <NewContractModal
           open={editOpen}
           onClose={() => setEditOpen(false)}
           editPrefill={{
             contractId: data.id,
+            contractStatus: data.status,
             clientId: data.clientId,
             clientName: data.clientName ?? `Cliente #${data.clientId}`,
             bikes: (data.rentals ?? []).map((r: any) => ({
+              rentalId: r.id,
+              locked: r.status === "returned",
               bikeId: r.bikeId,
               bikeModel: r.bikeModel ?? "",
               bikeBrand: r.bikeBrand ?? "",
