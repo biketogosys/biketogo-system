@@ -540,8 +540,13 @@ export default function Accessories() {
                 </thead>
                 <tbody>
                   {items.map((item) => {
-                    const dispQty = (item as any).quantidadeDisponivel ?? (item as any).quantidadeTotal ?? item.quantity ?? 0;
+                    const bd = (item as any).breakdown;
+                    const dispQty = bd ? bd.disponivel : ((item as any).quantidadeDisponivel ?? (item as any).quantidadeTotal ?? item.quantity ?? 0);
+                    const totalQty = bd ? bd.total : ((item as any).quantidadeTotal ?? item.quantity ?? 0);
                     const isObrigatorio = (item as any).obrigatorio ?? false;
+                    // Build variante summary (only if multiple variantes or named variante)
+                    const byVariante: Array<{ variante: string | null; disponivel: number; alugado: number; manutencao: number; perdido: number; roubado: number }> = bd?.byVariante ?? [];
+                    const showVariantes = bd && (byVariante.length > 1 || (byVariante.length === 1 && byVariante[0].variante !== null));
                     return (
                       <tr key={item.id} className="group border-b border-border/40 last:border-b-0">
                         <td className="px-3 py-2.5">
@@ -554,9 +559,24 @@ export default function Accessories() {
                           {item.category && <span className="px-1.5 py-0.5 bg-[#C8920A]/10 text-[#C8920A] rounded text-[10px] uppercase font-medium">{item.category}</span>}
                         </td>
                         <td className="px-3 py-2.5">
-                          <span className={`text-[12px] font-medium ${dispQty > 0 ? 'text-emerald-500' : 'text-red-500'}`}>
-                            {dispQty} / {(item as any).quantidadeTotal ?? item.quantity}
-                          </span>
+                          {showVariantes ? (
+                            <div className="space-y-0.5">
+                              {byVariante.map((v) => (
+                                <div key={v.variante ?? "__null__"} className="flex flex-wrap gap-x-2 text-[11px]">
+                                  <span className="text-muted-foreground font-medium">{v.variante ?? "Padrão"}:</span>
+                                  {v.disponivel > 0 && <span className="text-emerald-500">{v.disponivel} disp</span>}
+                                  {v.alugado > 0 && <span className="text-yellow-500">{v.alugado} alug</span>}
+                                  {v.manutencao > 0 && <span className="text-orange-500">{v.manutencao} manut</span>}
+                                  {v.perdido > 0 && <span className="text-red-500">{v.perdido} perd</span>}
+                                  {v.roubado > 0 && <span className="text-red-700">{v.roubado} roub</span>}
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <span className={`text-[12px] font-medium ${dispQty > 0 ? 'text-emerald-500' : 'text-red-500'}`}>
+                              {dispQty} / {totalQty}
+                            </span>
+                          )}
                         </td>
                         <td className="px-3 py-2.5">
                           {isObrigatorio ? (
@@ -591,7 +611,9 @@ export default function Accessories() {
             {/* Mobile cards */}
             <div className="md:hidden space-y-2">
               {items.map((item: any) => {
-                const dispQty = item.quantidadeDisponivel ?? item.quantidadeTotal ?? item.quantity ?? 0;
+                const bd = item.breakdown;
+                const dispQty = bd ? bd.disponivel : (item.quantidadeDisponivel ?? item.quantidadeTotal ?? item.quantity ?? 0);
+                const totalQty = bd ? bd.total : (item.quantidadeTotal ?? item.quantity ?? 0);
                 const isObrigatorio = item.obrigatorio ?? false;
                 return (
                   <div key={item.id} className="bg-card border border-border rounded-lg p-3 active:bg-accent/40 transition-colors">
@@ -601,7 +623,7 @@ export default function Accessories() {
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-medium text-foreground truncate">{item.name}</p>
-                        <p className="text-xs text-muted-foreground">{item.category || 'Sem categoria'} • {dispQty}/{item.quantidadeTotal ?? item.quantity} disp.</p>
+                        <p className="text-xs text-muted-foreground">{item.category || 'Sem categoria'} • {dispQty}/{totalQty} disp.</p>
                       </div>
                       <div className="flex flex-col items-end gap-1">
                         <Badge className={`text-[10px] px-2 py-0.5 border flex-shrink-0 ${STATUS_COLORS[item.status as AccessoryStatus]}`} variant="outline">

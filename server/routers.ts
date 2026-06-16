@@ -1395,28 +1395,19 @@ const accessoriesRouter = router({
         category: rawFilters.category ?? undefined,
       };
       const allItems = await getAccessories(filters);
-      // Calculate quantidadeDisponivel in real time based on active rentals
-      const db = await (await import("./db")).getDb();
-      const enriched = await (async () => {
-        if (!db) return allItems;
-        const { rentalAccessories: ra, rentals: rt } = await import("../drizzle/schema");
-        const { eq, inArray, and: andOp } = await import("drizzle-orm");
-        const ids = allItems.map((i) => i.id);
-        if (ids.length === 0) return allItems;
-        const activeUsage = await db
-          .select({ accessoryId: ra.accessoryId, qty: ra.quantity })
-          .from(ra)
-          .innerJoin(rt, eq(ra.rentalId, rt.id))
-          .where(andOp(inArray(ra.accessoryId, ids), inArray(rt.status, ["pending", "active", "overdue"])));
-        const usageMap: Record<number, number> = {};
-        for (const row of activeUsage) {
-          usageMap[row.accessoryId] = (usageMap[row.accessoryId] ?? 0) + (row.qty ?? 1);
-        }
-        return allItems.map((item) => ({
-          ...item,
-          quantidadeDisponivel: Math.max(0, (item.quantidadeTotal ?? item.quantity) - (usageMap[item.id] ?? 0)),
-        }));
-      })();
+      // Derive quantidadeDisponivel from accessory_units status (source of truth)
+      const { getAccessoryBreakdown } = await import("./db");
+      const enriched = await Promise.all(
+        allItems.map(async (item) => {
+          const breakdown = await getAccessoryBreakdown(item.id);
+          return {
+            ...item,
+            quantidadeTotal: breakdown.total > 0 ? breakdown.total : (item.quantidadeTotal ?? item.quantity ?? 0),
+            quantidadeDisponivel: breakdown.disponivel,
+            breakdown,
+          };
+        })
+      );
       const total = enriched.length;
       const totalPages = Math.ceil(total / limit);
       const offset = (page - 1) * limit;

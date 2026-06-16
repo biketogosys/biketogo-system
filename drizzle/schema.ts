@@ -226,6 +226,7 @@ export const accessories = pgTable("accessories", {
   serialNumber: varchar("serialNumber", { length: 100 }),
   quantity: integer("quantity").default(1).notNull(),
   quantidadeTotal: integer("quantidadeTotal").default(1).notNull(),
+  // @deprecated — disponibilidade é derivada de accessory_units.status (getAccessoryBreakdown); não ler nem escrever
   quantidadeDisponivel: integer("quantidadeDisponivel").default(1).notNull(),
   dailyRate: numeric("dailyRate", { precision: 10, scale: 2 }),
   purchasePrice: numeric("purchasePrice", { precision: 10, scale: 2 }),

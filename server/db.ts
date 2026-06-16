@@ -797,3 +797,81 @@ export async function createAuditLog(data: {
     console.warn("[AuditLog] Failed to write audit log:", e);
   }
 }
+
+// ─── Accessory Breakdown ─────────────────────────────────────────────────────
+export type AccessoryBreakdownVariante = {
+  variante: string | null;
+  total: number;
+  disponivel: number;
+  alugado: number;
+  manutencao: number;
+  perdido: number;
+  roubado: number;
+};
+
+export type AccessoryBreakdownResult = {
+  total: number;
+  disponivel: number;
+  alugado: number;
+  manutencao: number;
+  perdido: number;
+  roubado: number;
+  byVariante: AccessoryBreakdownVariante[];
+};
+
+/**
+ * Derives accessory availability from accessory_units rows (by status and variante).
+ * Replaces the old usageMap/qty approach — source of truth is the unit status.
+ */
+export async function getAccessoryBreakdown(accessoryId: number): Promise<AccessoryBreakdownResult> {
+  const db = await getDb();
+  const empty: AccessoryBreakdownResult = {
+    total: 0, disponivel: 0, alugado: 0, manutencao: 0, perdido: 0, roubado: 0,
+    byVariante: [],
+  };
+  if (!db) return empty;
+
+  const { accessoryUnits } = await import("../drizzle/schema");
+
+  const units = await db
+    .select({ status: accessoryUnits.status, variante: accessoryUnits.variante })
+    .from(accessoryUnits)
+    .where(eq(accessoryUnits.accessoryId, accessoryId));
+
+  if (units.length === 0) return empty;
+
+  const totals: AccessoryBreakdownResult = {
+    total: units.length,
+    disponivel: 0, alugado: 0, manutencao: 0, perdido: 0, roubado: 0,
+    byVariante: [],
+  };
+
+  const varianteMap = new Map<string, AccessoryBreakdownVariante>();
+
+  for (const unit of units) {
+    const label = unit.variante ?? null;
+    const mapKey = label ?? "__null__";
+
+    // Aggregate totals
+    if (unit.status === "disponivel") totals.disponivel++;
+    else if (unit.status === "alugado") totals.alugado++;
+    else if (unit.status === "manutencao") totals.manutencao++;
+    else if (unit.status === "perdido") totals.perdido++;
+    else if (unit.status === "roubado") totals.roubado++;
+
+    // Per-variante
+    if (!varianteMap.has(mapKey)) {
+      varianteMap.set(mapKey, { variante: label, total: 0, disponivel: 0, alugado: 0, manutencao: 0, perdido: 0, roubado: 0 });
+    }
+    const vEntry = varianteMap.get(mapKey)!;
+    vEntry.total++;
+    if (unit.status === "disponivel") vEntry.disponivel++;
+    else if (unit.status === "alugado") vEntry.alugado++;
+    else if (unit.status === "manutencao") vEntry.manutencao++;
+    else if (unit.status === "perdido") vEntry.perdido++;
+    else if (unit.status === "roubado") vEntry.roubado++;
+  }
+
+  totals.byVariante = Array.from(varianteMap.values());
+  return totals;
+}
