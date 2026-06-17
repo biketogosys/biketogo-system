@@ -1625,6 +1625,114 @@ const accessoriesRouter = router({
         .where(eq(accessories.id, input.accessoryId));
       return row;
     }),
+
+  // ACC-2: bulk add units by variante
+  addUnits: adminAuthProcedure
+    .input(z.object({
+      accessoryId: z.number(),
+      variante: z.string().optional(),
+      quantity: z.number().int().min(1).max(50),
+    }))
+    .mutation(async ({ input }) => {
+      const { accessoryUnits, accessories } = await import("../drizzle/schema");
+      const { eq, sql, and, isNull } = await import("drizzle-orm");
+      const db = await (await import("./db")).getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+
+      // Fetch accessory name for serial prefix
+      const [acc] = await db.select({ name: accessories.name })
+        .from(accessories)
+        .where(eq(accessories.id, input.accessoryId));
+      if (!acc) throw new TRPCError({ code: "NOT_FOUND", message: "Acessório não encontrado." });
+
+      // Build 3-letter uppercase prefix from accessory name
+      const prefix = acc.name
+        .replace(/[^a-zA-Z]/g, "")
+        .toUpperCase()
+        .slice(0, 3)
+        .padEnd(3, "X");
+
+      // Find current max serial number for this accessory to ensure uniqueness
+      const existingUnits = await db.select({ serialNumber: accessoryUnits.serialNumber })
+        .from(accessoryUnits)
+        .where(eq(accessoryUnits.accessoryId, input.accessoryId));
+
+      // Extract numeric suffixes from existing serials matching our prefix
+      let maxSeq = 0;
+      for (const u of existingUnits) {
+        if (u.serialNumber && u.serialNumber.startsWith(prefix + "-")) {
+          const num = parseInt(u.serialNumber.slice(prefix.length + 1), 10);
+          if (!isNaN(num) && num > maxSeq) maxSeq = num;
+        }
+      }
+
+      // Build insert rows
+      const rows = Array.from({ length: input.quantity }, (_, i) => ({
+        accessoryId: input.accessoryId,
+        serialNumber: `${prefix}-${String(maxSeq + i + 1).padStart(3, "0")}`,
+        variante: input.variante ?? null,
+        status: "disponivel" as const,
+      }));
+
+      const inserted = await db.insert(accessoryUnits).values(rows).returning();
+
+      // Recalculate quantidadeTotal
+      await db.update(accessories)
+        .set({
+          quantidadeTotal: sql`(SELECT COUNT(*) FROM accessory_units WHERE "accessoryId" = ${input.accessoryId})`,
+          quantity: sql`(SELECT COUNT(*) FROM accessory_units WHERE "accessoryId" = ${input.accessoryId})`,
+        })
+        .where(eq(accessories.id, input.accessoryId));
+
+      return { inserted: inserted.length };
+    }),
+
+  // ACC-2: remove one available unit from a variante
+  removeAvailableUnit: adminAuthProcedure
+    .input(z.object({
+      accessoryId: z.number(),
+      variante: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const { accessoryUnits, accessories } = await import("../drizzle/schema");
+      const { eq, sql, and, isNull, desc } = await import("drizzle-orm");
+      const db = await (await import("./db")).getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+
+      // Find the most recent available unit for this variante
+      const varianteFilter = input.variante
+        ? eq(accessoryUnits.variante, input.variante)
+        : isNull(accessoryUnits.variante);
+
+      const [unit] = await db.select()
+        .from(accessoryUnits)
+        .where(and(
+          eq(accessoryUnits.accessoryId, input.accessoryId),
+          eq(accessoryUnits.status, "disponivel"),
+          varianteFilter,
+        ))
+        .orderBy(desc(accessoryUnits.id))
+        .limit(1);
+
+      if (!unit) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Sem unidades disponíveis para remover nesta variante.",
+        });
+      }
+
+      await db.delete(accessoryUnits).where(eq(accessoryUnits.id, unit.id));
+
+      // Recalculate quantidadeTotal
+      await db.update(accessories)
+        .set({
+          quantidadeTotal: sql`(SELECT COUNT(*) FROM accessory_units WHERE "accessoryId" = ${input.accessoryId})`,
+          quantity: sql`(SELECT COUNT(*) FROM accessory_units WHERE "accessoryId" = ${input.accessoryId})`,
+        })
+        .where(eq(accessories.id, input.accessoryId));
+
+      return { success: true, removedId: unit.id };
+    }),
 });
 
 // ─── Financial router ────────────────────────────────────────────────────────

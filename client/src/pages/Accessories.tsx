@@ -60,48 +60,47 @@ const UNIT_STATUS_COLORS: Record<UnitStatus, string> = {
   roubado: "bg-red-700/20 text-red-700 border-red-700/30",
 };
 
-// ─── Accessory Units Panel ──────────────────────────────────────────────────────────────────────
+// ─── Accessory Units Panel (ACC-2: grouped by variante) ────────────────────────
 function AccessoryUnitsPanel({ accessoryId, onClose }: { accessoryId: number; onClose: () => void }) {
   const utils = trpc.useUtils();
   const { data: units = [], isLoading } = trpc.accessories.getUnits.useQuery({ accessoryId });
+
+  // Expanded state per variante key
+  const [expandedVariantes, setExpandedVariantes] = useState<Set<string>>(new Set());
+  // Edit state for individual exception units
   const [editingUnitId, setEditingUnitId] = useState<number | null>(null);
   const [editStatus, setEditStatus] = useState<UnitStatus>("disponivel");
   const [editObs, setEditObs] = useState("");
   const [editVariante, setEditVariante] = useState("");
-  const [newSerial, setNewSerial] = useState("");
-  const [newVariante, setNewVariante] = useState("");
-  const [showAddForm, setShowAddForm] = useState(false);
+  // Delete confirm
   const [deleteUnitId, setDeleteUnitId] = useState<number | null>(null);
+  // Add variante form
+  const [showAddVariante, setShowAddVariante] = useState(false);
+  const [newVarianteName, setNewVarianteName] = useState("");
+  const [newVarianteQty, setNewVarianteQty] = useState(1);
+
+  const invalidate = () => {
+    utils.accessories.getUnits.invalidate();
+    utils.accessories.list.invalidate();
+  };
 
   const updateMut = trpc.accessories.updateUnitStatus.useMutation({
-    onSuccess: () => {
-      utils.accessories.getUnits.invalidate();
-      utils.accessories.list.invalidate();
-      setEditingUnitId(null);
-      toast.success("Unidade atualizada!");
-    },
+    onSuccess: () => { invalidate(); setEditingUnitId(null); toast.success("Unidade atualizada!"); },
     onError: (e) => toast.error(e.message),
   });
 
-  const createMut = trpc.accessories.createUnit.useMutation({
-    onSuccess: () => {
-      utils.accessories.getUnits.invalidate();
-      utils.accessories.list.invalidate();
-      setNewSerial("");
-      setNewVariante("");
-      setShowAddForm(false);
-      toast.success("Unidade adicionada!");
-    },
+  const addUnitsMut = trpc.accessories.addUnits.useMutation({
+    onSuccess: (r) => { invalidate(); toast.success(`${r.inserted} unidade(s) adicionada(s)!`); },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const removeAvailableMut = trpc.accessories.removeAvailableUnit.useMutation({
+    onSuccess: () => { invalidate(); toast.success("Unidade removida."); },
     onError: (e) => toast.error(e.message),
   });
 
   const deleteMut = trpc.accessories.deleteUnit.useMutation({
-    onSuccess: () => {
-      utils.accessories.getUnits.invalidate();
-      utils.accessories.list.invalidate();
-      setDeleteUnitId(null);
-      toast.success("Unidade removida.");
-    },
+    onSuccess: () => { invalidate(); setDeleteUnitId(null); toast.success("Unidade excluída."); },
     onError: (e) => toast.error(e.message),
   });
 
@@ -111,6 +110,29 @@ function AccessoryUnitsPanel({ accessoryId, onClose }: { accessoryId: number; on
     setEditObs(unit.observacao ?? "");
     setEditVariante(unit.variante ?? "");
   }
+
+  function toggleVariante(key: string) {
+    setExpandedVariantes((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  }
+
+  // Group units by variante (null → "__null__")
+  const unitList = units as any[];
+  const grouped = new Map<string, any[]>();
+  for (const u of unitList) {
+    const key = u.variante ?? "__null__";
+    if (!grouped.has(key)) grouped.set(key, []);
+    grouped.get(key)!.push(u);
+  }
+  // Sort: named variantes first alphabetically, then null
+  const sortedKeys = Array.from(grouped.keys()).sort((a, b) => {
+    if (a === "__null__") return 1;
+    if (b === "__null__") return -1;
+    return a.localeCompare(b);
+  });
 
   return (
     <Dialog open onOpenChange={onClose}>
@@ -126,148 +148,220 @@ function AccessoryUnitsPanel({ accessoryId, onClose }: { accessoryId: number; on
           <div className="flex justify-center py-8">
             <Loader2 className="w-5 h-5 animate-spin text-primary" />
           </div>
+        ) : unitList.length === 0 ? (
+          <p className="text-sm text-muted-foreground text-center py-4">Nenhuma unidade cadastrada.</p>
         ) : (
           <div className="space-y-2">
-            {(units as any[]).length === 0 && (
-              <p className="text-sm text-muted-foreground text-center py-4">Nenhuma unidade cadastrada.</p>
-            )}
-            {(units as any[]).map((unit: any) => (
-              <div key={unit.id} className="border border-border rounded-lg overflow-hidden">
-                <div className="flex items-center justify-between p-3">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-xs font-mono text-muted-foreground">#{unit.id}</span>
-                    {unit.serialNumber && (
-                      <span className="text-xs text-foreground font-medium">{unit.serialNumber}</span>
-                    )}
-                    {unit.variante && (
-                      <span className="text-xs px-1.5 py-0.5 rounded bg-[#C8920A]/10 text-[#C8920A] font-medium border border-[#C8920A]/20">
-                        {unit.variante}
+            {sortedKeys.map((key) => {
+              const varianteUnits = grouped.get(key)!;
+              const varianteName = key === "__null__" ? "Padrão" : key;
+              const isExpanded = expandedVariantes.has(key);
+
+              // Breakdown counts
+              const counts = varianteUnits.reduce((acc: Record<string, number>, u: any) => {
+                acc[u.status] = (acc[u.status] ?? 0) + 1;
+                return acc;
+              }, {} as Record<string, number>);
+              const total = varianteUnits.length;
+              const disponivel = counts["disponivel"] ?? 0;
+
+              // Exception units (non-disponivel)
+              const exceptionUnits = varianteUnits.filter((u: any) => u.status !== "disponivel");
+
+              return (
+                <div key={key} className="border border-border rounded-lg overflow-hidden">
+                  {/* Collapsed row */}
+                  <div className="flex items-center gap-2 p-3">
+                    <button
+                      className="flex-1 flex items-center gap-2 text-left"
+                      onClick={() => toggleVariante(key)}
+                    >
+                      {isExpanded ? <ChevronUp className="w-3.5 h-3.5 text-muted-foreground" /> : <ChevronDown className="w-3.5 h-3.5 text-muted-foreground" />}
+                      <span className="text-sm font-medium">{varianteName}</span>
+                      {/* Color-coded breakdown */}
+                      <span className="flex flex-wrap gap-1 ml-1">
+                        {disponivel > 0 && <span className="text-[11px] text-emerald-500 font-medium">{disponivel} disp</span>}
+                        {(counts["alugado"] ?? 0) > 0 && <span className="text-[11px] text-blue-500 font-medium">{counts["alugado"]} alug</span>}
+                        {(counts["manutencao"] ?? 0) > 0 && <span className="text-[11px] text-amber-500 font-medium">{counts["manutencao"]} manut</span>}
+                        {(counts["perdido"] ?? 0) > 0 && <span className="text-[11px] text-red-500 font-medium">{counts["perdido"]} perd</span>}
+                        {(counts["roubado"] ?? 0) > 0 && <span className="text-[11px] text-red-700 font-medium">{counts["roubado"]} roub</span>}
                       </span>
-                    )}
-                    <Badge
-                      variant="outline"
-                      className={`text-xs border ${UNIT_STATUS_COLORS[unit.status as UnitStatus]}`}
-                    >
-                      {UNIT_STATUS_LABELS[unit.status as UnitStatus] ?? unit.status}
-                    </Badge>
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="h-7 text-xs gap-1"
-                      onClick={() => editingUnitId === unit.id ? setEditingUnitId(null) : startEdit(unit)}
-                    >
-                      <Edit className="w-3 h-3" />
-                      {editingUnitId === unit.id ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
-                      onClick={() => setDeleteUnitId(unit.id)}
-                      disabled={unit.status === "alugado"}
-                      title={unit.status === "alugado" ? "Não é possível excluir unidade alugada" : "Excluir unidade"}
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </Button>
-                  </div>
-                </div>
-                {editingUnitId === unit.id && (
-                  <div className="p-3 pt-0 border-t border-border bg-secondary/20 space-y-2">
-                    <div>
-                      <Label className="text-xs">Variante (ex: P, M, G, Azul)</Label>
-                      <Input
-                        value={editVariante}
-                        onChange={(e) => setEditVariante(e.target.value)}
-                        placeholder="Ex: Tamanho M, Cor Azul..."
-                        className="h-8 text-sm mt-1"
-                      />
-                    </div>
-                    <div>
-                      <Label className="text-xs">Novo status</Label>
-                      <Select value={editStatus} onValueChange={(v) => setEditStatus(v as UnitStatus)}>
-                        <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                          {(Object.keys(UNIT_STATUS_LABELS) as UnitStatus[]).map((s) => (
-                            <SelectItem key={s} value={s}>{UNIT_STATUS_LABELS[s]}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div>
-                      <Label className="text-xs">Observação</Label>
-                      <Textarea
-                        value={editObs}
-                        onChange={(e) => setEditObs(e.target.value)}
-                        placeholder="Observação opcional..."
-                        className="text-sm min-h-[50px] resize-none"
-                      />
-                    </div>
-                    <div className="flex gap-2">
+                    </button>
+                    {/* Stepper */}
+                    <div className="flex items-center gap-1 ml-auto">
                       <Button
                         size="sm"
-                        className="flex-1 bg-[#C8920A] hover:bg-[#A87608] text-white"
-                        onClick={() => updateMut.mutate({
-                          unitId: unit.id,
-                          status: editStatus,
-                          observacao: editObs || undefined,
-                          variante: editVariante || undefined,
-                        })}
-                        disabled={updateMut.isPending}
+                        variant="outline"
+                        className="h-7 w-7 p-0 text-base font-bold"
+                        onClick={() => removeAvailableMut.mutate({ accessoryId, variante: key === "__null__" ? undefined : key })}
+                        disabled={removeAvailableMut.isPending || disponivel === 0}
+                        title="Remover 1 unidade disponível"
                       >
-                        Salvar
+                        −
                       </Button>
-                      <Button size="sm" variant="ghost" onClick={() => setEditingUnitId(null)}>Cancelar</Button>
+                      <span className="text-sm font-semibold w-6 text-center">{total}</span>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-7 w-7 p-0 text-base font-bold"
+                        onClick={() => addUnitsMut.mutate({ accessoryId, variante: key === "__null__" ? undefined : key, quantity: 1 })}
+                        disabled={addUnitsMut.isPending}
+                        title="Adicionar 1 unidade"
+                      >
+                        +
+                      </Button>
                     </div>
                   </div>
-                )}
-              </div>
-            ))}
+
+                  {/* Expanded content */}
+                  {isExpanded && (
+                    <div className="border-t border-border bg-secondary/10 p-3 space-y-2">
+                      {/* Summary of disponivel units */}
+                      {disponivel > 0 && (
+                        <p className="text-xs text-muted-foreground">{disponivel} unidade{disponivel !== 1 ? "s" : ""} no estoque</p>
+                      )}
+                      {/* Exception units individually */}
+                      {exceptionUnits.map((unit: any) => (
+                        <div key={unit.id} className="border border-border rounded-md overflow-hidden bg-card">
+                          <div className="flex items-center justify-between px-3 py-2">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              {unit.serialNumber && (
+                                <span className="text-xs font-mono text-muted-foreground">{unit.serialNumber}</span>
+                              )}
+                              <Badge
+                                variant="outline"
+                                className={`text-xs border ${UNIT_STATUS_COLORS[unit.status as UnitStatus]}`}
+                              >
+                                {UNIT_STATUS_LABELS[unit.status as UnitStatus] ?? unit.status}
+                              </Badge>
+                              {unit.observacao && (
+                                <span className="text-xs text-muted-foreground italic">{unit.observacao}</span>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-1">
+                              {unit.status !== "alugado" && (
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className="h-6 text-xs gap-1"
+                                  onClick={() => editingUnitId === unit.id ? setEditingUnitId(null) : startEdit(unit)}
+                                >
+                                  <Edit className="w-3 h-3" />
+                                  {editingUnitId === unit.id ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                                </Button>
+                              )}
+                              {unit.status !== "alugado" && (
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className="h-6 w-6 p-0 text-muted-foreground hover:text-destructive"
+                                  onClick={() => setDeleteUnitId(unit.id)}
+                                  title="Excluir unidade"
+                                >
+                                  <Trash2 className="w-3 h-3" />
+                                </Button>
+                              )}
+                            </div>
+                          </div>
+                          {editingUnitId === unit.id && (
+                            <div className="p-3 pt-0 border-t border-border bg-secondary/20 space-y-2">
+                              <div>
+                                <Label className="text-xs">Novo status</Label>
+                                <Select value={editStatus} onValueChange={(v) => setEditStatus(v as UnitStatus)}>
+                                  <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
+                                  <SelectContent>
+                                    {(Object.keys(UNIT_STATUS_LABELS) as UnitStatus[]).map((s) => (
+                                      <SelectItem key={s} value={s}>{UNIT_STATUS_LABELS[s]}</SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                              <div>
+                                <Label className="text-xs">Observação</Label>
+                                <Textarea
+                                  value={editObs}
+                                  onChange={(e) => setEditObs(e.target.value)}
+                                  placeholder="Observação opcional..."
+                                  className="text-sm min-h-[50px] resize-none"
+                                />
+                              </div>
+                              <div className="flex gap-2">
+                                <Button
+                                  size="sm"
+                                  className="flex-1 bg-[#C8920A] hover:bg-[#A87608] text-white"
+                                  onClick={() => updateMut.mutate({
+                                    unitId: unit.id,
+                                    status: editStatus,
+                                    observacao: editObs || undefined,
+                                    variante: editVariante || undefined,
+                                  })}
+                                  disabled={updateMut.isPending}
+                                >
+                                  Salvar
+                                </Button>
+                                <Button size="sm" variant="ghost" onClick={() => setEditingUnitId(null)}>Cancelar</Button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                      {exceptionUnits.length === 0 && disponivel === 0 && (
+                        <p className="text-xs text-muted-foreground">Nenhuma unidade nesta variante.</p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         )}
 
-        {/* Add unit form */}
+        {/* Add variante form */}
         <div className="border-t border-border pt-3 mt-2">
-          {showAddForm ? (
+          {showAddVariante ? (
             <div className="space-y-2">
-              <div>
-                <Label className="text-xs">Número de série (opcional)</Label>
-                <Input
-                  value={newSerial}
-                  onChange={(e) => setNewSerial(e.target.value)}
-                  placeholder="Ex: CAP-007"
-                  className="h-8 text-sm mt-1"
-                />
-              </div>
-              <div>
-                <Label className="text-xs">Variante (opcional — ex: Tamanho M, Cor Azul)</Label>
-                <Input
-                  value={newVariante}
-                  onChange={(e) => setNewVariante(e.target.value)}
-                  placeholder="Ex: M, G, Azul..."
-                  className="h-8 text-sm mt-1"
-                />
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <Label className="text-xs">Nome da variante</Label>
+                  <Input
+                    value={newVarianteName}
+                    onChange={(e) => setNewVarianteName(e.target.value)}
+                    placeholder="Ex: Cinza, M, G..."
+                    className="h-8 text-sm mt-1"
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs">Quantidade</Label>
+                  <Input
+                    type="number"
+                    min={1}
+                    max={50}
+                    value={newVarianteQty}
+                    onChange={(e) => setNewVarianteQty(Math.max(1, Math.min(50, parseInt(e.target.value) || 1)))}
+                    className="h-8 text-sm mt-1"
+                  />
+                </div>
               </div>
               <div className="flex gap-2">
                 <Button
                   size="sm"
                   className="flex-1 bg-[#C8920A] hover:bg-[#A87608] text-white"
-                  onClick={() => createMut.mutate({
-                    accessoryId,
-                    serialNumber: newSerial || undefined,
-                    variante: newVariante || undefined,
-                  })}
-                  disabled={createMut.isPending}
+                  onClick={() => {
+                    addUnitsMut.mutate(
+                      { accessoryId, variante: newVarianteName.trim() || undefined, quantity: newVarianteQty },
+                      { onSuccess: () => { setShowAddVariante(false); setNewVarianteName(""); setNewVarianteQty(1); } }
+                    );
+                  }}
+                  disabled={addUnitsMut.isPending}
                 >
-                  <Plus className="w-3.5 h-3.5 mr-1" />Adicionar
+                  <Plus className="w-3.5 h-3.5 mr-1" />Adicionar variante
                 </Button>
-                <Button size="sm" variant="ghost" onClick={() => setShowAddForm(false)}>Cancelar</Button>
+                <Button size="sm" variant="ghost" onClick={() => setShowAddVariante(false)}>Cancelar</Button>
               </div>
             </div>
           ) : (
-            <Button size="sm" variant="outline" onClick={() => setShowAddForm(true)} className="w-full gap-1">
-              <Plus className="w-3.5 h-3.5" />Adicionar Unidade
+            <Button size="sm" variant="outline" onClick={() => setShowAddVariante(true)} className="w-full gap-1">
+              <Plus className="w-3.5 h-3.5" />Adicionar variante
             </Button>
           )}
         </div>
