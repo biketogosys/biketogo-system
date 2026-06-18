@@ -129,6 +129,7 @@ export default function Settings() {
 
   // ── Notifications ────────────────────────────────────────────────────────────
   const [whatsappNumber, setWhatsappNumber] = useState("");
+  const [whatsappReservas, setWhatsappReservas] = useState("");
   const [notificationEmail, setNotificationEmail] = useState("");
   const [adminNotificationEmail, setAdminNotificationEmail] = useState("");
 
@@ -171,6 +172,7 @@ export default function Settings() {
     setOpeningTime(map["opening_time"] || "09:00");
     setClosingTime(map["closing_time"] || "19:00");
     setWhatsappNumber(map["whatsapp_number"] || "");
+    setWhatsappReservas(map["whatsapp_reservas"] || "");
     setNotificationEmail(map["notification_email"] || "");
     setAdminNotificationEmail(map["admin_notification_email"] || "");
     setArchiveRetentionDays(map["archive_retention_days"] || "5");
@@ -480,10 +482,16 @@ export default function Settings() {
                   toast.error("Número de WhatsApp inválido. Informe DDD + número.");
                   return;
                 }
+                const digitsReservas = whatsappReservas.replace(/\D/g, "");
+                if (whatsappReservas && digitsReservas.length < 10) {
+                  toast.error("Número de WhatsApp para reservas inválido. Informe DDD + número.");
+                  return;
+                }
                 saveSection([
                   { key: "whatsapp_number", value: whatsappNumber },
                   { key: "notification_email", value: notificationEmail },
                   { key: "admin_notification_email", value: adminNotificationEmail },
+                  { key: "whatsapp_reservas", value: whatsappReservas },
                 ], setSavingNotifications);
               }}
             />
@@ -495,6 +503,13 @@ export default function Settings() {
               onChange={(v) => setWhatsappNumber(maskPhone(v))}
               placeholder="(48) 99999-9999"
               hint="Formato: (48) 99999-9999 — DDD + número"
+            />
+            <Field
+              label="Número de WhatsApp para reservas"
+              value={whatsappReservas}
+              onChange={(v) => setWhatsappReservas(maskPhone(v))}
+              placeholder="(48) 99999-9999"
+              hint="Número exibido no botão de reserva da tela pública /reservar"
             />
             <Field
               label="Email de contato / remetente"

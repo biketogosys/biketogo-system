@@ -191,8 +191,8 @@ function NewClientModal({ open, onClose, onSuccess }: NewClientModalProps) {
       origin: form.origin || undefined,
       accommodation: form.accommodation || undefined,
       notes: form.notes || undefined,
-      height: form.height || undefined,
-      weight: form.weight || undefined,
+      height: form.height || "0",
+      weight: form.weight || "0",
       lgpdConsent: form.lgpdConsent,
       status: "lead",
     });

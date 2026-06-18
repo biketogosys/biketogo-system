@@ -123,14 +123,14 @@ describe("clients.list", () => {
 describe("clients.create", () => {
   it("allows admin to create a client", async () => {
     const caller = appRouter.createCaller(makeAdminCtx());
-    const result = await caller.clients.create({ name: "João Silva" });
+    const result = await caller.clients.create({ name: "João Silva", height: "1.75", weight: "75" });
     expect(result).toHaveProperty("id");
     expect(result.id).toBe(1);
   });
 
   it("rejects non-admin users from creating clients", async () => {
     const caller = appRouter.createCaller(makeUserCtx());
-    await expect(caller.clients.create({ name: "João Silva" })).rejects.toThrow();
+    await expect(caller.clients.create({ name: "João Silva", height: "1.75", weight: "75" })).rejects.toThrow();
   });
 });
 

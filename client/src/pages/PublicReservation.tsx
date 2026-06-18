@@ -112,7 +112,8 @@ export default function PublicReservation() {
   const [submitted, setSubmitted] = useState(false);
 
   // Step 0 — Identificação
-  const [name, setName] = useState("");
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
   const [cpf, setCpf] = useState("");
   const [rg, setRg] = useState("");
   const [passport, setPassport] = useState("");
@@ -158,6 +159,8 @@ export default function PublicReservation() {
   // ─── Mutations ────────────────────────────────────────────────────────────────
   const submitMutation = trpc.publicApi.submitPreRegistration.useMutation();
   const uploadDocMutation = trpc.publicApi.uploadDocument.useMutation();
+  const { data: waData } = trpc.publicApi.getReservationWhatsApp.useQuery();
+  const waNumber = waData?.number ?? null;
 
   // ─── CEP autocomplete ─────────────────────────────────────────────────────────
   const fetchCEP = useCallback(async (cep: string) => {
@@ -197,7 +200,8 @@ export default function PublicReservation() {
   const validate = (s: number): boolean => {
     const errs: Record<string, string> = {};
     if (s === 0) {
-      if (!name.trim() || name.trim().length < 3) errs.name = t.required;
+      if (!firstName.trim() || firstName.trim().length < 2) errs.firstName = lang === "pt" ? "Nome obrigatório (mín. 2 caracteres)" : lang === "en" ? "First name required (min. 2 chars)" : "Nombre obligatorio (mín. 2 caracteres)";
+      if (!lastName.trim() || lastName.trim().length < 2) errs.lastName = lang === "pt" ? "Sobrenome obrigatório (mín. 2 caracteres)" : lang === "en" ? "Last name required (min. 2 chars)" : "Apellido obligatorio (mín. 2 caracteres)";
       if (isBrazilian) {
         if (!cpf || cpf.replace(/\D/g, "").length < 11) {
           errs.cpf = lang === "pt" ? "CPF obrigatório (11 dígitos)" : lang === "en" ? "CPF required (11 digits)" : "CPF obligatorio (11 dígitos)";
@@ -222,12 +226,14 @@ export default function PublicReservation() {
       } else {
         if (!passport.trim() || passport.trim().length < 5) errs.passport = lang === "pt" ? "Passaporte obrigatório (mínimo 5 caracteres)" : lang === "en" ? "Passport required (min. 5 characters)" : "Pasaporte obligatorio (mín. 5 caracteres)";
       }
+      if (!height || !height.trim()) errs.height = lang === "pt" ? "Altura obrigatória" : lang === "en" ? "Height required" : "Altura obligatoria";
+      if (!weight || !weight.trim()) errs.weight = lang === "pt" ? "Peso obrigatório" : lang === "en" ? "Weight required" : "Peso obligatorio";
       if (!birthDate || birthDate.length < 10) errs.birthDate = t.invalidDate;
     }
     if (s === 1) {
       if (!phone || phone.replace(/\D/g,"").length < 10) errs.phone = t.invalidPhone;
       if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) errs.email = t.invalidEmail;
-      if (!accommodation.trim()) errs.accommodation = t.required;
+      // accommodation is now optional — no validation
     }
     if (s === 2) {
       if (!zipCode || zipCode.replace(/\D/g,"").length < 8) errs.zipCode = t.required;
@@ -256,15 +262,17 @@ export default function PublicReservation() {
     setSubmitting(true);
     try {
       const result = await submitMutation.mutateAsync({
-        name,
+        name: `${firstName.trim()} ${lastName.trim()}`,
+        firstName: firstName.trim(),
+        lastName: lastName.trim(),
         cpf: isBrazilian ? cpf : undefined,
         rg: isBrazilian ? rg : undefined,
         passport: !isBrazilian ? passport : undefined,
         docOrigin,
         birthDate,
         gender,
-        height: height ? String(parseFloat(height) || 0) : undefined,
-        weight: weight ? String(parseFloat(weight) || 0) : undefined,
+        height: height.trim() || "0",
+        weight: weight.trim() || "0",
         pedalFreq,
         howFound: origin,
         phone,
@@ -304,6 +312,12 @@ export default function PublicReservation() {
 
   // ─── Success screen ───────────────────────────────────────────────────────────
   if (submitted) {
+    const waText = lang === "pt"
+      ? encodeURIComponent("Olá! Acabei de me cadastrar no site da Bike To Go e gostaria de solicitar uma reserva.")
+      : lang === "en"
+      ? encodeURIComponent("Hi! I just registered on the Bike To Go website and would like to request a reservation.")
+      : encodeURIComponent("¡Hola! Acabo de registrarme en el sitio de Bike To Go y me gustaría solicitar una reserva.");
+    const waLink = waNumber ? `https://wa.me/55${waNumber}?text=${waText}` : null;
     return (
       <div className={`min-h-screen ${bg} flex items-center justify-center p-4`}>
         <div className="max-w-md w-full text-center">
@@ -311,25 +325,39 @@ export default function PublicReservation() {
             <Check className="w-10 h-10 text-[#C8920A]" />
           </div>
           <h1 className={`text-2xl font-bold ${textPrimary} mb-3`} style={{ fontFamily: "'Montserrat', sans-serif" }}>
-            {lang === "pt" ? "Cadastro enviado com sucesso!" : lang === "en" ? "Registration submitted!" : "¡Registro enviado con éxito!"}
+            {lang === "pt" ? "Cadastro enviado com sucesso!" : lang === "en" ? "Registration submitted successfully!" : "¡Registro enviado con éxito!"}
           </h1>
           <p className={`${textSecondary} text-sm leading-relaxed mb-6`}>
             {lang === "pt"
-              ? "Nossa equipe vai entrar em contato para combinar qual bike e os acessórios."
+              ? "Seu cadastro foi concluído. Agora você já pode solicitar sua reserva."
               : lang === "en"
-              ? "Our team will get in touch to arrange which bike and accessories are best for you."
-              : "Nuestro equipo se pondrá en contacto para combinar la bicicleta y los accesorios."}
+              ? "Your registration is complete. You can now request your reservation."
+              : "Tu registro ha sido completado. Ahora puedes solicitar tu reserva."}
           </p>
-          <div className={`${cardBg} border rounded-xl p-5 text-left`}>
-            <p className={`text-sm font-semibold ${textPrimary} mb-2`}>
+          <div className={`${cardBg} border rounded-xl p-5 text-left mb-6`}>
+            <p className={`text-sm font-semibold ${textPrimary} mb-3`}>
               {lang === "pt" ? "Próximos passos:" : lang === "en" ? "Next steps:" : "Próximos pasos:"}
             </p>
-            <ul className={`text-sm ${textSecondary} space-y-1.5 list-disc list-inside`}>
-              <li>{lang === "pt" ? "Aguarde o contato da nossa equipe pelo WhatsApp ou e-mail." : lang === "en" ? "Wait for our team to contact you via WhatsApp or email." : "Espera el contacto de nuestro equipo por WhatsApp o correo."}</li>
-              <li>{lang === "pt" ? "Vamos combinar a bike ideal, acessórios e datas." : lang === "en" ? "We'll arrange the ideal bike, accessories, and dates." : "Combinaremos la bici ideal, accesorios y fechas."}</li>
-              <li>{lang === "pt" ? "O contrato será enviado para sua assinatura." : lang === "en" ? "The contract will be sent for your signature." : "El contrato será enviado para tu firma."}</li>
+            <ul className={`text-sm ${textSecondary} space-y-2 list-disc list-inside`}>
+              <li>{lang === "pt" ? "Escolha a bicicleta desejada." : lang === "en" ? "Choose the bike you want." : "Elige la bicicleta que deseas."}</li>
+              <li>{lang === "pt" ? "Solicite sua reserva pelo WhatsApp." : lang === "en" ? "Request your reservation via WhatsApp." : "Solicita tu reserva por WhatsApp."}</li>
+              <li>{lang === "pt" ? "Confirme a disponibilidade." : lang === "en" ? "Confirm availability." : "Confirma la disponibilidad."}</li>
             </ul>
           </div>
+          {waLink && (
+            <a
+              href={waLink}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center justify-center gap-2 w-full px-6 py-4 rounded-xl text-sm font-bold transition-all hover:opacity-90 active:scale-95"
+              style={{ background: "#C8920A", color: "#0a0a0f" }}
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
+                <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
+              </svg>
+              {lang === "pt" ? "Solicitar reserva pelo WhatsApp" : lang === "en" ? "Request reservation via WhatsApp" : "Solicitar reserva por WhatsApp"}
+            </a>
+          )}
         </div>
       </div>
     );
@@ -461,10 +489,18 @@ export default function PublicReservation() {
             <div className={`flex items-center gap-2 pb-3 border-b ${sectionBorder}`}>
               <span className="text-[#C8920A] text-sm font-bold uppercase tracking-widest">👤 {t.sectionIdentification}</span>
             </div>
-            <Field label={t.fullName} required error={errors.name}>
-              <input className={errors.name ? inputError : inputNormal} placeholder={t.fullNamePlaceholder}
-                value={name} onChange={e => setName(e.target.value)} />
-            </Field>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <Field label={lang === "pt" ? "Nome" : lang === "en" ? "First Name" : "Nombre"} required error={errors.firstName}>
+                <input className={errors.firstName ? inputError : inputNormal}
+                  placeholder={lang === "pt" ? "Ex: João" : lang === "en" ? "e.g. John" : "Ej: Juan"}
+                  value={firstName} onChange={e => setFirstName(e.target.value)} />
+              </Field>
+              <Field label={lang === "pt" ? "Sobrenome" : lang === "en" ? "Last Name" : "Apellido"} required error={errors.lastName}>
+                <input className={errors.lastName ? inputError : inputNormal}
+                  placeholder={lang === "pt" ? "Ex: Silva" : lang === "en" ? "e.g. Smith" : "Ej: García"}
+                  value={lastName} onChange={e => setLastName(e.target.value)} />
+              </Field>
+            </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <Field label={t.docOrigin}>
                 <select className={selectBase} value={docOrigin} onChange={e => {
@@ -520,14 +556,14 @@ export default function PublicReservation() {
                   <option value="Prefiro não informar">{t.genderPreferNotToSay}</option>
                 </select>
               </Field>
-              <Field label={t.height} hint={t.heightHint}>
-                <input className={inputNormal} placeholder={t.heightPlaceholder}
+              <Field label={t.height} required error={errors.height}>
+                <input className={errors.height ? inputError : inputNormal} placeholder={t.heightPlaceholder}
                   value={height} onChange={e => setHeight(maskHeight(e.target.value))} />
               </Field>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <Field label={lang === "pt" ? "Peso (kg)" : lang === "en" ? "Weight (kg)" : "Peso (kg)"} hint={lang === "pt" ? "Opcional" : "Optional"}>
-                <input className={inputNormal}
+              <Field label={lang === "pt" ? "Peso (kg)" : lang === "en" ? "Weight (kg)" : "Peso (kg)"} required error={errors.weight}>
+                <input className={errors.weight ? inputError : inputNormal}
                   type="number" min="20" max="300" step="0.1"
                   placeholder={lang === "pt" ? "Ex: 75.5" : "e.g. 75.5"}
                   value={weight} onChange={e => setWeight(e.target.value)} />
@@ -577,8 +613,8 @@ export default function PublicReservation() {
                 <input className={inputNormal} placeholder={t.instagramPlaceholder}
                   value={instagram} onChange={e => setInstagram(e.target.value)} />
               </Field>
-              <Field label={t.accommodation} required error={errors.accommodation} hint={t.accommodationHint}>
-                <input className={errors.accommodation ? inputError : inputNormal} placeholder={t.accommodationPlaceholder}
+              <Field label={t.accommodation} error={errors.accommodation} hint={lang === "pt" ? "Opcional" : lang === "en" ? "Optional" : "Opcional"}>
+                <input className={inputNormal} placeholder={t.accommodationPlaceholder}
                   value={accommodation} onChange={e => setAccommodation(e.target.value)} />
               </Field>
             </div>

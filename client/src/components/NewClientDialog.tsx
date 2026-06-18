@@ -13,10 +13,14 @@ interface Props {
 }
 
 export default function NewClientDialog({ open, onClose, onSuccess }: Props) {
-  const [name, setName] = useState("");
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
   const [cpf, setCpf] = useState("");
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
+  const [height, setHeight] = useState("");
+  const [weight, setWeight] = useState("");
+  const [accommodation, setAccommodation] = useState("");
 
   const createMutation = trpc.clients.create.useMutation({
     onSuccess: () => {
@@ -30,8 +34,23 @@ export default function NewClientDialog({ open, onClose, onSuccess }: Props) {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim()) return toast.error("Nome é obrigatório.");
-    createMutation.mutate({ name, cpf, phone, email, status: "lead" });
+    if (!firstName.trim() || firstName.trim().length < 2) return toast.error("Nome obrigatório (mín. 2 caracteres).");
+    if (!lastName.trim() || lastName.trim().length < 2) return toast.error("Sobrenome obrigatório (mín. 2 caracteres).");
+    if (!height.trim()) return toast.error("Altura obrigatória.");
+    if (!weight.trim()) return toast.error("Peso obrigatório.");
+    const fullName = `${firstName.trim()} ${lastName.trim()}`;
+    createMutation.mutate({
+      name: fullName,
+      firstName: firstName.trim(),
+      lastName: lastName.trim(),
+      cpf,
+      phone,
+      email,
+      height: height.trim() || "0",
+      weight: weight.trim() || "0",
+      accommodation: accommodation.trim() || undefined,
+      status: "lead",
+    });
   };
 
   return (
@@ -47,9 +66,15 @@ export default function NewClientDialog({ open, onClose, onSuccess }: Props) {
           </button>
         </div>
         <form onSubmit={handleSubmit} className="p-5 space-y-4">
-          <div>
-            <Label className="text-xs text-muted-foreground mb-1.5 block">Nome completo *</Label>
-            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="João Silva" className="bg-secondary border-border" />
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label className="text-xs text-muted-foreground mb-1.5 block">Nome *</Label>
+              <Input value={firstName} onChange={(e) => setFirstName(e.target.value)} placeholder="João" className="bg-secondary border-border" />
+            </div>
+            <div>
+              <Label className="text-xs text-muted-foreground mb-1.5 block">Sobrenome *</Label>
+              <Input value={lastName} onChange={(e) => setLastName(e.target.value)} placeholder="Silva" className="bg-secondary border-border" />
+            </div>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -64,6 +89,20 @@ export default function NewClientDialog({ open, onClose, onSuccess }: Props) {
           <div>
             <Label className="text-xs text-muted-foreground mb-1.5 block">E-mail</Label>
             <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="joao@email.com" className="bg-secondary border-border" />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label className="text-xs text-muted-foreground mb-1.5 block">Altura (m) *</Label>
+              <Input value={height} onChange={(e) => setHeight(e.target.value)} placeholder="Ex: 1.75" className="bg-secondary border-border" />
+            </div>
+            <div>
+              <Label className="text-xs text-muted-foreground mb-1.5 block">Peso (kg) *</Label>
+              <Input type="number" min="20" max="300" step="0.1" value={weight} onChange={(e) => setWeight(e.target.value)} placeholder="Ex: 75.5" className="bg-secondary border-border" />
+            </div>
+          </div>
+          <div>
+            <Label className="text-xs text-muted-foreground mb-1.5 block">Hospedagem <span className="text-muted-foreground/60">(opcional)</span></Label>
+            <Input value={accommodation} onChange={(e) => setAccommodation(e.target.value)} placeholder="Nome do hotel ou pousada" className="bg-secondary border-border" />
           </div>
           <div className="flex gap-3 pt-2">
             <Button type="button" variant="outline" onClick={onClose} className="flex-1">
