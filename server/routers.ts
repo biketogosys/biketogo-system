@@ -2040,6 +2040,8 @@ const publicApiRouter = router({
   // ─── Pré-cadastro: cria apenas o cliente como Lead (sem reserva) ─────────────
   submitPreRegistration: publicProcedure
     .input(z.object({
+      firstName: z.string().optional(),
+      lastName: z.string().optional(),
       // Identificação
       name: z.string().min(2),
       cpf: z.string().optional(),
@@ -2048,8 +2050,8 @@ const publicApiRouter = router({
       docOrigin: z.string().optional(),
       birthDate: z.string().optional(),
       gender: z.string().optional(),
-      height: z.string().optional(),
-      weight: z.string().optional(),
+      height: z.string().min(1),
+      weight: z.string().min(1),
       pedalFreq: z.string().optional(),
       howFound: z.string().optional(),
       // Contato
@@ -2144,6 +2146,13 @@ const publicApiRouter = router({
     }),
 
   // ─── Upload document photo (base64) ────────────────────────────────────────
+  getReservationWhatsApp: publicProcedure.query(async () => {
+    const { getSetting } = await import("./db");
+    const raw = await getSetting("whatsapp_reservas");
+    const number = raw ? raw.replace(/\D/g, "") : null;
+    return { number: number && number.length >= 10 ? number : null };
+  }),
+
   uploadDocument: publicProcedure
     .input(z.object({
       clientId: z.number(),

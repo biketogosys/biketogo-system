@@ -6,7 +6,7 @@
  */
 import { useState, useRef, useCallback } from "react";
 import { trpc } from "@/lib/trpc";
-import { Loader2, ChevronRight, ChevronLeft, Check, Upload, X, Sun, Moon, Bike } from "lucide-react";
+import { Loader2, ChevronRight, ChevronLeft, Check, Upload, X, Sun, Moon, Bike, Smartphone, Download, HelpCircle, Info } from "lucide-react";
 import { translations, languages, type Language } from "@/lib/i18n";
 import { maskCPF, maskRG, maskCEP, maskPhone, maskDate, isValidCPF } from "@/hooks/useMask";
 
@@ -112,7 +112,9 @@ export default function PublicReservation() {
   const [submitted, setSubmitted] = useState(false);
 
   // Step 0 — Identificação
-  const [name, setName] = useState("");
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
+  const [name, setName] = useState(""); // kept for backward compat, computed on submit
   const [cpf, setCpf] = useState("");
   const [rg, setRg] = useState("");
   const [passport, setPassport] = useState("");
@@ -161,6 +163,7 @@ export default function PublicReservation() {
   // ─── Mutations ────────────────────────────────────────────────────────────────
   const submitMutation = trpc.publicApi.submitPreRegistration.useMutation();
   const uploadDocMutation = trpc.publicApi.uploadDocument.useMutation();
+  const { data: waData } = trpc.publicApi.getReservationWhatsApp.useQuery();
 
   // ─── CEP autocomplete ─────────────────────────────────────────────────────────
   const fetchCEP = useCallback(async (cep: string) => {
@@ -211,7 +214,9 @@ export default function PublicReservation() {
   const validate = (s: number): boolean => {
     const errs: Record<string, string> = {};
     if (s === 0) {
-      if (!name.trim() || name.trim().length < 3) errs.name = t.required;
+      if (!firstName.trim() || firstName.trim().length < 2) errs.firstName = lang === "pt" ? "Nome obrigatório (mín. 2 caracteres)" : lang === "en" ? "First name required (min. 2 chars)" : "Nombre obligatorio (mín. 2 caracteres)";
+      if (!lastName.trim() || lastName.trim().length < 2) errs.lastName = lang === "pt" ? "Sobrenome obrigatório (mín. 2 caracteres)" : lang === "en" ? "Last name required (min. 2 chars)" : "Apellido obligatorio (mín. 2 caracteres)";
+      if (!name.trim() || name.trim().length < 3) errs.name = t.required; // fallback, overridden below
       if (isBrazilian) {
         if (!cpf || cpf.replace(/\D/g, "").length < 11) {
           errs.cpf = lang === "pt" ? "CPF obrigatório (11 dígitos)" : lang === "en" ? "CPF required (11 digits)" : "CPF obligatorio (11 dígitos)";
@@ -237,6 +242,10 @@ export default function PublicReservation() {
         if (!passport.trim() || passport.trim().length < 5) errs.passport = lang === "pt" ? "Passaporte obrigatório (mínimo 5 caracteres)" : lang === "en" ? "Passport required (min. 5 characters)" : "Pasaporte obligatorio (mín. 5 caracteres)";
       }
       if (!birthDate || birthDate.length < 10) errs.birthDate = t.invalidDate;
+      if (!height.trim()) errs.height = lang === "pt" ? "Altura obrigatória" : lang === "en" ? "Height required" : "Altura obligatoria";
+      if (!weight.trim()) errs.weight = lang === "pt" ? "Peso obrigatório" : lang === "en" ? "Weight required" : "Peso obligatorio";
+      // clear fallback name error if first/last are set
+      if (!errs.firstName && !errs.lastName) delete errs.name;
     }
     if (s === 1) {
       if (!phone || phone.replace(/\D/g,"").length < 10) errs.phone = t.invalidPhone;
@@ -269,16 +278,17 @@ export default function PublicReservation() {
     if (!validate(3)) return;
     setSubmitting(true);
     try {
+      const computedName = `${firstName.trim()} ${lastName.trim()}`;
       const result = await submitMutation.mutateAsync({
-        name,
+        name: computedName,
         cpf: isBrazilian ? cpf : undefined,
         rg: isBrazilian ? rg : undefined,
         passport: !isBrazilian ? passport : undefined,
         docOrigin,
         birthDate,
         gender,
-        height: height ? String(parseFloat(height) || 0) : undefined,
-        weight: weight ? String(parseFloat(weight) || 0) : undefined,
+        height: String(parseFloat(height) || 0),
+        weight: String(parseFloat(weight) || 0),
         pedalFreq,
         howFound: origin,
         phone,
@@ -344,6 +354,17 @@ export default function PublicReservation() {
               <li>{lang === "pt" ? "O contrato será enviado para sua assinatura." : lang === "en" ? "The contract will be sent for your signature." : "El contrato será enviado para tu firma."}</li>
             </ul>
           </div>
+          {waData?.number && (
+            <a
+              href={`https://wa.me/55${waData.number}?text=${encodeURIComponent(lang === "pt" ? `Olá! Acabei de fazer meu pré-cadastro no site. Meu nome é ${firstName} ${lastName}.` : lang === "en" ? `Hi! I just submitted my pre-registration on the website. My name is ${firstName} ${lastName}.` : `¡Hola! Acabo de registrarme en el sitio web. Mi nombre es ${firstName} ${lastName}.`)}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-4 w-full flex items-center justify-center gap-2 px-6 py-3.5 rounded-xl font-semibold text-sm transition-all"
+              style={{ background: "#C8920A", color: "#fff" }}
+            >
+              {lang === "pt" ? "Solicitar reserva pelo WhatsApp" : lang === "en" ? "Request reservation via WhatsApp" : "Solicitar reserva por WhatsApp"}
+            </a>
+          )}
         </div>
       </div>
     );
@@ -475,10 +496,18 @@ export default function PublicReservation() {
             <div className={`flex items-center gap-2 pb-3 border-b ${sectionBorder}`}>
               <span className="text-[#C8920A] text-sm font-bold uppercase tracking-widest">👤 {t.sectionIdentification}</span>
             </div>
-            <Field label={t.fullName} required error={errors.name}>
-              <input className={errors.name ? inputError : inputNormal} placeholder={t.fullNamePlaceholder}
-                value={name} onChange={e => setName(e.target.value)} />
-            </Field>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <Field label={lang === "pt" ? "Nome" : lang === "en" ? "First Name" : "Nombre"} required error={errors.firstName}>
+                <input className={errors.firstName ? inputError : inputNormal}
+                  placeholder={lang === "pt" ? "Ex: João" : lang === "en" ? "e.g. John" : "Ej: Juan"}
+                  value={firstName} onChange={e => setFirstName(e.target.value)} />
+              </Field>
+              <Field label={lang === "pt" ? "Sobrenome" : lang === "en" ? "Last Name" : "Apellido"} required error={errors.lastName}>
+                <input className={errors.lastName ? inputError : inputNormal}
+                  placeholder={lang === "pt" ? "Ex: Silva" : lang === "en" ? "e.g. Smith" : "Ej: García"}
+                  value={lastName} onChange={e => setLastName(e.target.value)} />
+              </Field>
+            </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <Field label={t.docOrigin}>
                 <select className={selectBase} value={docOrigin} onChange={e => {
@@ -534,14 +563,14 @@ export default function PublicReservation() {
                   <option value="Prefiro não informar">{t.genderPreferNotToSay}</option>
                 </select>
               </Field>
-              <Field label={t.height} hint={t.heightHint}>
-                <input className={inputNormal} placeholder={t.heightPlaceholder}
+              <Field label={t.height} required error={errors.height}>
+                <input className={errors.height ? inputError : inputNormal} placeholder={t.heightPlaceholder}
                   value={height} onChange={e => setHeight(maskHeight(e.target.value))} />
               </Field>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <Field label={lang === "pt" ? "Peso (kg)" : lang === "en" ? "Weight (kg)" : "Peso (kg)"} hint={lang === "pt" ? "Opcional" : "Optional"}>
-                <input className={inputNormal}
+              <Field label={lang === "pt" ? "Peso (kg)" : lang === "en" ? "Weight (kg)" : "Peso (kg)"} required error={errors.weight}>
+                <input className={errors.weight ? inputError : inputNormal}
                   type="number" min="20" max="300" step="0.1"
                   placeholder={lang === "pt" ? "Ex: 75.5" : "e.g. 75.5"}
                   value={weight} onChange={e => setWeight(e.target.value)} />
@@ -685,26 +714,35 @@ export default function PublicReservation() {
                   ))}
                 </div>
               )}
-              {/* Mini-tutorial PDF */}
+              {/* Mini-tutorial PDF — lucide icons, no emoji */}
               {isBrazilian && docType === "cnh" && (
-                <div className={`rounded-xl border ${isDark ? "border-[#C8920A]/20 bg-[#C8920A]/5" : "border-[#C8920A]/30 bg-amber-50"} p-4 space-y-3`}>
-                  <p className={`text-xs font-bold uppercase tracking-widest ${isDark ? "text-[#C8920A]" : "text-amber-700"}`}>
-                    {lang === "pt" ? "📱 Como enviar sua CNH digital (recomendado)" : lang === "en" ? "📱 How to send your digital driver's license (recommended)" : "📱 Cómo enviar tu licencia digital (recomendado)"}
+                <div className={`rounded-xl border ${isDark ? "border-gray-700 bg-[#111118]" : "border-gray-200 bg-gray-50"} p-4`}>
+                  <p className={`text-[13px] font-medium mb-3 flex items-center gap-1.5 ${textPrimary}`}>
+                    <HelpCircle className="w-4 h-4 text-gray-500 shrink-0" />
+                    {lang === "pt" ? "Como baixar o PDF da sua CNH digital" : lang === "en" ? "How to download your digital driver's license PDF" : "Cómo descargar el PDF de tu licencia digital"}
                   </p>
-                  <ol className={`space-y-2 text-xs ${textSecondary}`}>
-                    <li className="flex gap-2"><span className={`font-bold ${isDark ? "text-[#C8920A]" : "text-amber-600"} shrink-0`}>1.</span>
-                      {lang === "pt" ? "Abra o app Carteira Digital de Trânsito ou o gov.br e acesse sua CNH" : lang === "en" ? "Open the Carteira Digital de Trânsito or gov.br app and access your driver's license" : "Abre la app Carteira Digital de Trânsito o gov.br y accede a tu licencia"}
-                    </li>
-                    <li className="flex gap-2"><span className={`font-bold ${isDark ? "text-[#C8920A]" : "text-amber-600"} shrink-0`}>2.</span>
-                      {lang === "pt" ? "Toque em Exportar / Baixar PDF e salve o arquivo" : lang === "en" ? "Tap Export / Download PDF and save the file" : "Toca en Exportar / Descargar PDF y guarda el archivo"}
-                    </li>
-                    <li className="flex gap-2"><span className={`font-bold ${isDark ? "text-[#C8920A]" : "text-amber-600"} shrink-0`}>3.</span>
-                      {lang === "pt" ? "Envie o PDF aqui" : lang === "en" ? "Upload the PDF here" : "Sube el PDF aquí"}
-                    </li>
+                  <ol className="flex flex-col gap-2.5">
+                    {[
+                      { Icon: Smartphone, pt: "Abra a Carteira Digital de Trânsito ou o gov.br e acesse sua CNH", en: "Open Carteira Digital de Trânsito or gov.br and access your license", es: "Abre Carteira Digital de Trânsito o gov.br y accede a tu licencia" },
+                      { Icon: Download,   pt: "Toque em Exportar / Baixar PDF e salve o arquivo", en: "Tap Export / Download PDF and save the file", es: "Toca Exportar / Descargar PDF y guarda el archivo" },
+                      { Icon: Upload,     pt: "Volte aqui e envie o PDF na área acima", en: "Come back and upload the PDF above", es: "Vuelve y sube el PDF arriba" },
+                    ].map(({ Icon, pt, en, es }, i) => {
+                      const isLast = i === 2;
+                      return (
+                        <li key={i} className="flex items-center gap-3">
+                          <span className={`shrink-0 w-[26px] h-[26px] rounded-full flex items-center justify-center text-[13px] font-medium ${isLast ? "bg-blue-50 text-blue-600 dark:bg-blue-950 dark:text-blue-400" : isDark ? "bg-gray-800 text-gray-300" : "bg-gray-100 text-gray-700"}`}>{i + 1}</span>
+                          <Icon className={`w-[19px] h-[19px] shrink-0 ${isLast ? "text-blue-600 dark:text-blue-400" : "text-gray-500"}`} />
+                          <span className={`text-[13px] leading-relaxed ${textSecondary}`}>{lang === "pt" ? pt : lang === "en" ? en : es}</span>
+                        </li>
+                      );
+                    })}
                   </ol>
-                  <p className={`text-[11px] ${isDark ? "text-gray-400" : "text-gray-500"} italic`}>
-                    {lang === "pt" ? "Estrangeiro ou sem CNH digital? Envie uma FOTO do documento (passaporte/RG)." : lang === "en" ? "Foreigner or no digital license? Send a PHOTO of your document (passport/ID)." : "¿Extranjero o sin licencia digital? Envía una FOTO del documento (pasaporte/DNI)."}
-                  </p>
+                  <div className={`mt-3.5 rounded-lg ${isDark ? "bg-gray-900" : "bg-gray-100"} px-3 py-2.5 flex items-start gap-2`}>
+                    <Info className="w-4 h-4 text-gray-400 mt-0.5 shrink-0" />
+                    <span className={`text-xs leading-relaxed ${isDark ? "text-gray-300" : "text-gray-600"}`}>
+                      {lang === "pt" ? "Estrangeiro ou sem CNH digital? Envie uma foto do documento (passaporte ou RG)." : lang === "en" ? "Foreigner or no digital license? Send a photo of your document (passport or ID)." : "¿Extranjero o sin licencia digital? Envía una foto del documento (pasaporte o DNI)."}
+                    </span>
+                  </div>
                 </div>
               )}
 
