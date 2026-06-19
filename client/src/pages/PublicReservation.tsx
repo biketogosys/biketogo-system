@@ -157,6 +157,7 @@ export default function PublicReservation() {
   const [docBackUploading, setDocBackUploading] = useState(false);
   const frontRef = useRef<HTMLInputElement>(null);
   const backRef = useRef<HTMLInputElement>(null);
+  const [showVerso, setShowVerso] = useState(false);
   const [lgpdConsent, setLgpdConsent] = useState(false);
   const [marketingConsent, setMarketingConsent] = useState(false);
 
@@ -199,8 +200,9 @@ export default function PublicReservation() {
         setDocFrontMime(file.type || "image/jpeg");
         setDocFrontIsPdf(isPdf);
         setDocFrontFileName(file.name);
-        // PDF covers both sides — clear back
-        if (isPdf) { setDocBackBase64(null); setDocBackPreview(null); }
+        // PDF covers both sides — clear back and hide verso
+        if (isPdf) { setDocBackBase64(null); setDocBackPreview(null); setShowVerso(false); }
+        else { /* image: keep showVerso as is */ }
       } else {
         setDocBackBase64(b64);
         setDocBackPreview(b64);
@@ -249,8 +251,8 @@ export default function PublicReservation() {
     }
     if (s === 1) {
       if (!phone || phone.replace(/\D/g,"").length < 10) errs.phone = t.invalidPhone;
-      if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) errs.email = t.invalidEmail;
-      if (!accommodation.trim()) errs.accommodation = t.required;
+      if (!email || !email.trim()) errs.email = t.required;
+      else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) errs.email = t.invalidEmail;
     }
     if (s === 2) {
       if (!zipCode || zipCode.replace(/\D/g,"").length < 8) errs.zipCode = t.required;
@@ -620,7 +622,7 @@ export default function PublicReservation() {
                 <input className={inputNormal} placeholder={t.instagramPlaceholder}
                   value={instagram} onChange={e => setInstagram(e.target.value)} />
               </Field>
-              <Field label={t.accommodation} required error={errors.accommodation} hint={t.accommodationHint}>
+              <Field label={t.accommodation} error={errors.accommodation} hint={t.accommodationHint}>
                 <input className={errors.accommodation ? inputError : inputNormal} placeholder={t.accommodationPlaceholder}
                   value={accommodation} onChange={e => setAccommodation(e.target.value)} />
               </Field>
@@ -746,14 +748,16 @@ export default function PublicReservation() {
                 </div>
               )}
 
-              {/* Upload zone */}
-              <div className={`grid gap-5 ${docFrontIsPdf ? "grid-cols-1" : "grid-cols-1 sm:grid-cols-2"}`}>
+              {/* Upload zone — single slot by default */}
+              <div className="grid gap-5 grid-cols-1">
                 {/* Front / PDF slot */}
                 <div>
                   <p className={`text-xs font-semibold mb-2 ${textSecondary}`}>
                     {docFrontIsPdf
                       ? (lang === "pt" ? "Documento (PDF)" : lang === "en" ? "Document (PDF)" : "Documento (PDF)")
-                      : (lang === "pt" ? "Frente" : lang === "en" ? "Front" : "Frente")}
+                      : showVerso
+                        ? (lang === "pt" ? "Frente" : lang === "en" ? "Front" : "Frente")
+                        : (lang === "pt" ? "Documento" : lang === "en" ? "Document" : "Documento")}
                     <span className="text-red-400 ml-0.5">*</span>
                   </p>
                   <input
@@ -807,13 +811,24 @@ export default function PublicReservation() {
                     </div>
                   )}
                   {errors.docFront && <p className="text-[11px] text-red-400 mt-1">{errors.docFront}</p>}
+                  {/* Botão "Adicionar verso" — só para imagem, antes de mostrar o slot */}
+                  {docFrontBase64 && !docFrontIsPdf && !showVerso && (
+                    <button
+                      type="button"
+                      onClick={() => setShowVerso(true)}
+                      className={`mt-2 text-xs underline underline-offset-2 ${isDark ? "text-gray-400 hover:text-gray-200" : "text-gray-500 hover:text-gray-700"} transition-colors`}
+                    >
+                      {lang === "pt" ? "+ Adicionar verso (opcional)" : lang === "en" ? "+ Add back side (optional)" : "+ Agregar dorso (opcional)"}
+                    </button>
+                  )}
                 </div>
 
-                {/* Back slot — hidden when PDF uploaded */}
-                {!docFrontIsPdf && (
+                {/* Back slot — shown only when showVerso=true and not PDF */}
+                {showVerso && !docFrontIsPdf && (
                   <div>
                     <p className={`text-xs font-semibold mb-2 ${textSecondary}`}>
-                      {lang === "pt" ? "Verso (opcional)" : lang === "en" ? "Back (optional)" : "Dorso (opcional)"}
+                      {lang === "pt" ? "Verso" : lang === "en" ? "Back" : "Dorso"}
+                      <span className={`ml-1 font-normal text-[10px] ${textMuted}`}>({lang === "pt" ? "opcional" : lang === "en" ? "optional" : "opcional"})</span>
                     </p>
                     <input
                       ref={backRef}
