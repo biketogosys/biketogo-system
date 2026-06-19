@@ -1086,32 +1086,56 @@ export default function ClientProfile() {
                       Fotos do Documento (Formulário Público)
                     </h3>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      {(client as any).docFrontUrl && (
-                        <div className="bg-secondary border border-border rounded-lg overflow-hidden">
-                          <div
-                            className="bg-muted flex items-center justify-center cursor-zoom-in overflow-hidden"
-                            style={{ width: "100%", height: 180 }}
-                            onClick={() => openLightbox((client as any).docFrontUrl, "Frente do Documento")}
-                            title="Clique para ampliar"
-                          >
-                            <img src={(client as any).docFrontUrl} alt="Frente do documento" style={{ width: 280, height: 180, objectFit: "cover", display: "block" }} />
+                      {(client as any).docFrontUrl && (() => {
+                        const url: string = (client as any).docFrontUrl;
+                        const isPdf = url.toLowerCase().includes(".pdf") || url.includes("application/pdf");
+                        return (
+                          <div className="bg-secondary border border-border rounded-lg overflow-hidden">
+                            {isPdf ? (
+                              <div className="bg-muted flex flex-col items-center justify-center gap-2" style={{ width: "100%", height: 180 }}>
+                                <span className="text-4xl">📄</span>
+                                <p className="text-xs font-medium text-foreground">Frente do Documento (PDF)</p>
+                                <a href={url} target="_blank" rel="noopener noreferrer" className="text-xs text-primary underline hover:opacity-80">Abrir PDF</a>
+                              </div>
+                            ) : (
+                              <div
+                                className="bg-muted flex items-center justify-center cursor-zoom-in overflow-hidden"
+                                style={{ width: "100%", height: 180 }}
+                                onClick={() => openLightbox(url, "Frente do Documento")}
+                                title="Clique para ampliar"
+                              >
+                                <img src={url} alt="Frente do documento" style={{ width: 280, height: 180, objectFit: "cover", display: "block" }} />
+                              </div>
+                            )}
+                            <div className="p-3"><p className="text-xs font-medium text-foreground">Frente do Documento</p></div>
                           </div>
-                          <div className="p-3"><p className="text-xs font-medium text-foreground">Frente do Documento</p></div>
-                        </div>
-                      )}
-                      {(client as any).docBackUrl && (
-                        <div className="bg-secondary border border-border rounded-lg overflow-hidden">
-                          <div
-                            className="bg-muted flex items-center justify-center cursor-zoom-in overflow-hidden"
-                            style={{ width: "100%", height: 180 }}
-                            onClick={() => openLightbox((client as any).docBackUrl, "Verso do Documento")}
-                            title="Clique para ampliar"
-                          >
-                            <img src={(client as any).docBackUrl} alt="Verso do documento" style={{ width: 280, height: 180, objectFit: "cover", display: "block" }} />
+                        );
+                      })()}
+                      {(client as any).docBackUrl && (() => {
+                        const url: string = (client as any).docBackUrl;
+                        const isPdf = url.toLowerCase().includes(".pdf") || url.includes("application/pdf");
+                        return (
+                          <div className="bg-secondary border border-border rounded-lg overflow-hidden">
+                            {isPdf ? (
+                              <div className="bg-muted flex flex-col items-center justify-center gap-2" style={{ width: "100%", height: 180 }}>
+                                <span className="text-4xl">📄</span>
+                                <p className="text-xs font-medium text-foreground">Verso do Documento (PDF)</p>
+                                <a href={url} target="_blank" rel="noopener noreferrer" className="text-xs text-primary underline hover:opacity-80">Abrir PDF</a>
+                              </div>
+                            ) : (
+                              <div
+                                className="bg-muted flex items-center justify-center cursor-zoom-in overflow-hidden"
+                                style={{ width: "100%", height: 180 }}
+                                onClick={() => openLightbox(url, "Verso do Documento")}
+                                title="Clique para ampliar"
+                              >
+                                <img src={url} alt="Verso do documento" style={{ width: 280, height: 180, objectFit: "cover", display: "block" }} />
+                              </div>
+                            )}
+                            <div className="p-3"><p className="text-xs font-medium text-foreground">Verso do Documento</p></div>
                           </div>
-                          <div className="p-3"><p className="text-xs font-medium text-foreground">Verso do Documento</p></div>
-                        </div>
-                      )}
+                        );
+                      })()}
                     </div>
                   </div>
                 )}

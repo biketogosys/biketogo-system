@@ -321,14 +321,12 @@ const clientsRouter = router({
   create: adminAuthProcedure
     .input(z.object({
       name: z.string().min(2),
-      firstName: z.string().optional(),
-      lastName: z.string().optional(),
       cpf: z.string().optional(),
       rg: z.string().optional(),
       birthDate: z.string().optional(),
       gender: z.string().optional(),
-      height: z.string().min(1, "Altura obrigatória"),
-      weight: z.string().min(1, "Peso obrigatório"),
+      height: z.string().optional(),
+      weight: z.string().optional(),
       pedalFrequency: z.string().optional(),
       origin: z.string().optional(),
       phone: z.string().optional(),
@@ -2036,14 +2034,6 @@ const publicApiRouter = router({
     return fee || "0";
   }),
 
-  // Get WhatsApp number for reservations (public)
-  getReservationWhatsApp: publicProcedure.query(async () => {
-    const raw = await getSetting("whatsapp_reservas");
-    if (!raw) return { number: null };
-    const digits = raw.replace(/\D/g, "");
-    return { number: digits.length >= 10 ? digits : null };
-  }),
-
 
 
 
@@ -2058,12 +2048,10 @@ const publicApiRouter = router({
       docOrigin: z.string().optional(),
       birthDate: z.string().optional(),
       gender: z.string().optional(),
-      height: z.string().min(1, "Altura obrigatória"),
-      weight: z.string().min(1, "Peso obrigatório"),
+      height: z.string().optional(),
+      weight: z.string().optional(),
       pedalFreq: z.string().optional(),
       howFound: z.string().optional(),
-      firstName: z.string().optional(),
-      lastName: z.string().optional(),
       // Contato
       phone: z.string().optional(),
       email: z.string().email().optional().or(z.literal("")),
@@ -2164,10 +2152,18 @@ const publicApiRouter = router({
       mimeType: z.string().default("image/jpeg"),
     }))
     .mutation(async ({ input }) => {
+      // Validate mimeType: accept image/* or application/pdf only
+      const isImage = input.mimeType.startsWith("image/");
+      const isPdf = input.mimeType === "application/pdf";
+      if (!isImage && !isPdf) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Tipo de arquivo não suportado. Envie uma imagem ou PDF." });
+      }
       const { storagePut } = await import("./storage");
       const base64Data = input.base64.replace(/^data:[^;]+;base64,/, "");
       const buffer = Buffer.from(base64Data, "base64");
-      const ext = input.mimeType.split("/")[1] || "jpg";
+      // Normalize extension: application/pdf -> pdf, image/jpeg -> jpg, etc.
+      const extMap: Record<string, string> = { "application/pdf": "pdf", "image/jpeg": "jpg", "image/jpg": "jpg", "image/png": "png", "image/webp": "webp", "image/heic": "heic" };
+      const ext = extMap[input.mimeType] || input.mimeType.split("/")[1] || "bin";
       const key = `clients/${input.clientId}/doc-${input.side}-${Date.now()}.${ext}`;
       const { url } = await storagePut(key, buffer, input.mimeType);
       const field = input.side === "front" ? "docFrontUrl" : "docBackUrl";
