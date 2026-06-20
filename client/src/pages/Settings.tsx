@@ -482,16 +482,16 @@ export default function Settings() {
                   toast.error("Número de WhatsApp inválido. Informe DDD + número.");
                   return;
                 }
-                const digitsReservas = whatsappReservas.replace(/\D/g, "");
-                if (whatsappReservas && digitsReservas.length < 10) {
+                const resDigits = whatsappReservas.replace(/\D/g, "");
+                if (whatsappReservas && resDigits.length < 10) {
                   toast.error("Número de WhatsApp para reservas inválido. Informe DDD + número.");
                   return;
                 }
                 saveSection([
                   { key: "whatsapp_number", value: whatsappNumber },
+                  { key: "whatsapp_reservas", value: whatsappReservas },
                   { key: "notification_email", value: notificationEmail },
                   { key: "admin_notification_email", value: adminNotificationEmail },
-                  { key: "whatsapp_reservas", value: whatsappReservas },
                 ], setSavingNotifications);
               }}
             />
@@ -509,7 +509,7 @@ export default function Settings() {
               value={whatsappReservas}
               onChange={(v) => setWhatsappReservas(maskPhone(v))}
               placeholder="(48) 99999-9999"
-              hint="Número exibido no botão de reserva da tela pública /reservar"
+              hint="Exibido no formulário público /reservar após o cadastro. DDD + número."
             />
             <Field
               label="Email de contato / remetente"

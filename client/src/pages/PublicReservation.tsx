@@ -6,7 +6,10 @@
  */
 import { useState, useRef, useCallback } from "react";
 import { trpc } from "@/lib/trpc";
-import { Loader2, ChevronRight, ChevronLeft, Check, Upload, X, Sun, Moon, Bike, Smartphone, Download, HelpCircle, Info } from "lucide-react";
+import {
+  Loader2, ChevronRight, ChevronLeft, Check, X, Sun, Moon, Bike,
+  HelpCircle, Smartphone, Download, Upload, FileText, Image as ImageIcon, Info,
+} from "lucide-react";
 import { translations, languages, type Language } from "@/lib/i18n";
 import { maskCPF, maskRG, maskCEP, maskPhone, maskDate, isValidCPF } from "@/hooks/useMask";
 
@@ -114,7 +117,6 @@ export default function PublicReservation() {
   // Step 0 — Identificação
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
-  const [name, setName] = useState(""); // kept for backward compat, computed on submit
   const [cpf, setCpf] = useState("");
   const [rg, setRg] = useState("");
   const [passport, setPassport] = useState("");
@@ -147,21 +149,22 @@ export default function PublicReservation() {
   // Step 3 — Documentos + LGPD
   const [docType, setDocType] = useState<"cnh" | "rg">("cnh");
   const [docFrontPreview, setDocFrontPreview] = useState<string | null>(null);
-  const [docBackPreview, setDocBackPreview] = useState<string | null>(null);
   const [docFrontBase64, setDocFrontBase64] = useState<string | null>(null);
-  const [docBackBase64, setDocBackBase64] = useState<string | null>(null);
   const [docFrontMime, setDocFrontMime] = useState<string>("image/jpeg");
   const [docFrontIsPdf, setDocFrontIsPdf] = useState(false);
-  const [docFrontFileName, setDocFrontFileName] = useState<string | null>(null);
+  const [docFrontName, setDocFrontName] = useState("");
+  const [docBackPreview, setDocBackPreview] = useState<string | null>(null);
+  const [docBackBase64, setDocBackBase64] = useState<string | null>(null);
+  const [docBackMime, setDocBackMime] = useState<string>("image/jpeg");
+  const [showVerso, setShowVerso] = useState(false);
   const [docFrontUploading, setDocFrontUploading] = useState(false);
   const [docBackUploading, setDocBackUploading] = useState(false);
   const frontRef = useRef<HTMLInputElement>(null);
   const backRef = useRef<HTMLInputElement>(null);
-  const [showVerso, setShowVerso] = useState(false);
   const [lgpdConsent, setLgpdConsent] = useState(false);
   const [marketingConsent, setMarketingConsent] = useState(false);
 
-  // ─── Mutations ────────────────────────────────────────────────────────────────
+  // ─── Mutations & Queries ──────────────────────────────────────────────────────
   const submitMutation = trpc.publicApi.submitPreRegistration.useMutation();
   const uploadDocMutation = trpc.publicApi.uploadDocument.useMutation();
   const { data: waData } = trpc.publicApi.getReservationWhatsApp.useQuery();
@@ -184,27 +187,32 @@ export default function PublicReservation() {
     finally { setCepLoading(false); }
   }, []);
 
-  // ─── Document file handler (image or PDF) ────────────────────────────────────
-  const handleDocFile = (side: "front" | "back", file: File) => {
+  // ─── Document photo ───────────────────────────────────────────────────────────
+  const handleDocPhoto = (side: "front" | "back", file: File) => {
     if (file.size > 10 * 1024 * 1024) {
       setErrors(e => ({ ...e, [side === "front" ? "docFront" : "docBack"]: t.docUploadError }));
       return;
     }
-    const isPdf = file.type === "application/pdf";
+    const mime = file.type || "image/jpeg";
+    const isPdf = mime === "application/pdf";
     const reader = new FileReader();
     reader.onload = ev => {
       const b64 = ev.target?.result as string;
       if (side === "front") {
         setDocFrontBase64(b64);
-        setDocFrontPreview(isPdf ? null : b64);
-        setDocFrontMime(file.type || "image/jpeg");
-        setDocFrontIsPdf(isPdf);
-        setDocFrontFileName(file.name);
-        // PDF covers both sides — clear back and hide verso
-        if (isPdf) { setDocBackBase64(null); setDocBackPreview(null); setShowVerso(false); }
-        else { /* image: keep showVerso as is */ }
+        setDocFrontMime(mime);
+        setDocFrontName(file.name);
+        if (isPdf) {
+          setDocFrontIsPdf(true);
+          setDocFrontPreview(null);
+          setShowVerso(false);
+        } else {
+          setDocFrontIsPdf(false);
+          setDocFrontPreview(b64);
+        }
       } else {
         setDocBackBase64(b64);
+        setDocBackMime(mime);
         setDocBackPreview(b64);
       }
       setErrors(e => { const n = { ...e }; delete n[side === "front" ? "docFront" : "docBack"]; return n; });
@@ -216,9 +224,8 @@ export default function PublicReservation() {
   const validate = (s: number): boolean => {
     const errs: Record<string, string> = {};
     if (s === 0) {
-      if (!firstName.trim() || firstName.trim().length < 2) errs.firstName = lang === "pt" ? "Nome obrigatório (mín. 2 caracteres)" : lang === "en" ? "First name required (min. 2 chars)" : "Nombre obligatorio (mín. 2 caracteres)";
-      if (!lastName.trim() || lastName.trim().length < 2) errs.lastName = lang === "pt" ? "Sobrenome obrigatório (mín. 2 caracteres)" : lang === "en" ? "Last name required (min. 2 chars)" : "Apellido obligatorio (mín. 2 caracteres)";
-      if (!name.trim() || name.trim().length < 3) errs.name = t.required; // fallback, overridden below
+      if (!firstName.trim() || firstName.trim().length < 2) errs.firstName = t.required;
+      if (!lastName.trim() || lastName.trim().length < 2) errs.lastName = t.required;
       if (isBrazilian) {
         if (!cpf || cpf.replace(/\D/g, "").length < 11) {
           errs.cpf = lang === "pt" ? "CPF obrigatório (11 dígitos)" : lang === "en" ? "CPF required (11 digits)" : "CPF obligatorio (11 dígitos)";
@@ -244,15 +251,14 @@ export default function PublicReservation() {
         if (!passport.trim() || passport.trim().length < 5) errs.passport = lang === "pt" ? "Passaporte obrigatório (mínimo 5 caracteres)" : lang === "en" ? "Passport required (min. 5 characters)" : "Pasaporte obligatorio (mín. 5 caracteres)";
       }
       if (!birthDate || birthDate.length < 10) errs.birthDate = t.invalidDate;
-      if (!height.trim()) errs.height = lang === "pt" ? "Altura obrigatória" : lang === "en" ? "Height required" : "Altura obligatoria";
-      if (!weight.trim()) errs.weight = lang === "pt" ? "Peso obrigatório" : lang === "en" ? "Weight required" : "Peso obligatorio";
-      // clear fallback name error if first/last are set
-      if (!errs.firstName && !errs.lastName) delete errs.name;
+      if (!height || !height.trim()) errs.height = lang === "pt" ? "Altura obrigatória" : lang === "en" ? "Height required" : "Altura obligatoria";
+      if (!weight || !weight.trim()) errs.weight = lang === "pt" ? "Peso obrigatório" : lang === "en" ? "Weight required" : "Peso obligatorio";
     }
     if (s === 1) {
       if (!phone || phone.replace(/\D/g,"").length < 10) errs.phone = t.invalidPhone;
-      if (!email || !email.trim()) errs.email = t.required;
+      if (!email || !email.trim()) errs.email = lang === "pt" ? "E-mail obrigatório" : lang === "en" ? "Email required" : "Correo obligatorio";
       else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) errs.email = t.invalidEmail;
+      // accommodation is optional — no validation
     }
     if (s === 2) {
       if (!zipCode || zipCode.replace(/\D/g,"").length < 8) errs.zipCode = t.required;
@@ -279,22 +285,22 @@ export default function PublicReservation() {
   const handleSubmit = async () => {
     if (!validate(3)) return;
     setSubmitting(true);
+    const fullName = `${firstName.trim()} ${lastName.trim()}`;
     try {
-      const computedName = `${firstName.trim()} ${lastName.trim()}`;
       const result = await submitMutation.mutateAsync({
-        name: computedName,
+        name: fullName,
         cpf: isBrazilian ? cpf : undefined,
         rg: isBrazilian ? rg : undefined,
         passport: !isBrazilian ? passport : undefined,
         docOrigin,
         birthDate,
         gender,
-        height: String(parseFloat(height) || 0),
-        weight: String(parseFloat(weight) || 0),
+        height: height ? String(parseFloat(height) || 0) : "0",
+        weight: weight ? String(parseFloat(weight) || 0) : "0",
         pedalFreq,
         howFound: origin,
         phone,
-        email: email || undefined,
+        email,
         instagram,
         accommodation,
         zipCode,
@@ -317,7 +323,7 @@ export default function PublicReservation() {
         }
         if (docBackBase64) {
           setDocBackUploading(true);
-          try { await uploadDocMutation.mutateAsync({ clientId: result.clientId, base64: docBackBase64, side: "back", mimeType: "image/jpeg" }); }
+          try { await uploadDocMutation.mutateAsync({ clientId: result.clientId, base64: docBackBase64, side: "back", mimeType: docBackMime }); }
           finally { setDocBackUploading(false); }
         }
       }
@@ -330,6 +336,14 @@ export default function PublicReservation() {
 
   // ─── Success screen ───────────────────────────────────────────────────────────
   if (submitted) {
+    const waNumber = waData?.number;
+    const waMsg = encodeURIComponent(
+      lang === "pt"
+        ? "Olá! Acabei de me cadastrar no site da Bike To Go e gostaria de solicitar uma reserva."
+        : lang === "en"
+        ? "Hi! I just registered on the Bike To Go website and would like to request a reservation."
+        : "¡Hola! Acabo de registrarme en el sitio de Bike To Go y me gustaría solicitar una reserva."
+    );
     return (
       <div className={`min-h-screen ${bg} flex items-center justify-center p-4`}>
         <div className="max-w-md w-full text-center">
@@ -337,33 +351,35 @@ export default function PublicReservation() {
             <Check className="w-10 h-10 text-[#C8920A]" />
           </div>
           <h1 className={`text-2xl font-bold ${textPrimary} mb-3`} style={{ fontFamily: "'Montserrat', sans-serif" }}>
-            {lang === "pt" ? "Cadastro enviado com sucesso!" : lang === "en" ? "Registration submitted!" : "¡Registro enviado con éxito!"}
+            {lang === "pt" ? "Cadastro enviado com sucesso!" : lang === "en" ? "Registration submitted successfully!" : "¡Registro enviado con éxito!"}
           </h1>
           <p className={`${textSecondary} text-sm leading-relaxed mb-6`}>
             {lang === "pt"
-              ? "Nossa equipe vai entrar em contato para combinar qual bike e os acessórios."
+              ? "Seu cadastro foi concluído. Agora você já pode solicitar sua reserva."
               : lang === "en"
-              ? "Our team will get in touch to arrange which bike and accessories are best for you."
-              : "Nuestro equipo se pondrá en contacto para combinar la bicicleta y los accesorios."}
+              ? "Your registration is complete. You can now request your reservation."
+              : "Tu registro fue completado. Ahora puedes solicitar tu reserva."}
           </p>
-          <div className={`${cardBg} border rounded-xl p-5 text-left`}>
+          <div className={`${cardBg} border rounded-xl p-5 text-left mb-6`}>
             <p className={`text-sm font-semibold ${textPrimary} mb-2`}>
               {lang === "pt" ? "Próximos passos:" : lang === "en" ? "Next steps:" : "Próximos pasos:"}
             </p>
             <ul className={`text-sm ${textSecondary} space-y-1.5 list-disc list-inside`}>
-              <li>{lang === "pt" ? "Aguarde o contato da nossa equipe pelo WhatsApp ou e-mail." : lang === "en" ? "Wait for our team to contact you via WhatsApp or email." : "Espera el contacto de nuestro equipo por WhatsApp o correo."}</li>
-              <li>{lang === "pt" ? "Vamos combinar a bike ideal, acessórios e datas." : lang === "en" ? "We'll arrange the ideal bike, accessories, and dates." : "Combinaremos la bici ideal, accesorios y fechas."}</li>
-              <li>{lang === "pt" ? "O contrato será enviado para sua assinatura." : lang === "en" ? "The contract will be sent for your signature." : "El contrato será enviado para tu firma."}</li>
+              <li>{lang === "pt" ? "Escolha a bicicleta desejada." : lang === "en" ? "Choose the desired bicycle." : "Elige la bicicleta deseada."}</li>
+              <li>{lang === "pt" ? "Solicite sua reserva pelo WhatsApp." : lang === "en" ? "Request your reservation via WhatsApp." : "Solicita tu reserva por WhatsApp."}</li>
+              <li>{lang === "pt" ? "Confirme a disponibilidade." : lang === "en" ? "Confirm availability." : "Confirma la disponibilidad."}</li>
             </ul>
           </div>
-          {waData?.number && (
+          {waNumber && (
             <a
-              href={`https://wa.me/55${waData.number}?text=${encodeURIComponent(lang === "pt" ? `Olá! Acabei de fazer meu pré-cadastro no site. Meu nome é ${firstName} ${lastName}.` : lang === "en" ? `Hi! I just submitted my pre-registration on the website. My name is ${firstName} ${lastName}.` : `¡Hola! Acabo de registrarme en el sitio web. Mi nombre es ${firstName} ${lastName}.`)}`}
+              href={`https://wa.me/55${waNumber}?text=${waMsg}`}
               target="_blank"
               rel="noopener noreferrer"
-              className="mt-4 w-full flex items-center justify-center gap-2 px-6 py-3.5 rounded-xl font-semibold text-sm transition-all"
-              style={{ background: "#C8920A", color: "#fff" }}
+              className="inline-flex items-center justify-center gap-2 w-full px-6 py-4 rounded-xl font-bold text-base transition-all bg-[#C8920A] text-[#0a0a0f] hover:bg-[#d9a020]"
             >
+              <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
+              </svg>
               {lang === "pt" ? "Solicitar reserva pelo WhatsApp" : lang === "en" ? "Request reservation via WhatsApp" : "Solicitar reserva por WhatsApp"}
             </a>
           )}
@@ -487,62 +503,95 @@ export default function PublicReservation() {
             {lang === "pt"
               ? "Preencha seus dados e nossa equipe entrará em contato para combinar a bike e os acessórios ideais."
               : lang === "en"
-              ? "Fill in your details and our team will get in touch to arrange the ideal bike and accessories."
-              : "Completa tus datos y nuestro equipo se pondrá en contacto para combinar la bici y accesorios ideales."}
+              ? "Fill in your details and our team will contact you to arrange the ideal bike and accessories."
+              : "Completa tus datos y nuestro equipo se pondrá en contacto para combinar la bici y los accesorios ideales."}
           </p>
         </div>
 
-        {/* ─── STEP 0: Identificação ─────────────────────────────────────────── */}
+        {/* ─── STEP 0: Identificação ────────────────────────────────────────── */}
         {step === 0 && (
           <div className={`${cardBg} border rounded-2xl p-6 space-y-5`}>
             <div className={`flex items-center gap-2 pb-3 border-b ${sectionBorder}`}>
-              <span className="text-[#C8920A] text-sm font-bold uppercase tracking-widest">👤 {t.sectionIdentification}</span>
+              <span className="text-[#C8920A] text-sm font-bold uppercase tracking-widest">🪪 {t.sectionIdentification}</span>
             </div>
+
+            {/* Origem */}
+            <Field label={lang === "pt" ? "Origem" : lang === "en" ? "Origin" : "Origen"}>
+              <select className={selectBase} value={docOrigin} onChange={e => { setDocOrigin(e.target.value); }}>
+                <option value="Brasil (+55)">🇧🇷 Brasil (+55)</option>
+                <option value="Argentina (+54)">🇦🇷 Argentina (+54)</option>
+                <option value="Chile (+56)">🇨🇱 Chile (+56)</option>
+                <option value="Uruguai (+598)">🇺🇾 Uruguai (+598)</option>
+                <option value="EUA (+1)">🇺🇸 EUA (+1)</option>
+                <option value="Outro">🌍 {lang === "pt" ? "Outro país" : lang === "en" ? "Other country" : "Otro país"}</option>
+              </select>
+            </Field>
+
+            {/* Nome / Sobrenome */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <Field label={lang === "pt" ? "Nome" : lang === "en" ? "First Name" : "Nombre"} required error={errors.firstName}>
-                <input className={errors.firstName ? inputError : inputNormal}
-                  placeholder={lang === "pt" ? "Ex: João" : lang === "en" ? "e.g. John" : "Ej: Juan"}
-                  value={firstName} onChange={e => setFirstName(e.target.value)} />
+              <Field
+                label={lang === "pt" ? "Nome" : lang === "en" ? "First Name" : "Nombre"}
+                required
+                error={errors.firstName}
+              >
+                <input
+                  className={errors.firstName ? inputError : inputNormal}
+                  placeholder={lang === "pt" ? "Ex: Maria" : lang === "en" ? "e.g. Maria" : "Ej: María"}
+                  value={firstName}
+                  onChange={e => setFirstName(e.target.value)}
+                  maxLength={60}
+                />
               </Field>
-              <Field label={lang === "pt" ? "Sobrenome" : lang === "en" ? "Last Name" : "Apellido"} required error={errors.lastName}>
-                <input className={errors.lastName ? inputError : inputNormal}
-                  placeholder={lang === "pt" ? "Ex: Silva" : lang === "en" ? "e.g. Smith" : "Ej: García"}
-                  value={lastName} onChange={e => setLastName(e.target.value)} />
+              <Field
+                label={lang === "pt" ? "Sobrenome" : lang === "en" ? "Last Name" : "Apellido"}
+                required
+                error={errors.lastName}
+              >
+                <input
+                  className={errors.lastName ? inputError : inputNormal}
+                  placeholder={lang === "pt" ? "Ex: Silva" : lang === "en" ? "e.g. Silva" : "Ej: García"}
+                  value={lastName}
+                  onChange={e => setLastName(e.target.value)}
+                  maxLength={60}
+                />
               </Field>
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <Field label={t.docOrigin}>
-                <select className={selectBase} value={docOrigin} onChange={e => {
-                  setDocOrigin(e.target.value);
-                  setErrors(prev => { const n = { ...prev }; delete n.cpf; delete n.rg; delete n.passport; delete n.docFront; delete n.docBack; return n; });
-                  setDocFrontBase64(null); setDocFrontPreview(null);
-                  setDocBackBase64(null); setDocBackPreview(null);
-                }}>
-                  <option value="Brasil (+55)">{t.docOriginBrazil}</option>
-                  <option value="Estrangeiro">{t.docOriginForeign}</option>
-                </select>
-              </Field>
-              <Field label={t.birthDate} required error={errors.birthDate}>
-                <input className={errors.birthDate ? inputError : inputNormal} placeholder={t.birthDatePlaceholder}
-                  value={birthDate} onChange={e => setBirthDate(maskDate(e.target.value))} />
-              </Field>
-            </div>
-            {isBrazilian ? (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <Field label="CPF" required error={errors.cpf} hint={lang === "pt" ? "Somente números" : "Numbers only"}>
-                  <input className={errors.cpf ? inputError : inputNormal}
-                    placeholder="000.000.000-00"
+
+            {/* CPF / RG / Passaporte */}
+            {isBrazilian && (
+              <>
+                <div className="flex gap-4">
+                  {(["cnh", "rg"] as const).map(dt => (
+                    <label key={dt} className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="docType"
+                        value={dt}
+                        checked={docType === dt}
+                        onChange={() => { setDocType(dt); setRg(""); }}
+                        className="accent-[#C8920A] w-4 h-4"
+                      />
+                      <span className={`text-sm font-medium ${textPrimary}`}>
+                        {dt === "cnh" ? (lang === "pt" ? "CNH" : lang === "en" ? "Driver's License" : "Licencia") : "RG"}
+                      </span>
+                    </label>
+                  ))}
+                </div>
+                <Field label="CPF" required error={errors.cpf}>
+                  <input className={errors.cpf ? inputError : inputNormal} placeholder="000.000.000-00"
                     value={cpf} onChange={e => setCpf(maskCPF(e.target.value))} maxLength={14} />
                 </Field>
-                <Field label="RG" error={errors.rg} hint={lang === "pt" ? "Opcional" : "Optional"}>
-                  <input className={errors.rg ? inputError : inputNormal}
-                    placeholder="00.000.000-0"
-                    value={rg} onChange={e => setRg(maskRG(e.target.value))} maxLength={12} />
-                </Field>
-              </div>
-            ) : (
+                {docType === "rg" && (
+                  <Field label="RG" required error={errors.rg}>
+                    <input className={errors.rg ? inputError : inputNormal} placeholder="00.000.000-0"
+                      value={rg} onChange={e => setRg(maskRG(e.target.value))} maxLength={12} />
+                  </Field>
+                )}
+              </>
+            )}
+            {!isBrazilian && (
               <Field
-                label={lang === "pt" ? "Número do Passaporte" : lang === "en" ? "Passport Number" : "Número de Pasaporte"}
+                label={lang === "pt" ? "Passaporte" : lang === "en" ? "Passport" : "Pasaporte"}
                 required
                 error={errors.passport}
               >
@@ -555,39 +604,62 @@ export default function PublicReservation() {
                 />
               </Field>
             )}
+
+            {/* Data de nascimento */}
+            <Field label={t.birthDate} required error={errors.birthDate}>
+              <input className={errors.birthDate ? inputError : inputNormal} placeholder="DD/MM/AAAA"
+                value={birthDate} onChange={e => setBirthDate(maskDate(e.target.value))} maxLength={10} />
+            </Field>
+
+            {/* Gênero */}
+            <Field label={t.gender}>
+              <select className={selectBase} value={gender} onChange={e => setGender(e.target.value)}>
+                <option value="">—</option>
+                <option value="Masculino">{t.genderMale}</option>
+                <option value="Feminino">{t.genderFemale}</option>
+                <option value="Outro">{t.genderOther}</option>
+                <option value="Prefiro não informar">{t.genderPreferNotToSay}</option>
+              </select>
+            </Field>
+
+            {/* Altura / Peso */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <Field label={t.gender}>
-                <select className={selectBase} value={gender} onChange={e => setGender(e.target.value)}>
-                  <option value="">—</option>
-                  <option value="Masculino">{t.genderMale}</option>
-                  <option value="Feminino">{t.genderFemale}</option>
-                  <option value="Outro">{t.genderOther}</option>
-                  <option value="Prefiro não informar">{t.genderPreferNotToSay}</option>
-                </select>
+              <Field label={t.height} required error={errors.height} hint={t.heightHint}>
+                <input
+                  className={errors.height ? inputError : inputNormal}
+                  placeholder={t.heightPlaceholder}
+                  value={height}
+                  onChange={e => setHeight(maskHeight(e.target.value))}
+                />
               </Field>
-              <Field label={t.height} required error={errors.height}>
-                <input className={errors.height ? inputError : inputNormal} placeholder={t.heightPlaceholder}
-                  value={height} onChange={e => setHeight(maskHeight(e.target.value))} />
-              </Field>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <Field label={lang === "pt" ? "Peso (kg)" : lang === "en" ? "Weight (kg)" : "Peso (kg)"} required error={errors.weight}>
-                <input className={errors.weight ? inputError : inputNormal}
+              <Field
+                label={lang === "pt" ? "Peso (kg)" : lang === "en" ? "Weight (kg)" : "Peso (kg)"}
+                required
+                error={errors.weight}
+              >
+                <input
+                  className={errors.weight ? inputError : inputNormal}
                   type="number" min="20" max="300" step="0.1"
                   placeholder={lang === "pt" ? "Ex: 75.5" : "e.g. 75.5"}
-                  value={weight} onChange={e => setWeight(e.target.value)} />
-              </Field>
-              <Field label={t.pedalFrequency}>
-                <select className={selectBase} value={pedalFreq} onChange={e => setPedalFreq(e.target.value)}>
-                  <option value="">—</option>
-                  <option value="Raramente">{t.pedalFreqRarely}</option>
-                  <option value="1x por semana">{lang === "pt" ? "1x por semana" : lang === "en" ? "1x per week" : "1x por semana"}</option>
-                  <option value="2-3x por semana">{lang === "pt" ? "2-3x por semana" : lang === "en" ? "2-3x per week" : "2-3x por semana"}</option>
-                  <option value="4-5x por semana">{lang === "pt" ? "4-5x por semana" : lang === "en" ? "4-5x per week" : "4-5x por semana"}</option>
-                  <option value="Diariamente">{t.pedalFreqDaily}</option>
-                </select>
+                  value={weight}
+                  onChange={e => setWeight(e.target.value)}
+                />
               </Field>
             </div>
+
+            {/* Frequência de pedal */}
+            <Field label={t.pedalFrequency}>
+              <select className={selectBase} value={pedalFreq} onChange={e => setPedalFreq(e.target.value)}>
+                <option value="">—</option>
+                <option value="Raramente">{t.pedalFreqRarely}</option>
+                <option value="1x por semana">{lang === "pt" ? "1x por semana" : lang === "en" ? "1x per week" : "1x por semana"}</option>
+                <option value="2-3x por semana">{lang === "pt" ? "2-3x por semana" : lang === "en" ? "2-3x per week" : "2-3x por semana"}</option>
+                <option value="4-5x por semana">{lang === "pt" ? "4-5x por semana" : lang === "en" ? "4-5x per week" : "4-5x por semana"}</option>
+                <option value="Diariamente">{t.pedalFreqDaily}</option>
+              </select>
+            </Field>
+
+            {/* Como nos encontrou */}
             <Field label={t.howFoundUs}>
               <select className={selectBase} value={origin} onChange={e => setOrigin(e.target.value)}>
                 <option value="">—</option>
@@ -612,7 +684,7 @@ export default function PublicReservation() {
                 <input className={errors.phone ? inputError : inputNormal} placeholder={t.whatsappPlaceholder}
                   value={phone} onChange={e => setPhone(maskPhone(e.target.value))} />
               </Field>
-              <Field label={t.email} error={errors.email}>
+              <Field label={t.email} required error={errors.email}>
                 <input className={errors.email ? inputError : inputNormal} placeholder={t.emailPlaceholder}
                   type="email" value={email} onChange={e => setEmail(e.target.value)} />
               </Field>
@@ -622,8 +694,8 @@ export default function PublicReservation() {
                 <input className={inputNormal} placeholder={t.instagramPlaceholder}
                   value={instagram} onChange={e => setInstagram(e.target.value)} />
               </Field>
-              <Field label={t.accommodation} error={errors.accommodation} hint={t.accommodationHint}>
-                <input className={errors.accommodation ? inputError : inputNormal} placeholder={t.accommodationPlaceholder}
+              <Field label={t.accommodation} hint={t.accommodationHint}>
+                <input className={inputNormal} placeholder={t.accommodationPlaceholder}
                   value={accommodation} onChange={e => setAccommodation(e.target.value)} />
               </Field>
             </div>
@@ -692,6 +764,8 @@ export default function PublicReservation() {
               <div className={`flex items-center gap-2 pb-3 border-b ${sectionBorder}`}>
                 <span className="text-[#C8920A] text-sm font-bold uppercase tracking-widest">📄 {t.sectionDocumentPhotos}</span>
               </div>
+
+              {/* Seletor CNH/RG (apenas brasileiros) */}
               {isBrazilian && (
                 <div className="flex gap-4">
                   {(["cnh", "rg"] as const).map(dt => (
@@ -704,7 +778,9 @@ export default function PublicReservation() {
                         onChange={() => {
                           setDocType(dt);
                           setDocFrontBase64(null); setDocFrontPreview(null);
+                          setDocFrontIsPdf(false); setDocFrontName("");
                           setDocBackBase64(null); setDocBackPreview(null);
+                          setShowVerso(false);
                           setErrors(prev => { const n = { ...prev }; delete n.docFront; delete n.docBack; return n; });
                         }}
                         className="accent-[#C8920A] w-4 h-4"
@@ -716,81 +792,159 @@ export default function PublicReservation() {
                   ))}
                 </div>
               )}
-              {/* Mini-tutorial PDF — lucide icons, no emoji */}
-              {isBrazilian && docType === "cnh" && (
-                <div className={`rounded-xl border ${isDark ? "border-gray-700 bg-[#111118]" : "border-gray-200 bg-gray-50"} p-4`}>
-                  <p className={`text-[13px] font-medium mb-3 flex items-center gap-1.5 ${textPrimary}`}>
-                    <HelpCircle className="w-4 h-4 text-gray-500 shrink-0" />
-                    {lang === "pt" ? "Como baixar o PDF da sua CNH digital" : lang === "en" ? "How to download your digital driver's license PDF" : "Cómo descargar el PDF de tu licencia digital"}
-                  </p>
-                  <ol className="flex flex-col gap-2.5">
-                    {[
-                      { Icon: Smartphone, pt: "Abra a Carteira Digital de Trânsito ou o gov.br e acesse sua CNH", en: "Open Carteira Digital de Trânsito or gov.br and access your license", es: "Abre Carteira Digital de Trânsito o gov.br y accede a tu licencia" },
-                      { Icon: Download,   pt: "Toque em Exportar / Baixar PDF e salve o arquivo", en: "Tap Export / Download PDF and save the file", es: "Toca Exportar / Descargar PDF y guarda el archivo" },
-                      { Icon: Upload,     pt: "Volte aqui e envie o PDF na área acima", en: "Come back and upload the PDF above", es: "Vuelve y sube el PDF arriba" },
-                    ].map(({ Icon, pt, en, es }, i) => {
-                      const isLast = i === 2;
-                      return (
-                        <li key={i} className="flex items-center gap-3">
-                          <span className={`shrink-0 w-[26px] h-[26px] rounded-full flex items-center justify-center text-[13px] font-medium ${isLast ? "bg-blue-50 text-blue-600 dark:bg-blue-950 dark:text-blue-400" : isDark ? "bg-gray-800 text-gray-300" : "bg-gray-100 text-gray-700"}`}>{i + 1}</span>
-                          <Icon className={`w-[19px] h-[19px] shrink-0 ${isLast ? "text-blue-600 dark:text-blue-400" : "text-gray-500"}`} />
-                          <span className={`text-[13px] leading-relaxed ${textSecondary}`}>{lang === "pt" ? pt : lang === "en" ? en : es}</span>
-                        </li>
-                      );
-                    })}
-                  </ol>
-                  <div className={`mt-3.5 rounded-lg ${isDark ? "bg-gray-900" : "bg-gray-100"} px-3 py-2.5 flex items-start gap-2`}>
-                    <Info className="w-4 h-4 text-gray-400 mt-0.5 shrink-0" />
-                    <span className={`text-xs leading-relaxed ${isDark ? "text-gray-300" : "text-gray-600"}`}>
-                      {lang === "pt" ? "Estrangeiro ou sem CNH digital? Envie uma foto do documento (passaporte ou RG)." : lang === "en" ? "Foreigner or no digital license? Send a photo of your document (passport or ID)." : "¿Extranjero o sin licencia digital? Envía una foto del documento (pasaporte o DNI)."}
-                    </span>
+
+              {/* Título da seção de documento */}
+              <div>
+                <p className={`text-xs font-semibold mb-2 ${textSecondary}`}>
+                  {lang === "pt"
+                    ? `Documento de identificação`
+                    : lang === "en" ? "Identification document" : "Documento de identificación"}
+                </p>
+                <p className={`text-xs ${textSecondary} mb-4 leading-relaxed`}>
+                  {lang === "pt"
+                    ? `Envie o PDF da sua ${isBrazilian ? (docType === "cnh" ? "CNH digital (gov.br)" : "RG") : "passaporte"} — frente, verso e QR num arquivo só — ou uma foto do documento.`
+                    : lang === "en"
+                    ? `Send the PDF of your ${isBrazilian ? (docType === "cnh" ? "digital driver's license (gov.br)" : "ID card") : "passport"} — front, back and QR in one file — or a photo of the document.`
+                    : `Envía el PDF de tu ${isBrazilian ? (docType === "cnh" ? "licencia digital (gov.br)" : "documento de identidad") : "pasaporte"} — frente, dorso y QR en un solo archivo — o una foto del documento.`}
+                </p>
+              </div>
+
+              {/* Zona de upload única */}
+              <div>
+                <p className={`text-xs font-semibold mb-2 ${textSecondary}`}>
+                  {docFrontBase64 && showVerso
+                    ? (lang === "pt" ? "Frente" : lang === "en" ? "Front" : "Frente")
+                    : docFrontIsPdf
+                    ? (lang === "pt" ? "Documento (PDF)" : lang === "en" ? "Document (PDF)" : "Documento (PDF)")
+                    : (lang === "pt" ? "Documento" : lang === "en" ? "Document" : "Documento")}
+                  <span className="text-red-400 ml-0.5">*</span>
+                </p>
+
+                {/* Input file oculto */}
+                <input
+                  ref={frontRef}
+                  type="file"
+                  accept="image/*,application/pdf"
+                  className="hidden"
+                  onChange={e => { const f = e.target.files?.[0]; if (f) handleDocPhoto("front", f); }}
+                />
+
+                {/* Prévia: PDF */}
+                {docFrontBase64 && docFrontIsPdf ? (
+                  <div className={`relative flex items-center gap-3 rounded-xl border p-4 ${isDark ? "border-[#C8920A]/30 bg-[#141420]" : "border-[#C8920A]/30 bg-orange-50"}`}>
+                    <div className="w-10 h-10 rounded-lg bg-[#C8920A]/20 flex items-center justify-center shrink-0">
+                      <FileText className="w-5 h-5 text-[#C8920A]" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className={`text-sm font-medium truncate ${textPrimary}`}>{docFrontName || "documento.pdf"}</p>
+                      <p className={`text-xs ${textSecondary}`}>PDF</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => { setDocFrontBase64(null); setDocFrontPreview(null); setDocFrontIsPdf(false); setDocFrontName(""); setShowVerso(false); }}
+                      className="w-7 h-7 rounded-full bg-black/20 flex items-center justify-center text-white hover:bg-black/40 transition-all shrink-0"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                    {docFrontUploading && (
+                      <div className="absolute inset-0 flex items-center justify-center bg-black/40 rounded-xl">
+                        <Loader2 className="w-6 h-6 animate-spin text-[#C8920A]" />
+                      </div>
+                    )}
                   </div>
-                </div>
+                ) : docFrontPreview ? (
+                  /* Prévia: imagem */
+                  <div className="relative">
+                    <img
+                      src={docFrontPreview}
+                      alt="Frente"
+                      className="w-full h-36 object-cover rounded-xl border border-[#C8920A]/30 cursor-pointer"
+                      onClick={() => openLb(docFrontPreview, lang === "pt" ? "Frente" : "Front")}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => { setDocFrontBase64(null); setDocFrontPreview(null); setDocFrontIsPdf(false); setDocFrontName(""); setShowVerso(false); }}
+                      className="absolute top-2 right-2 w-7 h-7 rounded-full bg-black/60 flex items-center justify-center text-white hover:bg-black/80 transition-all"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                    {docFrontUploading && (
+                      <div className="absolute inset-0 flex items-center justify-center bg-black/40 rounded-xl">
+                        <Loader2 className="w-6 h-6 animate-spin text-[#C8920A]" />
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  /* Drop zone vazia */
+                  <div
+                    className={`${uploadZoneBase} ${errors.docFront ? "border-red-500/60" : uploadZoneEmpty}`}
+                    onClick={() => frontRef.current?.click()}
+                    onDragOver={e => e.preventDefault()}
+                    onDrop={e => {
+                      e.preventDefault();
+                      const f = e.dataTransfer.files?.[0];
+                      if (f) handleDocPhoto("front", f);
+                    }}
+                  >
+                    <div className="flex justify-center gap-2.5 mb-1">
+                      <span className="w-10 h-10 rounded-full bg-blue-50 dark:bg-blue-950 flex items-center justify-center">
+                        <FileText className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                      </span>
+                      <span className="w-10 h-10 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center">
+                        <ImageIcon className="w-5 h-5 text-gray-500" />
+                      </span>
+                    </div>
+                    <p className={`text-sm font-medium text-center ${errors.docFront ? "text-red-400" : textPrimary}`}>
+                      {lang === "pt" ? "Arraste aqui ou clique para selecionar" : lang === "en" ? "Drag here or click to select" : "Arrastra aquí o haz clic para seleccionar"}
+                    </p>
+                    <p className={`text-xs ${errors.docFront ? "text-red-400" : textMuted}`}>
+                      {lang === "pt" ? "PDF ou imagem · até 10 MB" : lang === "en" ? "PDF or image · up to 10 MB" : "PDF o imagen · hasta 10 MB"}
+                    </p>
+                  </div>
+                )}
+                {errors.docFront && <p className="text-[11px] text-red-400 mt-1">{errors.docFront}</p>}
+              </div>
+
+              {/* Botão "Adicionar verso" — só aparece quando: imagem selecionada + não é PDF + verso ainda não visível */}
+              {docFrontBase64 && !docFrontIsPdf && !showVerso && (
+                <button
+                  type="button"
+                  onClick={() => setShowVerso(true)}
+                  className={`text-xs font-medium transition-colors ${isDark ? "text-[#888] hover:text-[#C8920A]" : "text-gray-400 hover:text-[#C8920A]"}`}
+                >
+                  + {lang === "pt" ? "Adicionar verso (opcional)" : lang === "en" ? "Add back side (optional)" : "Agregar dorso (opcional)"}
+                </button>
               )}
 
-              {/* Upload zone — single slot by default */}
-              <div className="grid gap-5 grid-cols-1">
-                {/* Front / PDF slot */}
+              {/* Slot de verso — só quando showVerso e não é PDF */}
+              {showVerso && !docFrontIsPdf && (
                 <div>
                   <p className={`text-xs font-semibold mb-2 ${textSecondary}`}>
-                    {docFrontIsPdf
-                      ? (lang === "pt" ? "Documento (PDF)" : lang === "en" ? "Document (PDF)" : "Documento (PDF)")
-                      : showVerso
-                        ? (lang === "pt" ? "Frente" : lang === "en" ? "Front" : "Frente")
-                        : (lang === "pt" ? "Documento" : lang === "en" ? "Document" : "Documento")}
-                    <span className="text-red-400 ml-0.5">*</span>
+                    {lang === "pt" ? "Verso (opcional)" : lang === "en" ? "Back (optional)" : "Dorso (opcional)"}
                   </p>
                   <input
-                    ref={frontRef}
+                    ref={backRef}
                     type="file"
-                    accept="image/*,application/pdf"
+                    accept="image/*"
                     className="hidden"
-                    onChange={e => { const f = e.target.files?.[0]; if (f) handleDocFile("front", f); }}
+                    onChange={e => { const f = e.target.files?.[0]; if (f) handleDocPhoto("back", f); }}
                   />
-                  {docFrontBase64 ? (
+                  {docBackPreview ? (
                     <div className="relative">
-                      {docFrontIsPdf ? (
-                        <div className={`w-full h-36 rounded-xl border border-[#C8920A]/30 flex flex-col items-center justify-center gap-2 ${isDark ? "bg-[#1a1a2a]" : "bg-gray-50"}`}>
-                          <span className="text-4xl">📄</span>
-                          <p className={`text-xs font-medium text-center px-3 truncate max-w-full ${textSecondary}`}>{docFrontFileName}</p>
-                          <p className={`text-[10px] ${isDark ? "text-[#C8920A]" : "text-amber-600"}`}>PDF pronto para envio</p>
-                        </div>
-                      ) : (
-                        <img
-                          src={docFrontPreview!}
-                          alt="front"
-                          className="w-full h-36 object-cover rounded-xl border border-[#C8920A]/30 cursor-pointer"
-                          onClick={() => openLb(docFrontPreview!, lang === "pt" ? "Frente" : "Front")}
-                        />
-                      )}
+                      <img
+                        src={docBackPreview}
+                        alt="Verso"
+                        className="w-full h-36 object-cover rounded-xl border border-[#C8920A]/30 cursor-pointer"
+                        onClick={() => openLb(docBackPreview, lang === "pt" ? "Verso" : "Back")}
+                      />
                       <button
                         type="button"
-                        onClick={() => { setDocFrontBase64(null); setDocFrontPreview(null); setDocFrontIsPdf(false); setDocFrontFileName(null); }}
+                        onClick={() => { setDocBackBase64(null); setDocBackPreview(null); }}
                         className="absolute top-2 right-2 w-7 h-7 rounded-full bg-black/60 flex items-center justify-center text-white hover:bg-black/80 transition-all"
                       >
                         <X className="w-3.5 h-3.5" />
                       </button>
-                      {docFrontUploading && (
+                      {docBackUploading && (
                         <div className="absolute inset-0 flex items-center justify-center bg-black/40 rounded-xl">
                           <Loader2 className="w-6 h-6 animate-spin text-[#C8920A]" />
                         </div>
@@ -798,82 +952,77 @@ export default function PublicReservation() {
                     </div>
                   ) : (
                     <div
-                      className={`${uploadZoneBase} ${errors.docFront ? "border-red-500/60" : uploadZoneEmpty}`}
-                      onClick={() => frontRef.current?.click()}
+                      className={`${uploadZoneBase} ${uploadZoneEmpty}`}
+                      onClick={() => backRef.current?.click()}
                       onDragOver={e => e.preventDefault()}
-                      onDrop={e => { e.preventDefault(); const f = e.dataTransfer.files?.[0]; if (f) handleDocFile("front", f); }}
+                      onDrop={e => {
+                        e.preventDefault();
+                        const f = e.dataTransfer.files?.[0];
+                        if (f) handleDocPhoto("back", f);
+                      }}
                     >
-                      <Upload className={`w-6 h-6 ${errors.docFront ? "text-red-400" : "text-[#C8920A]/60"}`} />
-                      <p className={`text-xs text-center ${errors.docFront ? "text-red-400" : textMuted}`}>
-                        {lang === "pt" ? "Clique ou arraste (foto ou PDF)" : lang === "en" ? "Click or drag (photo or PDF)" : "Haz clic o arrastra (foto o PDF)"}
+                      <Upload className="w-6 h-6 text-[#C8920A]/60" />
+                      <p className={`text-xs text-center ${textMuted}`}>
+                        {lang === "pt" ? "Clique ou arraste a foto aqui" : lang === "en" ? "Click or drag photo here" : "Haz clic o arrastra la foto aquí"}
                       </p>
-                      <p className={`text-[10px] ${textMuted}`}>JPG, PNG, PDF — máx. 10 MB</p>
+                      <p className={`text-[10px] ${textMuted}`}>JPG, PNG — máx. 10 MB</p>
                     </div>
                   )}
-                  {errors.docFront && <p className="text-[11px] text-red-400 mt-1">{errors.docFront}</p>}
-                  {/* Botão "Adicionar verso" — só para imagem, antes de mostrar o slot */}
-                  {docFrontBase64 && !docFrontIsPdf && !showVerso && (
-                    <button
-                      type="button"
-                      onClick={() => setShowVerso(true)}
-                      className={`mt-2 text-xs underline underline-offset-2 ${isDark ? "text-gray-400 hover:text-gray-200" : "text-gray-500 hover:text-gray-700"} transition-colors`}
-                    >
-                      {lang === "pt" ? "+ Adicionar verso (opcional)" : lang === "en" ? "+ Add back side (optional)" : "+ Agregar dorso (opcional)"}
-                    </button>
-                  )}
                 </div>
+              )}
 
-                {/* Back slot — shown only when showVerso=true and not PDF */}
-                {showVerso && !docFrontIsPdf && (
-                  <div>
-                    <p className={`text-xs font-semibold mb-2 ${textSecondary}`}>
-                      {lang === "pt" ? "Verso" : lang === "en" ? "Back" : "Dorso"}
-                      <span className={`ml-1 font-normal text-[10px] ${textMuted}`}>({lang === "pt" ? "opcional" : lang === "en" ? "optional" : "opcional"})</span>
-                    </p>
-                    <input
-                      ref={backRef}
-                      type="file"
-                      accept="image/*"
-                      className="hidden"
-                      onChange={e => { const f = e.target.files?.[0]; if (f) handleDocFile("back", f); }}
-                    />
-                    {docBackPreview ? (
-                      <div className="relative">
-                        <img
-                          src={docBackPreview}
-                          alt="back"
-                          className="w-full h-36 object-cover rounded-xl border border-[#C8920A]/30 cursor-pointer"
-                          onClick={() => openLb(docBackPreview, lang === "pt" ? "Verso" : "Back")}
-                        />
-                        <button
-                          type="button"
-                          onClick={() => { setDocBackBase64(null); setDocBackPreview(null); }}
-                          className="absolute top-2 right-2 w-7 h-7 rounded-full bg-black/60 flex items-center justify-center text-white hover:bg-black/80 transition-all"
-                        >
-                          <X className="w-3.5 h-3.5" />
-                        </button>
-                        {docBackUploading && (
-                          <div className="absolute inset-0 flex items-center justify-center bg-black/40 rounded-xl">
-                            <Loader2 className="w-6 h-6 animate-spin text-[#C8920A]" />
-                          </div>
-                        )}
-                      </div>
-                    ) : (
-                      <div
-                        className={`${uploadZoneBase} ${uploadZoneEmpty}`}
-                        onClick={() => backRef.current?.click()}
-                        onDragOver={e => e.preventDefault()}
-                        onDrop={e => { e.preventDefault(); const f = e.dataTransfer.files?.[0]; if (f) handleDocFile("back", f); }}
-                      >
-                        <Upload className={`w-6 h-6 text-[#C8920A]/60`} />
-                        <p className={`text-xs text-center ${textMuted}`}>
-                          {lang === "pt" ? "Clique ou arraste a foto aqui" : lang === "en" ? "Click or drag photo here" : "Haz clic o arrastra la foto aquí"}
-                        </p>
-                        <p className={`text-[10px] ${textMuted}`}>JPG, PNG — máx. 10 MB</p>
-                      </div>
-                    )}
-                  </div>
-                )}
+              {/* Tutorial CNH digital (ícones lucide, sem emoji) */}
+              <div className={`border-t ${sectionBorder} pt-4`}>
+                <p className={`text-[13px] font-medium mb-3 flex items-center gap-1.5 ${textSecondary}`}>
+                  <HelpCircle className="w-4 h-4 text-gray-500 shrink-0" />
+                  {lang === "pt" ? "Como baixar o PDF da sua CNH digital"
+                    : lang === "en" ? "How to download your digital driver's license PDF"
+                    : "Cómo descargar el PDF de tu licencia digital"}
+                </p>
+                <ol className="flex flex-col gap-2.5">
+                  {[
+                    {
+                      icon: Smartphone,
+                      pt: "Abra a Carteira Digital de Trânsito ou o gov.br e acesse sua CNH",
+                      en: "Open Carteira Digital de Trânsito or gov.br and access your license",
+                      es: "Abre Carteira Digital de Trânsito o gov.br y accede a tu licencia",
+                    },
+                    {
+                      icon: Download,
+                      pt: "Toque em Exportar / Baixar PDF e salve o arquivo",
+                      en: "Tap Export / Download PDF and save the file",
+                      es: "Toca Exportar / Descargar PDF y guarda el archivo",
+                    },
+                    {
+                      icon: Upload,
+                      pt: "Volte aqui e envie o PDF na área acima",
+                      en: "Come back and upload the PDF above",
+                      es: "Vuelve y sube el PDF arriba",
+                    },
+                  ].map((s, i) => {
+                    const Icon = s.icon;
+                    const last = i === 2;
+                    return (
+                      <li key={i} className="flex items-center gap-3">
+                        <span className={`shrink-0 w-[26px] h-[26px] rounded-full flex items-center justify-center text-[13px] font-medium ${last ? "bg-blue-50 text-blue-600 dark:bg-blue-950 dark:text-blue-400" : isDark ? "bg-gray-800 text-gray-300" : "bg-gray-100 text-gray-700"}`}>{i + 1}</span>
+                        <Icon className={`w-[19px] h-[19px] shrink-0 ${last ? "text-blue-600 dark:text-blue-400" : "text-gray-500"}`} />
+                        <span className={`text-[13px] leading-relaxed ${textSecondary}`}>{lang === "pt" ? s.pt : lang === "en" ? s.en : s.es}</span>
+                      </li>
+                    );
+                  })}
+                </ol>
+              </div>
+
+              {/* Nota: estrangeiro / foto */}
+              <div className={`rounded-lg px-3 py-2.5 flex items-start gap-2 ${isDark ? "bg-gray-900" : "bg-gray-50"}`}>
+                <Info className="w-4 h-4 text-gray-400 mt-0.5 shrink-0" />
+                <span className={`text-xs leading-relaxed ${textSecondary}`}>
+                  {lang === "pt"
+                    ? "Estrangeiro ou sem CNH digital? Envie uma foto do documento (passaporte ou RG)."
+                    : lang === "en"
+                    ? "Foreigner or no digital license? Send a photo of your document (passport or ID)."
+                    : "¿Extranjero o sin licencia digital? Envía una foto del documento (pasaporte o DNI)."}
+                </span>
               </div>
             </div>
 

@@ -2034,14 +2034,19 @@ const publicApiRouter = router({
     return fee || "0";
   }),
 
+  // ─── Número de WhatsApp para reservas (público) ─────────────────────────────
+  getReservationWhatsApp: publicProcedure.query(async () => {
+    const raw = await getSetting("whatsapp_reservas");
+    const digits = (raw || "").replace(/\D/g, "");
+    return { number: digits.length >= 10 ? digits : null };
+  }),
+
 
 
 
   // ─── Pré-cadastro: cria apenas o cliente como Lead (sem reserva) ─────────────
   submitPreRegistration: publicProcedure
     .input(z.object({
-      firstName: z.string().optional(),
-      lastName: z.string().optional(),
       // Identificação
       name: z.string().min(2),
       cpf: z.string().optional(),
@@ -2050,13 +2055,13 @@ const publicApiRouter = router({
       docOrigin: z.string().optional(),
       birthDate: z.string().optional(),
       gender: z.string().optional(),
-      height: z.string().min(1),
-      weight: z.string().min(1),
+      height: z.string().min(1, "Altura obrigatória"),
+      weight: z.string().min(1, "Peso obrigatório"),
       pedalFreq: z.string().optional(),
       howFound: z.string().optional(),
       // Contato
       phone: z.string().optional(),
-      email: z.string().email().optional().or(z.literal("")),
+      email: z.string().email("E-mail inválido"),
       instagram: z.string().optional(),
       accommodation: z.string().optional(),
       // Endereço
@@ -2146,13 +2151,6 @@ const publicApiRouter = router({
     }),
 
   // ─── Upload document photo (base64) ────────────────────────────────────────
-  getReservationWhatsApp: publicProcedure.query(async () => {
-    const { getSetting } = await import("./db");
-    const raw = await getSetting("whatsapp_reservas");
-    const number = raw ? raw.replace(/\D/g, "") : null;
-    return { number: number && number.length >= 10 ? number : null };
-  }),
-
   uploadDocument: publicProcedure
     .input(z.object({
       clientId: z.number(),
@@ -2161,20 +2159,18 @@ const publicApiRouter = router({
       mimeType: z.string().default("image/jpeg"),
     }))
     .mutation(async ({ input }) => {
-      // Validate mimeType: accept image/* or application/pdf only
-      const isImage = input.mimeType.startsWith("image/");
-      const isPdf = input.mimeType === "application/pdf";
+      const mime = input.mimeType || "image/jpeg";
+      const isImage = mime.startsWith("image/");
+      const isPdf = mime === "application/pdf";
       if (!isImage && !isPdf) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "Tipo de arquivo não suportado. Envie uma imagem ou PDF." });
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Tipo de arquivo não permitido. Envie uma imagem ou PDF." });
       }
       const { storagePut } = await import("./storage");
       const base64Data = input.base64.replace(/^data:[^;]+;base64,/, "");
       const buffer = Buffer.from(base64Data, "base64");
-      // Normalize extension: application/pdf -> pdf, image/jpeg -> jpg, etc.
-      const extMap: Record<string, string> = { "application/pdf": "pdf", "image/jpeg": "jpg", "image/jpg": "jpg", "image/png": "png", "image/webp": "webp", "image/heic": "heic" };
-      const ext = extMap[input.mimeType] || input.mimeType.split("/")[1] || "bin";
+      const ext = isPdf ? "pdf" : (mime.split("/")[1] || "jpg");
       const key = `clients/${input.clientId}/doc-${input.side}-${Date.now()}.${ext}`;
-      const { url } = await storagePut(key, buffer, input.mimeType);
+      const { url } = await storagePut(key, buffer, mime);
       const field = input.side === "front" ? "docFrontUrl" : "docBackUrl";
       await updateClient(input.clientId, { [field]: url } as any);
       return { url };

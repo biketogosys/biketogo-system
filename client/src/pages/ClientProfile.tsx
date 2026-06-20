@@ -1079,11 +1079,11 @@ export default function ClientProfile() {
                   </span>
                 </div>
 
-                {/* Photos from public form */}
+                {/* Photos/PDF from public form */}
                 {((client as any).docFrontUrl || (client as any).docBackUrl) && (
                   <div>
                     <h3 className="text-xs font-semibold text-primary uppercase tracking-wider mb-3">
-                      Fotos do Documento (Formulário Público)
+                      Documento de Identificação (Formulário Público)
                     </h3>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       {(client as any).docFrontUrl && (() => {
@@ -1092,10 +1092,17 @@ export default function ClientProfile() {
                         return (
                           <div className="bg-secondary border border-border rounded-lg overflow-hidden">
                             {isPdf ? (
-                              <div className="bg-muted flex flex-col items-center justify-center gap-2" style={{ width: "100%", height: 180 }}>
-                                <span className="text-4xl">📄</span>
-                                <p className="text-xs font-medium text-foreground">Frente do Documento (PDF)</p>
-                                <a href={url} target="_blank" rel="noopener noreferrer" className="text-xs text-primary underline hover:opacity-80">Abrir PDF</a>
+                              <div className="flex flex-col items-center justify-center gap-2 p-4" style={{ height: 180 }}>
+                                <FileText className="w-10 h-10 text-primary/60" />
+                                <p className="text-xs text-muted-foreground">Documento PDF</p>
+                                <a
+                                  href={url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-xs font-medium text-primary hover:underline flex items-center gap-1"
+                                >
+                                  <span>Abrir PDF</span>
+                                </a>
                               </div>
                             ) : (
                               <div
@@ -1107,7 +1114,7 @@ export default function ClientProfile() {
                                 <img src={url} alt="Frente do documento" style={{ width: 280, height: 180, objectFit: "cover", display: "block" }} />
                               </div>
                             )}
-                            <div className="p-3"><p className="text-xs font-medium text-foreground">Frente do Documento</p></div>
+                            <div className="p-3"><p className="text-xs font-medium text-foreground">{isPdf ? "Documento (PDF)" : "Frente do Documento"}</p></div>
                           </div>
                         );
                       })()}
@@ -1117,10 +1124,17 @@ export default function ClientProfile() {
                         return (
                           <div className="bg-secondary border border-border rounded-lg overflow-hidden">
                             {isPdf ? (
-                              <div className="bg-muted flex flex-col items-center justify-center gap-2" style={{ width: "100%", height: 180 }}>
-                                <span className="text-4xl">📄</span>
-                                <p className="text-xs font-medium text-foreground">Verso do Documento (PDF)</p>
-                                <a href={url} target="_blank" rel="noopener noreferrer" className="text-xs text-primary underline hover:opacity-80">Abrir PDF</a>
+                              <div className="flex flex-col items-center justify-center gap-2 p-4" style={{ height: 180 }}>
+                                <FileText className="w-10 h-10 text-primary/60" />
+                                <p className="text-xs text-muted-foreground">Verso PDF</p>
+                                <a
+                                  href={url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-xs font-medium text-primary hover:underline flex items-center gap-1"
+                                >
+                                  <span>Abrir PDF</span>
+                                </a>
                               </div>
                             ) : (
                               <div
@@ -1132,7 +1146,7 @@ export default function ClientProfile() {
                                 <img src={url} alt="Verso do documento" style={{ width: 280, height: 180, objectFit: "cover", display: "block" }} />
                               </div>
                             )}
-                            <div className="p-3"><p className="text-xs font-medium text-foreground">Verso do Documento</p></div>
+                            <div className="p-3"><p className="text-xs font-medium text-foreground">{isPdf ? "Verso (PDF)" : "Verso do Documento"}</p></div>
                           </div>
                         );
                       })()}
