@@ -147,7 +147,6 @@ export default function PublicReservation() {
   const [cepLoading, setCepLoading] = useState(false);
 
   // Step 3 — Documentos + LGPD
-  const [docType, setDocType] = useState<"cnh" | "rg">("cnh");
   const [docFrontPreview, setDocFrontPreview] = useState<string | null>(null);
   const [docFrontBase64, setDocFrontBase64] = useState<string | null>(null);
   const [docFrontMime, setDocFrontMime] = useState<string>("image/jpeg");
@@ -232,19 +231,10 @@ export default function PublicReservation() {
         } else if (!validateCPF(cpf)) {
           errs.cpf = lang === "pt" ? "CPF inválido — verifique os dígitos" : lang === "en" ? "Invalid CPF — check the digits" : "CPF inválido — verifique los dígitos";
         }
-        if (docType === "rg") {
+        {
           const rgDigits = rg.replace(/[.\-\s]/g, "");
           if (!rgDigits || rgDigits.length < 7) {
-            errs.rg = lang === "pt" ? "RG obrigatório" : "RG required";
-          } else {
-            const digits = rgDigits.toUpperCase();
-            const body = digits.slice(0, -1);
-            const lastChar = digits[digits.length - 1];
-            let sum = 0;
-            for (let i = 0; i < body.length; i++) sum += parseInt(body[i], 10) * (body.length + 1 - i);
-            const rem = sum % 11;
-            const expected = rem < 2 ? "0" : String(11 - rem);
-            if (lastChar !== "X" && lastChar !== expected) errs.rg = lang === "pt" ? "Dígito verificador do RG inválido" : "Invalid RG check digit";
+            errs.rg = lang === "pt" ? "RG obrigatório (mín. 7 dígitos)" : lang === "en" ? "RG required (min. 7 digits)" : "RG obligatorio (mín. 7 dígitos)";
           }
         }
       } else {
@@ -560,33 +550,14 @@ export default function PublicReservation() {
             {/* CPF / RG / Passaporte */}
             {isBrazilian && (
               <>
-                <div className="flex gap-4">
-                  {(["cnh", "rg"] as const).map(dt => (
-                    <label key={dt} className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="radio"
-                        name="docType"
-                        value={dt}
-                        checked={docType === dt}
-                        onChange={() => { setDocType(dt); setRg(""); }}
-                        className="accent-[#C8920A] w-4 h-4"
-                      />
-                      <span className={`text-sm font-medium ${textPrimary}`}>
-                        {dt === "cnh" ? (lang === "pt" ? "CNH" : lang === "en" ? "Driver's License" : "Licencia") : "RG"}
-                      </span>
-                    </label>
-                  ))}
-                </div>
                 <Field label="CPF" required error={errors.cpf}>
                   <input className={errors.cpf ? inputError : inputNormal} placeholder="000.000.000-00"
                     value={cpf} onChange={e => setCpf(maskCPF(e.target.value))} maxLength={14} />
                 </Field>
-                {docType === "rg" && (
-                  <Field label="RG" required error={errors.rg}>
-                    <input className={errors.rg ? inputError : inputNormal} placeholder="00.000.000-0"
-                      value={rg} onChange={e => setRg(maskRG(e.target.value))} maxLength={12} />
-                  </Field>
-                )}
+                <Field label="RG" required error={errors.rg}>
+                  <input className={errors.rg ? inputError : inputNormal} placeholder="00.000.000-0"
+                    value={rg} onChange={e => setRg(maskRG(e.target.value))} maxLength={12} />
+                </Field>
               </>
             )}
             {!isBrazilian && (
@@ -765,33 +736,7 @@ export default function PublicReservation() {
                 <span className="text-[#C8920A] text-sm font-bold uppercase tracking-widest">📄 {t.sectionDocumentPhotos}</span>
               </div>
 
-              {/* Seletor CNH/RG (apenas brasileiros) */}
-              {isBrazilian && (
-                <div className="flex gap-4">
-                  {(["cnh", "rg"] as const).map(dt => (
-                    <label key={dt} className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="radio"
-                        name="docTypeUpload"
-                        value={dt}
-                        checked={docType === dt}
-                        onChange={() => {
-                          setDocType(dt);
-                          setDocFrontBase64(null); setDocFrontPreview(null);
-                          setDocFrontIsPdf(false); setDocFrontName("");
-                          setDocBackBase64(null); setDocBackPreview(null);
-                          setShowVerso(false);
-                          setErrors(prev => { const n = { ...prev }; delete n.docFront; delete n.docBack; return n; });
-                        }}
-                        className="accent-[#C8920A] w-4 h-4"
-                      />
-                      <span className={`text-sm font-medium ${textPrimary}`}>
-                        {dt === "cnh" ? (lang === "pt" ? "CNH" : lang === "en" ? "Driver's License" : "Licencia") : "RG"}
-                      </span>
-                    </label>
-                  ))}
-                </div>
-              )}
+
 
               {/* Título da seção de documento */}
               <div>
@@ -802,10 +747,10 @@ export default function PublicReservation() {
                 </p>
                 <p className={`text-xs ${textSecondary} mb-4 leading-relaxed`}>
                   {lang === "pt"
-                    ? `Envie o PDF da sua ${isBrazilian ? (docType === "cnh" ? "CNH digital (gov.br)" : "RG") : "passaporte"} — frente, verso e QR num arquivo só — ou uma foto do documento.`
+                    ? `Envie o PDF da sua ${isBrazilian ? "CNH digital (gov.br) ou RG" : "passaporte"} — frente, verso e QR num arquivo só — ou uma foto do documento.`
                     : lang === "en"
-                    ? `Send the PDF of your ${isBrazilian ? (docType === "cnh" ? "digital driver's license (gov.br)" : "ID card") : "passport"} — front, back and QR in one file — or a photo of the document.`
-                    : `Envía el PDF de tu ${isBrazilian ? (docType === "cnh" ? "licencia digital (gov.br)" : "documento de identidad") : "pasaporte"} — frente, dorso y QR en un solo archivo — o una foto del documento.`}
+                    ? `Send the PDF of your ${isBrazilian ? "digital driver's license (gov.br) or ID card" : "passport"} — front, back and QR in one file — or a photo of the document.`
+                    : `Envía el PDF de tu ${isBrazilian ? "licencia digital (gov.br) o documento de identidad" : "pasaporte"} — frente, dorso y QR en un solo archivo — o una foto del documento.`}
                 </p>
               </div>
 
