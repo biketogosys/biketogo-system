@@ -12,7 +12,6 @@ import { createClient, updateRental, getDb, getSetting, createAuditLog, getBikeB
 import { clients as clientsTable, rentals as rentalsTable } from "../../drizzle/schema";
 import { isNotNull, lt, and as andOp } from "drizzle-orm";
 import { notifyOwner } from "./notification";
-import { constructStripeEvent } from "../stripe";
 import {
   registerSecurityMiddlewares,
   loginRateLimiter,
@@ -44,31 +43,6 @@ async function startServer() {
   const app = express();
   app.set('trust proxy', 1);
   const server = createServer(app);
-
-  // ─── Stripe webhook MUST be registered BEFORE express.json() ──────────────
-  app.post("/api/stripe/webhook", express.raw({ type: "application/json" }), async (req, res) => {
-    const sig = req.headers["stripe-signature"] as string;
-    try {
-      const event = constructStripeEvent(req.body as Buffer, sig);
-      // Test events — return verification response
-      if (event.id.startsWith("evt_test_")) {
-        console.log("[Webhook] Test event detected");
-        return res.json({ verified: true });
-      }
-      if (event.type === "checkout.session.completed") {
-        const session = event.data.object as any;
-        const rentalId = parseInt(session.metadata?.rental_id || "0");
-        if (rentalId) {
-          await updateRental(rentalId, { paymentStatus: "paid", stripeSessionId: session.id } as any);
-          console.log(`[Stripe] Payment confirmed for rental #${rentalId}`);
-        }
-      }
-      res.json({ received: true });
-    } catch (err: any) {
-      console.error("[Stripe Webhook]", err.message);
-      res.status(400).send(`Webhook Error: ${err.message}`);
-    }
-  });
 
   // ─── Helmet.js — headers de segurança HTTP ────────────────────────────────
   registerSecurityMiddlewares(app);

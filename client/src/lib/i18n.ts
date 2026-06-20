@@ -125,9 +125,7 @@ export const translations = {
 
     // Payment
     paymentCard: "Cartão de Crédito",
-    paymentCardDesc: "Pague com segurança via Stripe",
     paymentPix: "Pix",
-    paymentPixDesc: "Pagamento instantâneo via Stripe",
     paymentCash: "Pagar na Entrega",
     paymentCashDesc: "Pague presencialmente na entrega",
 
@@ -149,7 +147,6 @@ export const translations = {
 
     // Submit
     submitButton: "Enviar pelo WhatsApp",
-    submitButtonStripe: "Continuar para pagamento",
     submitButtonCash: "Confirmar reserva",
     submitting: "Enviando...",
     submitHint:
@@ -293,9 +290,7 @@ export const translations = {
     accessoryUnit: "un.",
 
     paymentCard: "Credit Card",
-    paymentCardDesc: "Pay securely via Stripe",
     paymentPix: "Pix",
-    paymentPixDesc: "Instant payment via Stripe",
     paymentCash: "Pay on Delivery",
     paymentCashDesc: "Pay in person upon delivery",
 
@@ -314,7 +309,6 @@ export const translations = {
       "I have read and agree to the terms above and authorize the use of my personal data in accordance with LGPD.",
 
     submitButton: "Send via WhatsApp",
-    submitButtonStripe: "Continue to payment",
     submitButtonCash: "Confirm reservation",
     submitting: "Submitting...",
     submitHint:
@@ -456,9 +450,7 @@ export const translations = {
     accessoryUnit: "un.",
 
     paymentCard: "Tarjeta de Crédito",
-    paymentCardDesc: "Paga con seguridad vía Stripe",
     paymentPix: "Pix",
-    paymentPixDesc: "Pago instantáneo vía Stripe",
     paymentCash: "Pagar en la Entrega",
     paymentCashDesc: "Paga en persona al momento de la entrega",
 
@@ -477,7 +469,6 @@ export const translations = {
       "He leído y acepto los términos anteriores y autorizo el uso de mis datos personales conforme a la LGPD.",
 
     submitButton: "Enviar por WhatsApp",
-    submitButtonStripe: "Continuar al pago",
     submitButtonCash: "Confirmar reserva",
     submitting: "Enviando...",
     submitHint:

@@ -48,7 +48,6 @@ function paymentMethodLabel(method?: string): string {
     credit_card: "Cartão de Crédito",
     debit_card: "Cartão de Débito",
     cash: "Dinheiro",
-    stripe: "Cartão (Online)",
     other: "Outro",
     presential: "Presencial",
   };

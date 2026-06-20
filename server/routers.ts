@@ -999,7 +999,7 @@ const rentalsRouter = router({
       discountPercent: z.string().optional(),
       deliveryFee: z.string().optional(),
       depositAmount: z.string().optional(),
-      paymentMethod: z.enum(["pix", "credit_card", "debit_card", "cash", "stripe", "other"]).optional(),
+      paymentMethod: z.enum(["pix", "credit_card", "debit_card", "cash", "other"]).optional(),
       paymentStatus: z.enum(["pending", "paid", "partial", "refunded"]).default("pending"),
       notes: z.string().optional(),
       accessories: z.array(z.object({
@@ -1050,7 +1050,7 @@ const rentalsRouter = router({
       depositAmount: z.string().optional(),
       deliveryFee: z.string().optional(),
       discountPercent: z.string().optional(),
-      paymentMethod: z.enum(["pix", "credit_card", "debit_card", "cash", "stripe", "other"]).optional(),
+      paymentMethod: z.enum(["pix", "credit_card", "debit_card", "cash", "other"]).optional(),
       paymentStatus: z.enum(["pending", "paid", "partial", "refunded"]).optional(),
       status: z.enum(["pending", "active", "returned", "overdue", "cancelled"]).optional(),
       bikeCondition: z.enum(["ok", "damaged"]).optional(),
