@@ -994,7 +994,6 @@ const rentalsRouter = router({
       dailyRate: z.string().optional(),
       totalAmount: z.string().optional(),
       discountPercent: z.string().optional(),
-      deliveryFee: z.string().optional(),
       depositAmount: z.string().optional(),
       paymentMethod: z.enum(["pix", "credit_card", "debit_card", "cash", "other"]).optional(),
       paymentStatus: z.enum(["pending", "paid", "partial", "refunded"]).default("pending"),
@@ -1016,7 +1015,6 @@ const rentalsRouter = router({
         dailyRate: sanitizeNumeric(rentalData.dailyRate),
         totalAmount: sanitizeNumeric(rentalData.totalAmount),
         discountPercent: sanitizeNumeric(rentalData.discountPercent),
-        deliveryFee: sanitizeNumeric(rentalData.deliveryFee),
         depositAmount: sanitizeNumeric(rentalData.depositAmount),
         notes: sanitize(rentalData.notes),
         status: "active",
@@ -1045,7 +1043,6 @@ const rentalsRouter = router({
       returnedAt: z.date().optional(),
       totalAmount: z.string().optional(),
       depositAmount: z.string().optional(),
-      deliveryFee: z.string().optional(),
       discountPercent: z.string().optional(),
       paymentMethod: z.enum(["pix", "credit_card", "debit_card", "cash", "other"]).optional(),
       paymentStatus: z.enum(["pending", "paid", "partial", "refunded"]).optional(),
@@ -1064,7 +1061,6 @@ const rentalsRouter = router({
         endDate: data.endDate ? sanitizeDateString(data.endDate) : undefined,
         totalAmount: data.totalAmount !== undefined ? sanitizeNumeric(data.totalAmount) : undefined,
         depositAmount: data.depositAmount !== undefined ? sanitizeNumeric(data.depositAmount) : undefined,
-        deliveryFee: data.deliveryFee !== undefined ? sanitizeNumeric(data.deliveryFee) : undefined,
         discountPercent: data.discountPercent !== undefined ? sanitizeNumeric(data.discountPercent) : undefined,
         returnCondition: data.bikeCondition !== undefined ? data.bikeCondition : undefined,
         notes: data.notes !== undefined ? sanitize(data.notes) : (data.returnNotes !== undefined ? sanitize(data.returnNotes) : undefined),
@@ -2016,13 +2012,7 @@ const publicApiRouter = router({
     return Object.entries(grouped).map(([category, accessories]) => ({ category, accessories }));
   }),
 
-  // Get delivery fee setting
-  deliveryFee: publicProcedure.query(async () => {
-    const fee = await getSetting("delivery_fee");
-    return fee || "0";
-  }),
-
-  // ─── Número de WhatsApp para reservas (público) ─────────────────────────────
+  // ─── Número de WhatsApp para reservas (público) ───────────────────────────────────────────────────────────────────────────
   getReservationWhatsApp: publicProcedure.query(async () => {
     const raw = await getSetting("whatsapp_reservas");
     const digits = (raw || "").replace(/\D/g, "");

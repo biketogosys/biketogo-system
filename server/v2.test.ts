@@ -210,15 +210,6 @@ describe("publicApi.availableAccessories", () => {
   });
 });
 
-describe("publicApi.deliveryFee", () => {
-  it("returns a string without authentication", async () => {
-    const { ctx } = createUnauthContext();
-    const caller = appRouter.createCaller(ctx);
-
-    const result = await caller.publicApi.deliveryFee();
-    expect(typeof result).toBe("string");
-  });
-});
 
 // publicApi.checkAvailability was removed in Lote L0 (dead code cleanup)
 // The bikes.checkAvailability procedure was also removed in Lote 3a
@@ -233,4 +224,3 @@ describe("publicApi.bikeDiscountRules", () => {
     expect(Array.isArray(result)).toBe(true);
   });
 });
-

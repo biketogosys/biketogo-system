@@ -14,10 +14,7 @@ import { trpc } from "@/lib/trpc";
 const GOLD = "oklch(0.68 0.12 65)";
 const GOLD_FG = "oklch(0.10 0.005 240)";
 
-/** Default delivery hour slots */
-const DEFAULT_DELIVERY_HOURS = [
-  "08:00","09:00","10:00","11:00","13:00","14:00","15:00","16:00","17:00","18:00",
-];
+
 
 // ── Section save button ──────────────────────────────────────────────────────
 function SectionSaveBtn({ onClick, saving }: { onClick: () => void; saving: boolean }) {
@@ -111,17 +108,7 @@ export default function Settings() {
   const [companyTerms, setCompanyTerms] = useState("");
   const [companyCaucao, setCompanyCaucao] = useState("");
 
-  // ── Delivery ─────────────────────────────────────────────────────────────────
-  const [deliveryFee, setDeliveryFee] = useState("");
-  const [deliveryMargin, setDeliveryMargin] = useState("30");
 
-  // ── Delivery Hours ───────────────────────────────────────────────────────────
-  type HourEntry = { time: string; active: boolean; custom: boolean };
-  const [deliveryHours, setDeliveryHours] = useState<HourEntry[]>(() =>
-    DEFAULT_DELIVERY_HOURS.map((t) => ({ time: t, active: true, custom: false }))
-  );
-  const [newHourInput, setNewHourInput] = useState("");
-  const [hoursSaving, setHoursSaving] = useState(false);
 
   // ── Operating Hours ──────────────────────────────────────────────────────────
   const [openingTime, setOpeningTime] = useState("09:00");
@@ -133,12 +120,15 @@ export default function Settings() {
   const [notificationEmail, setNotificationEmail] = useState("");
   const [adminNotificationEmail, setAdminNotificationEmail] = useState("");
 
-  // ── Archive ──────────────────────────────────────────────────────────────  const [archiveRetentionDays, setArchiveRetentionDays] = useState("5");
+  // ── Archive ──────────────────────────────────────────────────────────────────
+  const [archiveRetentionDays, setArchiveRetentionDays] = useState("5");
 
   // ── Shopify ───────────────────────────────────────────────────────────────────────────
-  const [shopifyApiKey, setShopifyApiKey] = useState(""); // ── Section saving flags ─────────────────────────────────────────────────────
+  const [shopifyApiKey, setShopifyApiKey] = useState("");
+
+  // ── Section saving flags ─────────────────────────────────────────────────────
   const [savingCompany, setSavingCompany] = useState(false);
-  const [savingDelivery, setSavingDelivery] = useState(false);
+
   const [savingOperating, setSavingOperating] = useState(false);
   const [savingNotifications, setSavingNotifications] = useState(false);
   const [savingShopify, setSavingShopify] = useState(false);
@@ -150,8 +140,7 @@ export default function Settings() {
     const map: Record<string, string> = {};
     settings.forEach((s: any) => { map[s.key] = s.value; });
 
-    setDeliveryFee(map["delivery_fee"] || "30");
-    setDeliveryMargin(map["delivery_margin_min"] || "30");
+
     setOpeningTime(map["opening_time"] || "09:00");
     setClosingTime(map["closing_time"] || "19:00");
     setWhatsappNumber(map["whatsapp_number"] || "");
@@ -173,22 +162,7 @@ export default function Settings() {
     setCompanyTerms(map["company_terms"] || "");
     setCompanyCaucao(map["company_caucao"] || "");
 
-    if (map["delivery_hours"]) {
-      try {
-        const saved: string[] = JSON.parse(map["delivery_hours"]);
-        const allTimes = new Set([...DEFAULT_DELIVERY_HOURS, ...saved]);
-        const entries: HourEntry[] = Array.from(allTimes)
-          .sort()
-          .map((t) => ({
-            time: t,
-            active: saved.includes(t),
-            custom: !DEFAULT_DELIVERY_HOURS.includes(t),
-          }));
-        setDeliveryHours(entries);
-      } catch {
-        // keep defaults
-      }
-    }
+
   }, [settings]);
 
   // ── Section save helpers ─────────────────────────────────────────────────────
@@ -209,33 +183,7 @@ export default function Settings() {
     }
   }
 
-  // ── Delivery hours helpers ───────────────────────────────────────────────────
-  const activeHours = useMemo(() => deliveryHours.filter((h) => h.active).map((h) => h.time), [deliveryHours]);
 
-  function toggleHour(time: string) {
-    setDeliveryHours((prev) => prev.map((h) => h.time === time ? { ...h, active: !h.active } : h));
-  }
-
-  function addCustomHour() {
-    const t = newHourInput.trim();
-    if (!t.match(/^\d{2}:\d{2}$/)) { toast.error("Formato inválido. Use HH:MM (ex: 07:30)"); return; }
-    if (deliveryHours.some((h) => h.time === t)) { toast.error("Horário já existe"); return; }
-    setDeliveryHours((prev) => [...prev, { time: t, active: true, custom: true }].sort((a, b) => a.time.localeCompare(b.time)));
-    setNewHourInput("");
-  }
-
-  function removeCustomHour(time: string) {
-    setDeliveryHours((prev) => prev.filter((h) => h.time !== time));
-  }
-
-  async function saveDeliveryHours() {
-    setHoursSaving(true);
-    try {
-      await setManyMutation.mutateAsync({ entries: [{ key: "delivery_hours", value: JSON.stringify(activeHours) }] });
-    } finally {
-      setHoursSaving(false);
-    }
-  }
 
   if (isLoading) {
     return (
@@ -329,98 +277,6 @@ export default function Settings() {
                 </div>
               </div>
             </div>
-          </div>
-        </div>
-
-        {/* ─── Delivery ─────────────────────────────────────────────────────── */}
-        <div className="bg-card border border-border rounded-xl p-6">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-2">
-              <Truck className="w-5 h-5 text-primary" />
-              <h2 className="text-base font-semibold text-foreground">Entrega</h2>
-            </div>
-            <SectionSaveBtn
-              saving={savingDelivery}
-              onClick={() => saveSection([
-                { key: "delivery_fee", value: deliveryFee },
-                { key: "delivery_margin_min", value: deliveryMargin },
-              ], setSavingDelivery)}
-            />
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <Field label="Taxa de entrega (R$)" value={deliveryFee} onChange={setDeliveryFee} type="number" placeholder="30.00" />
-            <Field label="Margem de trânsito (min)" value={deliveryMargin} onChange={setDeliveryMargin} type="number" placeholder="30" />
-          </div>
-        </div>
-
-        {/* ─── Horários de Entrega ──────────────────────────────────────────── */}
-        <div className="bg-card border border-border rounded-xl p-6">
-          <div className="flex items-center gap-2 mb-2">
-            <Bike className="w-5 h-5 text-primary" />
-            <h2 className="text-base font-semibold text-foreground">Horários de Entrega</h2>
-          </div>
-          <p className="text-xs text-muted-foreground mb-4">
-            Defina quais horários aparecem para o cliente no formulário de reserva.
-            Apenas os horários <strong>ativos</strong> (marcados) serão exibidos.
-          </p>
-
-          <div className="grid grid-cols-3 sm:grid-cols-5 gap-2 mb-4">
-            {deliveryHours.map((h) => (
-              <div key={h.time} className="relative group">
-                <button
-                  type="button"
-                  onClick={() => toggleHour(h.time)}
-                  className={`w-full text-sm font-medium py-2 px-3 rounded-lg border transition-colors ${
-                    h.active
-                      ? "border-primary/60 text-primary"
-                      : "border-border text-muted-foreground opacity-50 hover:opacity-75"
-                  }`}
-                  style={h.active ? { background: "oklch(0.68 0.12 65 / 0.12)" } : {}}
-                >
-                  {h.time}
-                </button>
-                {h.custom && (
-                  <button
-                    type="button"
-                    onClick={() => removeCustomHour(h.time)}
-                    className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-destructive text-white hidden group-hover:flex items-center justify-center"
-                    title="Remover horário personalizado"
-                  >
-                    <X className="w-2.5 h-2.5" />
-                  </button>
-                )}
-              </div>
-            ))}
-          </div>
-
-          <div className="flex gap-2 mb-4">
-            <Input
-              type="time"
-              value={newHourInput}
-              onChange={(e) => setNewHourInput(e.target.value)}
-              className="bg-secondary border-border w-36 font-mono text-sm"
-              placeholder="HH:MM"
-            />
-            <Button type="button" size="sm" variant="outline" onClick={addCustomHour} className="gap-1.5">
-              <Plus className="w-3.5 h-3.5" />
-              Adicionar horário
-            </Button>
-          </div>
-
-          <div className="flex items-center justify-between pt-3 border-t border-border">
-            <p className="text-xs text-muted-foreground">
-              {activeHours.length} horário(s) ativo(s) de {deliveryHours.length} total
-            </p>
-            <Button
-              size="sm"
-              onClick={saveDeliveryHours}
-              disabled={hoursSaving}
-              style={{ background: GOLD, color: GOLD_FG }}
-              className="gap-1.5"
-            >
-              {hoursSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
-              Salvar horários
-            </Button>
           </div>
         </div>
 
