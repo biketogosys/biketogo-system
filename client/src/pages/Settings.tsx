@@ -133,31 +133,14 @@ export default function Settings() {
   const [notificationEmail, setNotificationEmail] = useState("");
   const [adminNotificationEmail, setAdminNotificationEmail] = useState("");
 
-  // ── Archive ──────────────────────────────────────────────────────────────────
-  const [archiveRetentionDays, setArchiveRetentionDays] = useState("5");
+  // ── Archive ──────────────────────────────────────────────────────────────  const [archiveRetentionDays, setArchiveRetentionDays] = useState("5");
 
-  // ── Email (Resend) ───────────────────────────────────────────────────────────
-  const [resendApiKey, setResendApiKey] = useState("");
-
-  // ── WhatsApp Z-API ───────────────────────────────────────────────────────────
-  const [zapiInstanceId, setZapiInstanceId] = useState("");
-  const [zapiToken, setZapiToken] = useState("");
-
-  // ── WhatsApp Cloud API ───────────────────────────────────────────────────────
-  const [waApiToken, setWaApiToken] = useState("");
-  const [waPhoneId, setWaPhoneId] = useState("");
-
-  // ── Shopify ──────────────────────────────────────────────────────────────────
-  const [shopifyApiKey, setShopifyApiKey] = useState("");
-
-  // ── Section saving flags ─────────────────────────────────────────────────────
+  // ── Shopify ───────────────────────────────────────────────────────────────────────────
+  const [shopifyApiKey, setShopifyApiKey] = useState(""); // ── Section saving flags ─────────────────────────────────────────────────────
   const [savingCompany, setSavingCompany] = useState(false);
   const [savingDelivery, setSavingDelivery] = useState(false);
   const [savingOperating, setSavingOperating] = useState(false);
   const [savingNotifications, setSavingNotifications] = useState(false);
-  const [savingResend, setSavingResend] = useState(false);
-  const [savingZapi, setSavingZapi] = useState(false);
-  const [savingWaCloud, setSavingWaCloud] = useState(false);
   const [savingShopify, setSavingShopify] = useState(false);
   const [savingArchive, setSavingArchive] = useState(false);
 
@@ -176,11 +159,6 @@ export default function Settings() {
     setNotificationEmail(map["notification_email"] || "");
     setAdminNotificationEmail(map["admin_notification_email"] || "");
     setArchiveRetentionDays(map["archive_retention_days"] || "5");
-    setResendApiKey(map["resend_api_key"] || "");
-    setZapiInstanceId(map["zapi_instance_id"] || "");
-    setZapiToken(map["zapi_token"] || "");
-    setWaApiToken(map["whatsapp_api_token"] || "");
-    setWaPhoneId(map["whatsapp_phone_id"] || "");
     setShopifyApiKey(map["shopify_api_key"] || "");
     setCompanyName(map["company_name"] || "");
     setCompanyCnpj(map["company_cnpj"] || "");
@@ -525,110 +503,6 @@ export default function Settings() {
               placeholder="admin@empresa.com"
               hint="Receba alertas de novas reservas pendentes neste e-mail"
             />
-          </div>
-        </div>
-
-        {/* ─── Email API (Resend) ───────────────────────────────────────────── */}
-        <div className="bg-card border border-border rounded-xl p-6">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-2">
-              <Mail className="w-5 h-5 text-primary" />
-              <h2 className="text-base font-semibold text-foreground">Email Automático (Resend)</h2>
-              <span className="text-[10px] px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20">
-                Opcional
-              </span>
-            </div>
-            <SectionSaveBtn
-              saving={savingResend}
-              onClick={() => saveSection([{ key: "resend_api_key", value: resendApiKey }], setSavingResend)}
-            />
-          </div>
-          <p className="text-xs text-muted-foreground mb-4">
-            Configure a API do{" "}
-            <a href="https://resend.com" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">
-              Resend
-            </a>{" "}
-            para enviar emails automáticos de confirmação de reserva para os clientes.
-            Crie uma conta gratuita (100 emails/dia) e gere uma API key.
-          </p>
-          <Field
-            label="Resend API Key"
-            value={resendApiKey}
-            onChange={setResendApiKey}
-            placeholder="re_xxxxxxxxxxxxxxxxx"
-            mono
-            secret
-            hint="Encontre em resend.com > API Keys"
-          />
-        </div>
-
-        {/* ─── WhatsApp API ─────────────────────────────────────────────────── */}
-        <div className="bg-card border border-border rounded-xl p-6">
-          <div className="flex items-center gap-2 mb-4">
-            <MessageCircle className="w-5 h-5 text-primary" />
-            <h2 className="text-base font-semibold text-foreground">WhatsApp Automático</h2>
-            <span className="text-[10px] px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20">
-              Opcional
-            </span>
-          </div>
-          <p className="text-xs text-muted-foreground mb-4">
-            Configure uma das opções abaixo para enviar notificações automáticas via WhatsApp quando uma nova reserva for feita.
-          </p>
-
-          {/* Z-API */}
-          <div className="mb-5 pb-5 border-b border-border">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="text-xs font-semibold text-foreground flex items-center gap-1.5">
-                <Link className="w-3.5 h-3.5" />
-                Opção 1: Z-API (Recomendado para Brasil)
-              </h3>
-              <SectionSaveBtn
-                saving={savingZapi}
-                onClick={() => saveSection([
-                  { key: "zapi_instance_id", value: zapiInstanceId },
-                  { key: "zapi_token", value: zapiToken },
-                ], setSavingZapi)}
-              />
-            </div>
-            <p className="text-xs text-muted-foreground mb-3">
-              Crie uma conta em{" "}
-              <a href="https://z-api.io" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">
-                z-api.io
-              </a>{" "}
-              e conecte seu WhatsApp. Copie o Instance ID e Token do painel.
-            </p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <Field label="Z-API Instance ID" value={zapiInstanceId} onChange={setZapiInstanceId} placeholder="XXXXXX" mono />
-              <Field label="Z-API Token" value={zapiToken} onChange={setZapiToken} placeholder="Token da instância" mono secret />
-            </div>
-          </div>
-
-          {/* WhatsApp Cloud API */}
-          <div>
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="text-xs font-semibold text-foreground flex items-center gap-1.5">
-                <Link className="w-3.5 h-3.5" />
-                Opção 2: WhatsApp Cloud API (Meta)
-              </h3>
-              <SectionSaveBtn
-                saving={savingWaCloud}
-                onClick={() => saveSection([
-                  { key: "whatsapp_api_token", value: waApiToken },
-                  { key: "whatsapp_phone_id", value: waPhoneId },
-                ], setSavingWaCloud)}
-              />
-            </div>
-            <p className="text-xs text-muted-foreground mb-3">
-              Configure pelo{" "}
-              <a href="https://developers.facebook.com" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">
-                Meta for Developers
-              </a>
-              . Requer conta Business verificada.
-            </p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <Field label="Access Token" value={waApiToken} onChange={setWaApiToken} placeholder="Bearer token" mono secret />
-              <Field label="Phone Number ID" value={waPhoneId} onChange={setWaPhoneId} placeholder="ID do número" mono />
-            </div>
           </div>
         </div>
 

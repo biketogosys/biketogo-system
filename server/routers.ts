@@ -80,9 +80,6 @@ import {
   createAuditLog,
 } from "./db";
 import { notifyOwner } from "./_core/notification";
-import { sendEmail, buildReservationEmailHtml } from "./email";
-import { buildProfessionalReservationEmail } from "./email-templates";
-import { sendWhatsApp, buildOwnerReservationMessage } from "./whatsapp";
 import { COOKIE_NAME } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
@@ -1272,15 +1269,6 @@ const rentalsRouter = router({
         // Save pdfUrl in contracts table
         const { contracts: cTable3 } = await import("../drizzle/schema");
         await db.update(cTable3).set({ pdfUrl: url }).where(eqPdf(cTable3.id, input.contractId));
-        // Send email with PDF link if client has email
-        if (clientRow?.email) {
-          const { sendEmail } = await import("./email");
-          await sendEmail({
-            to: clientRow.email,
-            subject: `Contrato #${input.contractId} confirmado — Bike To Go`,
-            html: `<p>Ol\u00e1, <strong>${clientRow.name}</strong>!</p><p>Sua reserva foi confirmada. Acesse o contrato pelo link abaixo:</p><p><a href="${url}">Baixar Contrato PDF</a></p><p>Obrigado por escolher a Bike To Go!</p>`,
-          });
-        }
       } catch (pdfErr) { console.warn("[confirmAll] PDF generation error:", pdfErr); }
       return { success: true, confirmed: pendingRentals.length, pdfUrl };
     }),
@@ -2117,32 +2105,12 @@ const publicApiRouter = router({
       } as any);
 
       // Notify owner
-      try {
-        const [companyName, rawOwnerPhone] = await Promise.all([
-          getSetting("company_name"),
-          getSetting("whatsapp_number"),
-        ]);
-        const ownerPhone = sanitizePhone(rawOwnerPhone) ?? rawOwnerPhone ?? undefined;
-
+       try {
         // Manus built-in notification
         await notifyOwner({
           title: "📋 Novo Pré-Cadastro!",
           content: `Cliente: ${input.name}\nTelefone: ${input.phone || "N/A"}\nE-mail: ${input.email || "N/A"}\n\nVerifique em /clientes e entre em contato para combinar a locação.`,
         });
-
-        // WhatsApp to owner
-        const waMsg = `📋 *Novo pré-cadastro recebido! — Bike To Go*\n\n*Cliente:* ${input.name}\n*Telefone:* ${input.phone || "N/A"}\n*E-mail:* ${input.email || "N/A"}\n\nVerifique em /clientes e entre em contato para combinar a locação.`;
-        await sendWhatsApp({ text: waMsg, to: ownerPhone });
-
-        // E-mail to owner
-        const ownerEmail = await getSetting("company_email") || await getSetting("notification_email");
-        if (ownerEmail) {
-          await sendEmail({
-            to: ownerEmail,
-            subject: `📋 Novo Pré-Cadastro — ${input.name} | ${companyName || "Bike To Go"}`,
-            html: `<p>Novo pré-cadastro recebido pelo site.</p><p><strong>Cliente:</strong> ${input.name}<br><strong>Telefone:</strong> ${input.phone || "N/A"}<br><strong>E-mail:</strong> ${input.email || "N/A"}</p><p>Acesse <a href="/clientes">/clientes</a> para verificar e entrar em contato.</p>`,
-          });
-        }
       } catch (err) {
         console.warn("[submitPreRegistration] Notification error:", err);
       }
@@ -2646,21 +2614,6 @@ const contractsRouter = router({
           title: `⚠️ Pendência de acessório — Contrato #${input.id}`,
           content: `Acessórios com problema ao encerrar o contrato #${input.id}:\n\n${pendentes}`,
         }).catch(() => {});
-        // Notify via WhatsApp (Z-API) — fail silently if not configured
-        try {
-          const rawOwnerPhone = await getSetting("whatsapp_number");
-          const ownerPhone = sanitizePhone(rawOwnerPhone) ?? rawOwnerPhone ?? undefined;
-          if (ownerPhone) {
-            const waMessage =
-              `⚠️ Contrato #${input.id} encerrado com PENDÊNCIA de acessório.\n` +
-              `Cliente: ${clientName}.\n` +
-              `Verifique o checklist de devolução.\n\n` +
-              `Itens pendentes:\n${pendentes}`;
-            await sendWhatsApp({ text: waMessage, to: ownerPhone });
-          }
-        } catch {
-          // Z-API not configured or unavailable — do not break contract closure
-        }
       }
       // Mark all active/overdue bike rentals as returned (releases stock)
       {
