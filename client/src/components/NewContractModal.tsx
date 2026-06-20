@@ -168,10 +168,12 @@ export function NewContractModal({
   open,
   onClose,
   editPrefill,
+  initialClient,
 }: {
   open: boolean;
   onClose: () => void;
   editPrefill?: EditPrefill;
+  initialClient?: { clientId: number; clientName: string };
 }) {
   const isEditMode = !!editPrefill;
   const utils = trpc.useUtils();
@@ -192,6 +194,11 @@ export function NewContractModal({
       setBikeEntries(editPrefill.bikes);
       setAccessories(editPrefill.accessories);
       setStep(1);
+    } else if (open && !isEditMode && initialClient) {
+      setClientId(String(initialClient.clientId));
+      setClientName(initialClient.clientName);
+      setClientStatus("verified");
+      setStep(2);
     }
   }, [open, isEditMode]);
 
@@ -203,7 +210,7 @@ export function NewContractModal({
   const [selQty, setSelQty] = useState(1);
 
   const { data: bikesData } = trpc.bikes.list.useQuery(
-    { status: "available", page: 1, limit: 100 },
+    { page: 1, limit: 100 },
     { enabled: open && step === 2 }
   );
   const bikes = bikesData?.data ?? [];

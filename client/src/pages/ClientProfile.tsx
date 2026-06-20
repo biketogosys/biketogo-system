@@ -1,4 +1,5 @@
 import { trpc } from "@/lib/trpc";
+import { NewContractModal } from "@/components/NewContractModal";
 import { useParams, useLocation } from "wouter";
 import { useState, useRef } from "react";
 import { toast } from "sonner";
@@ -6,7 +7,7 @@ import {
   ArrowLeft, Loader2, CheckCircle, Mail, Phone,
   Bike, Clock, FileText, Shield,
   User, Image as ImageIcon, Trash2, Upload, X,
-  CheckCircle2, AlertCircle, Edit2, CreditCard,
+  CheckCircle2, AlertCircle, Edit2, CreditCard, PlusCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -724,6 +725,7 @@ export default function ClientProfile() {
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
   const [lightboxAlt, setLightboxAlt] = useState("");
   const [showEditModal, setShowEditModal] = useState(false);
+  const [showNewRental, setShowNewRental] = useState(false);
   const [localNotes, setLocalNotes] = useState<string | null>(null);
   const utils = trpc.useUtils();
 
@@ -798,6 +800,17 @@ export default function ClientProfile() {
         />
       )}
 
+      {/* New Rental Modal */}
+      <NewContractModal
+        open={showNewRental}
+        onClose={() => {
+          setShowNewRental(false);
+          utils.rentals.list.invalidate({ clientId, limit: 50, page: 1 });
+          utils.bikes.list.invalidate();
+        }}
+        initialClient={{ clientId, clientName: client.name }}
+      />
+
       {/* Back button */}
       <button
         onClick={() => navigate("/clientes")}
@@ -840,6 +853,19 @@ export default function ClientProfile() {
               >
                 <CheckCircle className="w-4 h-4 mr-2" />
                 {validateMutation.isPending ? "Validando..." : "Validar cadastro"}
+              </Button>
+            )}
+
+            {/* New Rental button — only for verified clients */}
+            {client.status === "verified" && (
+              <Button
+                variant="outline"
+                onClick={() => setShowNewRental(true)}
+                className="w-full mb-3 text-sm"
+                style={{ borderColor: "oklch(0.68 0.12 65)", color: "oklch(0.68 0.12 65)" }}
+              >
+                <PlusCircle className="w-4 h-4 mr-2" />
+                Criar aluguel
               </Button>
             )}
 
