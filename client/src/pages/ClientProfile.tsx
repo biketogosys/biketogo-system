@@ -21,8 +21,9 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   maskCPF, maskRG, maskCEP, maskPhone, maskDate,
-  isValidCPF, isValidRG, fetchViaCEP, dateDisplayToISO, dateISOToDisplay,
+  isValidCPF, fetchViaCEP, dateDisplayToISO, dateISOToDisplay,
 } from "@/hooks/useMask";
+import { HelpCircle, Smartphone, Download } from "lucide-react";
 
 // ─── DDI list ─────────────────────────────────────────────────────────────────
 const DDI_LIST = [
@@ -115,9 +116,16 @@ function EditClientModal({ open, onClose, client, clientId, onSuccess }: EditCli
 
   const { ddi: initDdi, number: initPhone } = parseDDI(client?.phone);
 
+  // Split existing name into firstName/lastName
+  const nameParts = (client?.name ?? "").trim().split(" ");
+  const initFirst = (client as any)?.firstName || nameParts[0] || "";
+  const initLast = (client as any)?.lastName || nameParts.slice(1).join(" ") || "";
+
   const [form, setForm] = useState(() => ({
-    name: client?.name ?? "",
+    firstName: initFirst,
+    lastName: initLast,
     birthDate: client?.birthDate ? dateISOToDisplay(client.birthDate) : "",
+    gender: (client as any)?.gender ?? "",
     nacionalidade: (client?.nacionalidade as "" | "brasileiro" | "estrangeiro") ?? "",
     tipoDocumento: (client?.tipoDocumento as "cnh" | "rg" | "passaporte") ?? "cnh",
     cpf: client?.cpf ?? "",
@@ -138,23 +146,24 @@ function EditClientModal({ open, onClose, client, clientId, onSuccess }: EditCli
     country: client?.country ?? "Brasil",
     height: client?.height ?? "",
     weight: client?.weight ?? "",
-    pedalFrequency: (client?.pedalFrequency as "" | "iniciante" | "intermediario" | "avancado") ?? "",
-    tipoUso: (client?.tipoUso as "" | "lazer" | "esporte" | "urbano" | "cicloturismo") ?? "",
+    pedalFrequency: client?.pedalFrequency ?? "",
     notes: client?.notes ?? "",
     accommodation: client?.accommodation ?? "",
     origin: client?.origin ?? "",
     lgpdConsent: client?.lgpdConsent ?? false,
     aceiteMarketing: client?.aceiteMarketing ?? false,
+    // doc upload state
+    docFrontBase64: null as string | null,
+    docFrontIsPdf: false,
+    docBackBase64: null as string | null,
+    showVerso: false,
   }));
 
   const [activeTab, setActiveTab] = useState("identificacao");
   const [cepLoading, setCepLoading] = useState(false);
-  const [docFrenteFile, setDocFrenteFile] = useState<File | null>(null);
-  const [docVersoFile, setDocVersoFile] = useState<File | null>(null);
-  const [docFrentePreview, setDocFrentePreview] = useState("");
-  const [docVersoPreview, setDocVersoPreview] = useState("");
-  const frenteRef = useRef<HTMLInputElement>(null);
-  const versoRef = useRef<HTMLInputElement>(null);
+  const [docUploading, setDocUploading] = useState(false);
+  const docRef = useRef<HTMLInputElement>(null);
+  const backRef = useRef<HTMLInputElement>(null);
   const utils = trpc.useUtils();
 
   const updateMutation = trpc.clients.update.useMutation({
@@ -192,31 +201,42 @@ function EditClientModal({ open, onClose, client, clientId, onSuccess }: EditCli
     }));
   }
 
-  function handleFileChange(side: "frente" | "verso", file: File | null) {
-    if (!file) return;
-    const url = URL.createObjectURL(file);
-    if (side === "frente") { setDocFrenteFile(file); setDocFrentePreview(url); }
-    else { setDocVersoFile(file); setDocVersoPreview(url); }
+  function handleDocPhoto(side: "front" | "back", file: File) {
+    const isPdf = file.type === "application/pdf";
+    const reader = new FileReader();
+    reader.onload = () => {
+      const b64 = reader.result as string;
+      if (side === "front") {
+        setForm((f) => ({ ...f, docFrontBase64: b64, docFrontIsPdf: isPdf, showVerso: isPdf ? false : f.showVerso, docBackBase64: isPdf ? null : f.docBackBase64 }));
+      } else {
+        setForm((f) => ({ ...f, docBackBase64: b64 }));
+      }
+    };
+    reader.readAsDataURL(file);
   }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!form.name.trim()) { setActiveTab("identificacao"); return toast.error("Nome é obrigatório."); }
-    if (form.nacionalidade === "brasileiro" && form.cpf && !isValidCPF(form.cpf)) {
-      setActiveTab("identificacao");
-      return toast.error("CPF inválido. Verifique os dígitos verificadores.");
+    if (!form.firstName.trim()) { setActiveTab("identificacao"); return toast.error("Nome é obrigatório."); }
+    if (!form.lastName.trim()) { setActiveTab("identificacao"); return toast.error("Sobrenome é obrigatório."); }
+    if (!form.email.trim()) { setActiveTab("contato"); return toast.error("E-mail é obrigatório."); }
+    if (form.nacionalidade !== "estrangeiro") {
+      if (!form.cpf.trim()) { setActiveTab("identificacao"); return toast.error("CPF é obrigatório."); }
+      if (!isValidCPF(form.cpf)) { setActiveTab("identificacao"); return toast.error("CPF inválido."); }
+      if (!form.rg.trim() || form.rg.replace(/\D/g, "").length < 7) { setActiveTab("identificacao"); return toast.error("RG inválido (mín. 7 dígitos)."); }
     }
-    if (form.rg && !isValidRG(form.rg)) {
-      setActiveTab("identificacao");
-      return toast.error("RG inválido. Verifique o dígito verificador.");
-    }
+    if (!form.height.trim()) { setActiveTab("perfil"); return toast.error("Altura é obrigatória."); }
+    if (!form.weight.toString().trim()) { setActiveTab("perfil"); return toast.error("Peso é obrigatório."); }
+    if (!form.lgpdConsent) { setActiveTab("lgpd"); return toast.error("Aceite os termos de uso."); }
 
     const phone = form.ddi !== "+55" ? `${form.ddi} ${form.phone}` : form.phone;
+    const fullName = `${form.firstName.trim()} ${form.lastName.trim()}`;
 
+    setDocUploading(true);
     try {
       await updateMutation.mutateAsync({
         id: clientId,
-        name: form.name || undefined,
+        name: fullName || undefined,
         cpf: form.nacionalidade !== "estrangeiro" ? (form.cpf || undefined) : undefined,
         rg: form.nacionalidade !== "estrangeiro" ? (form.rg || undefined) : undefined,
         birthDate: form.birthDate ? dateDisplayToISO(form.birthDate) : undefined,
@@ -244,13 +264,12 @@ function EditClientModal({ open, onClose, client, clientId, onSuccess }: EditCli
       });
 
       // Upload documents if selected
-      if (docFrenteFile) {
-        const b64 = await fileToBase64(docFrenteFile);
-        await uploadDocMutation.mutateAsync({ clientId, base64: b64, side: "front", mimeType: docFrenteFile.type || "image/jpeg" });
+      if (form.docFrontBase64) {
+        const mimeType = form.docFrontIsPdf ? "application/pdf" : "image/jpeg";
+        await uploadDocMutation.mutateAsync({ clientId, base64: form.docFrontBase64, side: "front", mimeType });
       }
-      if (docVersoFile) {
-        const b64 = await fileToBase64(docVersoFile);
-        await uploadDocMutation.mutateAsync({ clientId, base64: b64, side: "back", mimeType: docVersoFile.type || "image/jpeg" });
+      if (form.docBackBase64) {
+        await uploadDocMutation.mutateAsync({ clientId, base64: form.docBackBase64, side: "back", mimeType: "image/jpeg" });
       }
 
       toast.success("Cliente atualizado com sucesso!");
@@ -259,6 +278,8 @@ function EditClientModal({ open, onClose, client, clientId, onSuccess }: EditCli
       onClose();
     } catch (err: any) {
       toast.error(err?.message ?? "Erro ao salvar cliente.");
+    } finally {
+      setDocUploading(false);
     }
   }
 
@@ -304,9 +325,15 @@ function EditClientModal({ open, onClose, client, clientId, onSuccess }: EditCli
             <div className="flex-1 overflow-y-auto px-5 py-4">
               {/* ── Aba 1: Identificação ── */}
               <TabsContent value="identificacao" className="mt-0 space-y-4">
-                <div>
-                  <Label className={labelCls}>Nome completo *</Label>
-                  <Input value={form.name} onChange={(e) => set("name", e.target.value)} placeholder="João Silva" className={inputCls} />
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <Label className={labelCls}>Nome *</Label>
+                    <Input value={form.firstName} onChange={(e) => set("firstName", e.target.value)} placeholder="João" className={inputCls} />
+                  </div>
+                  <div>
+                    <Label className={labelCls}>Sobrenome *</Label>
+                    <Input value={form.lastName} onChange={(e) => set("lastName", e.target.value)} placeholder="Silva" className={inputCls} />
+                  </div>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
@@ -320,17 +347,29 @@ function EditClientModal({ open, onClose, client, clientId, onSuccess }: EditCli
                     />
                   </div>
                   <div>
-                    <Label className={labelCls}>Nacionalidade</Label>
-                    <Select value={form.nacionalidade} onValueChange={(v) => set("nacionalidade", v as "brasileiro" | "estrangeiro")}>
-                      <SelectTrigger className={inputCls}>
-                        <SelectValue placeholder="Selecionar..." />
-                      </SelectTrigger>
+                    <Label className={labelCls}>Gênero</Label>
+                    <Select value={form.gender} onValueChange={(v) => set("gender", v)}>
+                      <SelectTrigger className={inputCls}><SelectValue placeholder="--" /></SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="brasileiro">Brasileiro</SelectItem>
-                        <SelectItem value="estrangeiro">Estrangeiro</SelectItem>
+                        <SelectItem value="Masculino">Masculino</SelectItem>
+                        <SelectItem value="Feminino">Feminino</SelectItem>
+                        <SelectItem value="Outro">Outro</SelectItem>
+                        <SelectItem value="Prefiro nao informar">Prefiro não informar</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
+                </div>
+                <div>
+                  <Label className={labelCls}>Nacionalidade</Label>
+                  <Select value={form.nacionalidade} onValueChange={(v) => set("nacionalidade", v as "brasileiro" | "estrangeiro")}>
+                    <SelectTrigger className={inputCls}>
+                      <SelectValue placeholder="Selecionar..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="brasileiro">Brasileiro</SelectItem>
+                      <SelectItem value="estrangeiro">Estrangeiro</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
                 {/* Documentos: CPF+RG para brasileiros, Passaporte para estrangeiros */}
                 {form.nacionalidade !== "estrangeiro" ? (
@@ -354,14 +393,7 @@ function EditClientModal({ open, onClose, client, clientId, onSuccess }: EditCli
                         />
                       </div>
                       <div>
-                        <Label className={labelCls}>
-                          RG
-                          {form.rg.replace(/[.\-\s]/g, "").length >= 8 && (
-                            isValidRG(form.rg)
-                              ? <CheckCircle2 className="inline w-3 h-3 ml-1 text-green-500" />
-                              : <AlertCircle className="inline w-3 h-3 ml-1 text-destructive" />
-                          )}
-                        </Label>
+                        <Label className={labelCls}>RG *</Label>
                         <Input
                           value={form.rg}
                           onChange={(e) => set("rg", maskRG(e.target.value))}
@@ -370,19 +402,6 @@ function EditClientModal({ open, onClose, client, clientId, onSuccess }: EditCli
                           maxLength={12}
                         />
                       </div>
-                    </div>
-                    {/* Tipo de documento para brasileiros */}
-                    <div>
-                      <Label className={labelCls}>Tipo de documento principal</Label>
-                      <Select value={form.tipoDocumento} onValueChange={(v) => set("tipoDocumento", v as "cnh" | "rg")}>
-                        <SelectTrigger className={inputCls}>
-                          <SelectValue placeholder="Selecionar..." />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="cnh">CNH</SelectItem>
-                          <SelectItem value="rg">RG</SelectItem>
-                        </SelectContent>
-                      </Select>
                     </div>
                   </>
                 ) : (
@@ -496,95 +515,132 @@ function EditClientModal({ open, onClose, client, clientId, onSuccess }: EditCli
               {/* ── Aba 4: Documentos ── */}
               <TabsContent value="documento" className="mt-0 space-y-5">
                 <p className="text-xs text-muted-foreground">
-                  Faça upload das fotos do documento de identificação para substituir os existentes.
+                  Envie o PDF da CNH digital (gov.br) ou RG — frente, verso e QR num arquivo só — ou uma foto do documento.
                 </p>
-                {/* Frente */}
+                {/* Zona única */}
                 <div>
-                  <Label className={labelCls}>Frente do documento</Label>
+                  <Label className={labelCls}>
+                    {form.docFrontBase64 && form.showVerso ? "Frente" : form.docFrontIsPdf ? "Documento (PDF)" : "Documento"}
+                  </Label>
                   <input
-                    ref={frenteRef}
+                    ref={docRef}
                     type="file"
-                    accept="image/*"
+                    accept="image/*,application/pdf"
                     className="hidden"
-                    onChange={(e) => handleFileChange("frente", e.target.files?.[0] ?? null)}
+                    onChange={(e) => { const f = e.target.files?.[0]; if (f) handleDocPhoto("front", f); e.target.value = ""; }}
                   />
-                  {docFrentePreview ? (
-                    <div className="relative w-full h-36 rounded-lg overflow-hidden border border-border bg-secondary">
-                      <img src={docFrentePreview} alt="Frente" className="w-full h-full object-cover" />
-                      <button
-                        type="button"
-                        onClick={() => { setDocFrenteFile(null); setDocFrentePreview(""); }}
-                        className="absolute top-2 right-2 bg-black/60 rounded-full p-1 text-white hover:bg-black/80"
-                      >
-                        <X className="w-3 h-3" />
-                      </button>
+                  {form.docFrontBase64 ? (
+                    <div className="relative w-full rounded-lg overflow-hidden border border-border bg-secondary">
+                      {form.docFrontIsPdf ? (
+                        <div className="flex items-center gap-3 px-4 py-3">
+                          <FileText className="w-8 h-8 text-[#C8920A]" />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium text-foreground truncate">PDF selecionado</p>
+                            <p className="text-xs text-muted-foreground">Frente, verso e QR incluídos</p>
+                          </div>
+                          <button type="button" onClick={() => setForm((f) => ({ ...f, docFrontBase64: null, docFrontIsPdf: false, showVerso: false, docBackBase64: null }))} className="text-muted-foreground hover:text-foreground">
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
+                      ) : (
+                        <>
+                          <img src={form.docFrontBase64} alt="Frente" className="w-full h-36 object-cover" />
+                          <button type="button" onClick={() => setForm((f) => ({ ...f, docFrontBase64: null, showVerso: false, docBackBase64: null }))} className="absolute top-2 right-2 bg-black/60 rounded-full p-1 text-white hover:bg-black/80">
+                            <X className="w-3 h-3" />
+                          </button>
+                        </>
+                      )}
                     </div>
                   ) : (
-                    <button
-                      type="button"
-                      onClick={() => frenteRef.current?.click()}
-                      className="w-full h-28 border-2 border-dashed border-border rounded-lg flex flex-col items-center justify-center gap-2 text-muted-foreground hover:border-primary/50 hover:text-primary transition-colors"
+                    <div
+                      className="w-full h-28 border-2 border-dashed border-border rounded-lg flex flex-col items-center justify-center gap-2 text-muted-foreground cursor-pointer hover:border-[#C8920A]/50 hover:text-[#C8920A] transition-colors"
+                      onClick={() => docRef.current?.click()}
+                      onDrop={(e) => { e.preventDefault(); const f = e.dataTransfer.files?.[0]; if (f) handleDocPhoto("front", f); }}
+                      onDragOver={(e) => e.preventDefault()}
                     >
-                      <Upload className="w-5 h-5" />
-                      <span className="text-xs">Clique para selecionar</span>
-                    </button>
-                  )}
-                </div>
-                {/* Verso */}
-                <div>
-                  <Label className={labelCls}>Verso do documento (opcional)</Label>
-                  <input
-                    ref={versoRef}
-                    type="file"
-                    accept="image/*"
-                    className="hidden"
-                    onChange={(e) => handleFileChange("verso", e.target.files?.[0] ?? null)}
-                  />
-                  {docVersoPreview ? (
-                    <div className="relative w-full h-36 rounded-lg overflow-hidden border border-border bg-secondary">
-                      <img src={docVersoPreview} alt="Verso" className="w-full h-full object-cover" />
-                      <button
-                        type="button"
-                        onClick={() => { setDocVersoFile(null); setDocVersoPreview(""); }}
-                        className="absolute top-2 right-2 bg-black/60 rounded-full p-1 text-white hover:bg-black/80"
-                      >
-                        <X className="w-3 h-3" />
-                      </button>
+                      <div className="flex gap-3">
+                        <FileText className="w-6 h-6 text-[#C8920A]/60" />
+                        <ImageIcon className="w-6 h-6 text-[#C8920A]/60" />
+                      </div>
+                      <p className="text-xs font-medium">Arraste aqui ou clique para selecionar</p>
+                      <p className="text-[11px] text-muted-foreground/70">PDF ou imagem · até 10 MB</p>
                     </div>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => versoRef.current?.click()}
-                      className="w-full h-28 border-2 border-dashed border-border rounded-lg flex flex-col items-center justify-center gap-2 text-muted-foreground hover:border-primary/50 hover:text-primary transition-colors"
-                    >
-                      <Upload className="w-5 h-5" />
-                      <span className="text-xs">Clique para selecionar (opcional)</span>
-                    </button>
                   )}
                 </div>
-                {(docFrenteFile || docVersoFile) && (
-                  <p className="text-xs text-amber-500 flex items-center gap-1">
-                    <AlertCircle className="w-3 h-3" />
-                    Os documentos serão enviados ao salvar (integração S3 ativa).
-                  </p>
+                {/* Botão adicionar verso */}
+                {form.docFrontBase64 && !form.docFrontIsPdf && !form.showVerso && (
+                  <button type="button" onClick={() => set("showVerso", true)}
+                    className="text-xs text-[#C8920A] underline underline-offset-2 hover:opacity-80 transition-opacity">
+                    + Adicionar verso
+                  </button>
                 )}
+                {/* Verso */}
+                {form.showVerso && (
+                  <div>
+                    <Label className={labelCls}>Verso</Label>
+                    <input ref={backRef} type="file" accept="image/*" className="hidden"
+                      onChange={(e) => { const f = e.target.files?.[0]; if (f) handleDocPhoto("back", f); e.target.value = ""; }} />
+                    {form.docBackBase64 ? (
+                      <div className="relative w-full rounded-lg overflow-hidden border border-border bg-secondary">
+                        <img src={form.docBackBase64} alt="Verso" className="w-full h-36 object-cover" />
+                        <button type="button" onClick={() => setForm((f) => ({ ...f, docBackBase64: null }))} className="absolute top-2 right-2 bg-black/60 rounded-full p-1 text-white hover:bg-black/80">
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="w-full h-28 border-2 border-dashed border-border rounded-lg flex flex-col items-center justify-center gap-2 text-muted-foreground cursor-pointer hover:border-[#C8920A]/50 hover:text-[#C8920A] transition-colors"
+                        onClick={() => backRef.current?.click()}
+                        onDrop={(e) => { e.preventDefault(); const f = e.dataTransfer.files?.[0]; if (f) handleDocPhoto("back", f); }}
+                        onDragOver={(e) => e.preventDefault()}>
+                        <ImageIcon className="w-6 h-6 text-[#C8920A]/60" />
+                        <p className="text-xs">Clique ou arraste a foto aqui</p>
+                      </div>
+                    )}
+                  </div>
+                )}
+                {/* Tutorial */}
+                <div className="border-t border-border pt-4">
+                  <p className="text-[13px] font-medium mb-3 flex items-center gap-1.5 text-muted-foreground">
+                    <HelpCircle className="w-4 h-4 text-gray-500 shrink-0" />
+                    Como baixar o PDF da sua CNH digital
+                  </p>
+                  <ol className="flex flex-col gap-2.5">
+                    {[
+                      { Icon: Smartphone, text: "Abra a Carteira Digital de Trânsito ou o gov.br e acesse sua CNH" },
+                      { Icon: Download, text: "Toque em Exportar / Baixar PDF e salve o arquivo" },
+                    ].map((item, i) => (
+                      <li key={i} className="flex gap-3 text-xs text-muted-foreground leading-relaxed">
+                        <span className="font-bold text-[#C8920A] min-w-fit">{i + 1}.</span>
+                        <div className="flex gap-2 items-start">
+                          <item.Icon className="w-4 h-4 text-[#C8920A] mt-0.5 flex-shrink-0" />
+                          <span>{item.text}</span>
+                        </div>
+                      </li>
+                    ))}
+                  </ol>
+                </div>
+                <div className="rounded-lg px-3 py-2.5 flex items-start gap-2 bg-secondary/50">
+                  <AlertCircle className="w-4 h-4 text-gray-400 mt-0.5 shrink-0" />
+                  <span className="text-xs leading-relaxed text-muted-foreground">
+                    Estrangeiro ou sem CNH digital? Envie uma foto do documento (passaporte ou RG).
+                  </span>
+                </div>
               </TabsContent>
 
               {/* ── Aba 5: Perfil de uso ── */}
               <TabsContent value="perfil" className="mt-0 space-y-4">
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <Label className={labelCls}>Altura (cm)</Label>
+                    <Label className={labelCls}>Altura (m) *</Label>
                     <Input
                       value={form.height}
-                      onChange={(e) => set("height", e.target.value.replace(/\D/g, "").slice(0, 3))}
-                      placeholder="175"
+                      onChange={(e) => set("height", e.target.value)}
+                      placeholder="1.75"
                       className={inputCls}
-                      maxLength={3}
                     />
                   </div>
                   <div>
-                    <Label className={labelCls}>Peso (kg)</Label>
+                    <Label className={labelCls}>Peso (kg) *</Label>
                     <Input
                       type="number"
                       min="20"
@@ -592,41 +648,36 @@ function EditClientModal({ open, onClose, client, clientId, onSuccess }: EditCli
                       step="0.1"
                       value={form.weight}
                       onChange={(e) => set("weight", e.target.value)}
-                      placeholder="75.5"
+                      placeholder="75"
                       className={inputCls}
                     />
                   </div>
                 </div>
                 <div>
                   <Label className={labelCls}>Experiência em ciclismo</Label>
-                  <Select value={form.pedalFrequency} onValueChange={(v) => set("pedalFrequency", v as "iniciante" | "intermediario" | "avancado")}>
-                    <SelectTrigger className={inputCls}>
-                      <SelectValue placeholder="Selecionar..." />
-                    </SelectTrigger>
+                  <Select value={form.pedalFrequency} onValueChange={(v) => set("pedalFrequency", v)}>
+                    <SelectTrigger className={inputCls}><SelectValue placeholder="--" /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="iniciante">Iniciante</SelectItem>
-                      <SelectItem value="intermediario">Intermediário</SelectItem>
-                      <SelectItem value="avancado">Avançado</SelectItem>
+                      <SelectItem value="Raramente">Raramente</SelectItem>
+                      <SelectItem value="1x por semana">1x por semana</SelectItem>
+                      <SelectItem value="2-3x por semana">2-3x por semana</SelectItem>
+                      <SelectItem value="4-5x por semana">4-5x por semana</SelectItem>
+                      <SelectItem value="Diariamente">Diariamente</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
                 <div>
-                  <Label className={labelCls}>Tipo de uso preferido</Label>
-                  <Select value={form.tipoUso} onValueChange={(v) => set("tipoUso", v as "lazer" | "esporte" | "urbano" | "cicloturismo")}>
-                    <SelectTrigger className={inputCls}>
-                      <SelectValue placeholder="Selecionar..." />
-                    </SelectTrigger>
+                  <Label className={labelCls}>Como nos encontrou</Label>
+                  <Select value={form.origin} onValueChange={(v) => set("origin", v)}>
+                    <SelectTrigger className={inputCls}><SelectValue placeholder="--" /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="lazer">Lazer</SelectItem>
-                      <SelectItem value="esporte">Esporte</SelectItem>
-                      <SelectItem value="urbano">Urbano</SelectItem>
-                      <SelectItem value="cicloturismo">Cicloturismo</SelectItem>
+                      <SelectItem value="Pela internet">Pela internet</SelectItem>
+                      <SelectItem value="Instagram">Instagram</SelectItem>
+                      <SelectItem value="Indicacao de amigo">Indicação de amigo</SelectItem>
+                      <SelectItem value="Shopify">Shopify</SelectItem>
+                      <SelectItem value="Outro">Outro</SelectItem>
                     </SelectContent>
                   </Select>
-                </div>
-                <div>
-                  <Label className={labelCls}>Origem / Como nos conheceu</Label>
-                  <Input value={form.origin} onChange={(e) => set("origin", e.target.value)} placeholder="Instagram, indicação..." className={inputCls} />
                 </div>
                 <div>
                   <Label className={labelCls}>Hospedagem / Acomodação</Label>
@@ -696,11 +747,11 @@ function EditClientModal({ open, onClose, client, clientId, onSuccess }: EditCli
               </Button>
               <Button
                 type="submit"
-                disabled={updateMutation.isPending}
+                disabled={updateMutation.isPending || docUploading}
                 className="flex-1"
-                style={!updateMutation.isPending ? { background: "oklch(0.68 0.12 65)", color: "oklch(0.10 0.005 240)" } : {}}
+                style={!(updateMutation.isPending || docUploading) ? { background: "oklch(0.68 0.12 65)", color: "oklch(0.10 0.005 240)" } : {}}
               >
-                {updateMutation.isPending ? (
+                {(updateMutation.isPending || docUploading) ? (
                   <><Loader2 className="w-4 h-4 animate-spin mr-2" />Salvando...</>
                 ) : (
                   "Salvar alterações"
