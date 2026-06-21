@@ -1097,7 +1097,37 @@ const rentalsRouter = router({
         notes: input.returnNotes || null,
       } as any);
 
-      await updateBike(rental.bikeId, { status: "available" });
+      if (input.bikeCondition === "damaged") {
+        // Create maintenance log and mark bike as in maintenance
+        const { bikeMaintenanceLogs, bikes, bikeSizes } = await import("../drizzle/schema");
+        const { eq, sql: sqlMaint } = await import("drizzle-orm");
+        const db = await (await import("./db")).getDb();
+        if (db) {
+          const descricao = input.returnNotes?.trim() || `Danificada na devolução (aluguel #${input.id})`;
+          await db.insert(bikeMaintenanceLogs).values({
+            bikeId: rental.bikeId,
+            tamanhoBikeId: rental.bikeSizeId ?? null,
+            quantidadeAfetada: 1,
+            descricao,
+            status: "em_andamento",
+            dataEntrada: new Date(),
+          });
+          // Decrement quantidadeDisponivel (same logic as addMaintenance)
+          if (rental.bikeSizeId) {
+            await db.update(bikeSizes)
+              .set({ quantidadeDisponivel: sqlMaint`GREATEST(0, ${bikeSizes.quantidadeDisponivel} - 1)` })
+              .where(eq(bikeSizes.id, rental.bikeSizeId));
+          } else {
+            await db.update(bikeSizes)
+              .set({ quantidadeDisponivel: sqlMaint`GREATEST(0, ${bikeSizes.quantidadeDisponivel} - 1)` })
+              .where(eq(bikeSizes.bikeId, rental.bikeId));
+          }
+          await db.update(bikes).set({ status: "maintenance" }).where(eq(bikes.id, rental.bikeId));
+        }
+      } else {
+        // ok: return bike to available
+        await updateBike(rental.bikeId, { status: "available" });
+      }
       return { success: true };
     }),
 

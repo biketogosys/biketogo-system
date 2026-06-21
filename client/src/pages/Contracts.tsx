@@ -376,6 +376,11 @@ function ContractDetail({
   const { data, isLoading } = trpc.contracts.getById.useQuery({ id: contractId });
   const [closeOpen, setCloseOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
+  const [returnDialogOpen, setReturnDialogOpen] = useState(false);
+  const [returnRentalId, setReturnRentalId] = useState<number | null>(null);
+  const [returnBikeLabel, setReturnBikeLabel] = useState("");
+  const [returnCondition, setReturnCondition] = useState<"ok" | "damaged">("ok");
+  const [returnNotes, setReturnNotes] = useState("");
 
   const archiveMutation = trpc.contracts.archive.useMutation({
     onSuccess: () => {
@@ -659,9 +664,11 @@ function ContractDetail({
                         className="h-7 text-xs gap-1 border-amber-500/40 text-amber-600 hover:bg-amber-50"
                         disabled={returnRentalMutation.isPending}
                         onClick={() => {
-                          if (confirm(`Confirmar devolução da bike ${r.bikeBrand ?? ""} ${r.bikeModel ?? ""}?`)) {
-                            returnRentalMutation.mutate({ id: r.id, bikeCondition: "ok" });
-                          }
+                          setReturnRentalId(r.id);
+                          setReturnBikeLabel(`${r.bikeBrand ?? ""} ${r.bikeModel ?? ""}`.trim() || "bike");
+                          setReturnCondition("ok");
+                          setReturnNotes("");
+                          setReturnDialogOpen(true);
                         }}
                       >
                         Devolver
@@ -776,6 +783,72 @@ function ContractDetail({
           }}
         />
       )}
+      {/* Return rental dialog */}
+      <Dialog open={returnDialogOpen} onOpenChange={(v) => { if (!v) setReturnDialogOpen(false); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Devolver bike — {returnBikeLabel}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label>Estado da bike</Label>
+              <div className="flex gap-4">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="returnCondition"
+                    value="ok"
+                    checked={returnCondition === "ok"}
+                    onChange={() => setReturnCondition("ok")}
+                    className="accent-amber-500"
+                  />
+                  <span className="text-sm">OK — devolver disponível</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="returnCondition"
+                    value="damaged"
+                    checked={returnCondition === "damaged"}
+                    onChange={() => setReturnCondition("damaged")}
+                    className="accent-red-500"
+                  />
+                  <span className="text-sm text-red-600">Danificada</span>
+                </label>
+              </div>
+            </div>
+            {returnCondition === "damaged" && (
+              <div className="space-y-1">
+                <Label htmlFor="returnNotes">Descrição do dano <span className="text-red-500">*</span></Label>
+                <Textarea
+                  id="returnNotes"
+                  placeholder="Descreva o dano encontrado..."
+                  value={returnNotes}
+                  onChange={(e) => setReturnNotes(e.target.value)}
+                  rows={3}
+                />
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setReturnDialogOpen(false)}>Cancelar</Button>
+            <Button
+              className={returnCondition === "damaged" ? "bg-red-600 hover:bg-red-700 text-white" : "bg-amber-500 hover:bg-amber-600 text-white"}
+              disabled={returnRentalMutation.isPending || (returnCondition === "damaged" && !returnNotes.trim())}
+              onClick={() => {
+                if (!returnRentalId) return;
+                returnRentalMutation.mutate(
+                  { id: returnRentalId, bikeCondition: returnCondition, returnNotes: returnNotes || undefined },
+                  { onSuccess: () => setReturnDialogOpen(false) }
+                );
+              }}
+            >
+              {returnRentalMutation.isPending ? "Registrando..." : "Confirmar devolução"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
     </div>
   );
 }
