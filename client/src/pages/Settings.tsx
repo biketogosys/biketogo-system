@@ -96,6 +96,12 @@ export default function Settings() {
 
   // ── Company ──────────────────────────────────────────────────────────────────
   const [companyName, setCompanyName] = useState("");
+  const [companyLogoUrl, setCompanyLogoUrl] = useState("");
+  const [uploadingLogo, setUploadingLogo] = useState(false);
+  const uploadLogoMutation = trpc.settings.uploadLogo.useMutation({
+    onSuccess: (data) => { setCompanyLogoUrl(data.url); toast.success("Logo salva com sucesso!"); },
+    onError: (e) => toast.error(e.message),
+  });
   const [companyCnpj, setCompanyCnpj] = useState("");
   const [companyAddress, setCompanyAddress] = useState("");
   const [companyCity, setCompanyCity] = useState("");
@@ -161,6 +167,7 @@ export default function Settings() {
     setCompanyForo(map["company_foro"] || "");
     setCompanyTerms(map["company_terms"] || "");
     setCompanyCaucao(map["company_caucao"] || "");
+    setCompanyLogoUrl(map["company_logo_url"] || "");
 
 
   }, [settings]);
@@ -227,12 +234,58 @@ export default function Settings() {
                 { key: "company_foro", value: companyForo },
                 { key: "company_caucao", value: companyCaucao },
                 { key: "company_terms", value: companyTerms },
+                { key: "company_logo_url", value: companyLogoUrl },
               ], setSavingCompany)}
             />
           </div>
           <p className="text-xs text-muted-foreground mb-4">
             Informações usadas no cabeçalho do contrato PDF e nos e-mails automáticos.
           </p>
+          {/* Logo da empresa */}
+          <div className="mb-4">
+            <Label className="text-xs text-muted-foreground mb-1.5 block">Logo da empresa (PDF)</Label>
+            <div className="flex items-center gap-3">
+              {companyLogoUrl && (
+                <img src={companyLogoUrl} alt="Logo" className="h-12 w-auto object-contain rounded border border-border bg-white p-1" />
+              )}
+              <label className="cursor-pointer">
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    if (file.size > 5 * 1024 * 1024) { toast.error("Imagem muito grande (máx 5 MB)"); return; }
+                    setUploadingLogo(true);
+                    try {
+                      const reader = new FileReader();
+                      reader.onload = async (ev) => {
+                        const base64 = ev.target?.result as string;
+                        await uploadLogoMutation.mutateAsync({ base64, mimeType: file.type });
+                        setUploadingLogo(false);
+                      };
+                      reader.onerror = () => { toast.error("Erro ao ler arquivo"); setUploadingLogo(false); };
+                      reader.readAsDataURL(file);
+                    } catch (err: any) {
+                      toast.error(err.message || "Erro ao enviar logo");
+                      setUploadingLogo(false);
+                    }
+                  }}
+                />
+                <Button variant="outline" size="sm" disabled={uploadingLogo} asChild>
+                  <span className="gap-1.5 flex items-center">
+                    {uploadingLogo ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <span className="text-xs">📎</span>}
+                    {companyLogoUrl ? "Trocar logo" : "Enviar logo"}
+                  </span>
+                </Button>
+              </label>
+              {companyLogoUrl && (
+                <Button variant="ghost" size="sm" className="text-destructive text-xs" onClick={() => setCompanyLogoUrl("")}>Remover</Button>
+              )}
+            </div>
+            <p className="text-xs text-muted-foreground mt-1.5">Aparece no cabeçalho do contrato PDF. PNG ou WEBP com fundo transparente recomendado.</p>
+          </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <Field label="Nome da empresa" value={companyName} onChange={setCompanyName} placeholder="Bike To Go Floripa" />
             <Field label="CNPJ" value={companyCnpj} onChange={setCompanyCnpj} placeholder="00.000.000/0001-00" mono />

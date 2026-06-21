@@ -1,21 +1,40 @@
 /**
  * server/pdf.ts
- * Geração de PDF de contrato usando pdfkit.
- * Busca os dados da empresa em system_settings antes de gerar o PDF.
- * Retorna um Buffer com o PDF pronto para upload no S3.
+ * Geração de PDF de contrato — layout Bike To Go aprovado.
+ * Header dark/gold, logo BTG, partes contratantes, tabelas, termos, assinaturas, rodapé.
+ * Retorna Promise<Buffer> — o upload pro S3 é feito pelo chamador.
  */
 
 import PDFDocument from "pdfkit";
+import path from "path";
+import fs from "fs";
 
+// ── Paleta ────────────────────────────────────────────────────────────────────
+const DARK   = "#1A1A1A";
+const GOLD   = "#C8920A";
+const CREAM  = "#FBF6E9";
+const INK    = "#2A2A2A";
+const MUTED  = "#7C7C7C";
+const LINE   = "#E6E1D5";
+const ALT    = "#FAF7EF";
+const WHITE  = "#FFFFFF";
+const BANDTX = "#BDBDBD";
+
+// ── Layout ────────────────────────────────────────────────────────────────────
+const M     = 40;   // margem esquerda
+const RIGHT = 555;  // margem direita
+const CW    = RIGHT - M; // largura útil
+
+// ── Interface ─────────────────────────────────────────────────────────────────
 export interface ContractPdfData {
   contractId: number;
   clientName: string;
   clientCpf?: string | null;
+  clientRg?: string | null;
   clientPhone?: string | null;
   clientEmail?: string | null;
   criadoEm: Date | string;
   valorTotal?: string | null;
-  // Bikes alugadas
   rentals: Array<{
     bikeModel?: string | null;
     bikeBrand?: string | null;
@@ -23,54 +42,59 @@ export interface ContractPdfData {
     startDate?: Date | string | null;
     endDate?: Date | string | null;
     totalAmount?: string | null;
+    tamanho?: string | null;
+    dailyRate?: string | null;
   }>;
-  // Acessórios
   accessories: Array<{
     accessoryName?: string | null;
     qty?: number | null;
     serialNumber?: string | null;
+    valorReposicao?: string | null;
   }>;
 }
 
-/**
- * Renderiza os termos e condições no PDF.
- * Parágrafos separados por linha em branco recebem espaçamento extra.
- * Linhas que começam com número seguido de ponto/hífen são tratadas como cláusulas (negrito).
- */
-function renderTerms(doc: PDFKit.PDFDocument, text: string, width: number): void {
-  const paragraphs = text.split(/\n{2,}/).map((p) => p.trim()).filter(Boolean);
-  for (let i = 0; i < paragraphs.length; i++) {
-    const para = paragraphs[i];
-    const isClause = /^\d+[.\-)\s]/.test(para);
-    if (isClause) {
-      const lines = para.split("\n");
-      const firstLine = lines[0];
-      const rest = lines.slice(1).join("\n").trim();
-      doc.fontSize(8).fillColor("#1f2937").font("Helvetica-Bold").text(firstLine, { width });
-      if (rest) {
-        doc.fontSize(8).fillColor("#374151").font("Helvetica").text(rest, { width });
-      }
-    } else {
-      doc.fontSize(8).fillColor("#374151").font("Helvetica").text(para, { width });
-    }
-    if (i < paragraphs.length - 1) doc.moveDown(0.4);
-  }
-}
-
+// ── Helpers ───────────────────────────────────────────────────────────────────
 function formatDate(d: Date | string | null | undefined): string {
   if (!d) return "—";
   const dt = typeof d === "string" ? new Date(d) : d;
+  if (isNaN(dt.getTime())) return "—";
   return dt.toLocaleDateString("pt-BR");
 }
 
-function formatCurrency(v: string | null | undefined): string {
-  if (!v) return "—";
-  const n = parseFloat(v);
+function formatDateLong(d: Date | string | null | undefined): string {
+  if (!d) return "—";
+  const dt = typeof d === "string" ? new Date(d) : d;
+  if (isNaN(dt.getTime())) return "—";
+  return dt.toLocaleDateString("pt-BR", { day: "numeric", month: "long", year: "numeric" });
+}
+
+function formatCurrency(v: string | number | null | undefined): string {
+  if (v === null || v === undefined || v === "") return "—";
+  const n = typeof v === "number" ? v : parseFloat(String(v));
   if (isNaN(n)) return "—";
   return n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
 
-/** Busca um setting do banco e retorna o valor ou um placeholder descritivo */
+function calcSubtotal(r: ContractPdfData["rentals"][0]): string {
+  if (r.totalAmount) return formatCurrency(r.totalAmount);
+  if (r.dailyRate && r.startDate && r.endDate) {
+    const s = new Date(r.startDate as string);
+    const e = new Date(r.endDate as string);
+    const days = Math.max(1, Math.ceil((e.getTime() - s.getTime()) / 86400000));
+    const rate = parseFloat(String(r.dailyRate));
+    if (!isNaN(rate)) return formatCurrency(rate * days);
+  }
+  return "—";
+}
+
+function periodLabel(r: ContractPdfData["rentals"][0]): string {
+  const s = formatDate(r.startDate);
+  const e = formatDate(r.endDate);
+  if (s === "—" && e === "—") return "—";
+  if (s === e) return s;
+  return `${s} a ${e}`;
+}
+
 async function fetchSetting(key: string, placeholder: string): Promise<string> {
   try {
     const { getSetting } = await import("./db");
@@ -81,183 +105,347 @@ async function fetchSetting(key: string, placeholder: string): Promise<string> {
   }
 }
 
+/** Baixa a logo da URL ou cai no asset embarcado. NUNCA lança exceção. */
+async function fetchLogoBuffer(logoUrl: string | null): Promise<Buffer | null> {
+  // Tentar URL remota (http ou https)
+  if (logoUrl && logoUrl.startsWith("http")) {
+    try {
+      const res = await fetch(logoUrl, { signal: AbortSignal.timeout(5000) });
+      if (res.ok) {
+        const ab = await res.arrayBuffer();
+        return Buffer.from(ab);
+      }
+    } catch {
+      // cai no fallback
+    }
+  }
+  // Fallback: logo BTG padrão via manus-storage (S3)
+  const DEFAULT_LOGO_KEY = "logo-btg_a866cb03.png";
+  try {
+    const { ENV } = await import("./_core/env");
+    if (ENV.forgeApiUrl && ENV.forgeApiKey) {
+      const forgeUrl = new URL(
+        "v1/storage/presign/get",
+        ENV.forgeApiUrl.replace(/\/+$/, "") + "/",
+      );
+      forgeUrl.searchParams.set("path", DEFAULT_LOGO_KEY);
+      const forgeResp = await fetch(forgeUrl, {
+        headers: { Authorization: `Bearer ${ENV.forgeApiKey}` },
+        signal: AbortSignal.timeout(5000),
+      });
+      if (forgeResp.ok) {
+        const { url } = (await forgeResp.json()) as { url: string };
+        if (url) {
+          const imgResp = await fetch(url, { signal: AbortSignal.timeout(5000) });
+          if (imgResp.ok) {
+            const ab = await imgResp.arrayBuffer();
+            return Buffer.from(ab);
+          }
+        }
+      }
+    }
+  } catch {
+    // sem logo — ok
+  }
+  return null;
+}
+
+/** Renderiza termos numerados com número dourado */
+function renderTerms(doc: PDFKit.PDFDocument, text: string): void {
+  const paragraphs = text.split(/\n{2,}/).map((p) => p.trim()).filter(Boolean);
+  for (let i = 0; i < paragraphs.length; i++) {
+    const para = paragraphs[i];
+    const clauseMatch = para.match(/^(\d+[.\-)\s]+)([\s\S]*)/);
+    const y = doc.y;
+    if (clauseMatch) {
+      doc.fillColor(GOLD).font("Helvetica-Bold").fontSize(8.5)
+        .text(clauseMatch[1].trim(), M, y, { width: 14, lineBreak: false });
+      doc.fillColor(INK).font("Helvetica").fontSize(8.5)
+        .text(clauseMatch[2].trim(), M + 16, y, { width: CW - 16 });
+    } else {
+      doc.fillColor(INK).font("Helvetica").fontSize(8.5)
+        .text(para, M, y, { width: CW });
+    }
+    doc.moveDown(0.35);
+  }
+}
+
+// ── Gerador principal ─────────────────────────────────────────────────────────
 export async function generateContractPdf(data: ContractPdfData): Promise<Buffer> {
-  // ── Buscar dados da empresa nas Configurações ──────────────────────────────
+  // Buscar settings da empresa
   const [
     empresaNome,
     empresaCnpj,
     empresaEndereco,
     empresaCidade,
-    empresaEstado,
-    empresaTelefone,
     empresaEmail,
-    empresaForo,
     empresaTermos,
     empresaCaucao,
+    empresaSub,
+    logoUrl,
   ] = await Promise.all([
     fetchSetting("company_name",    "[Razão Social não configurada]"),
     fetchSetting("company_cnpj",    "[CNPJ não configurado]"),
     fetchSetting("company_address", "[Endereço não configurado]"),
     fetchSetting("company_city",    "[Cidade não configurada]"),
-    fetchSetting("company_state",   "[Estado não configurado]"),
-    fetchSetting("company_phone",   "[Telefone não configurado]"),
     fetchSetting("company_email",   "[E-mail não configurado]"),
-    fetchSetting("company_foro",    "[Foro não configurado]"),
     fetchSetting("company_terms",   ""),
     fetchSetting("company_caucao",  ""),
+    fetchSetting("company_subtitle","Locação de bicicletas"),
+    fetchSetting("company_logo_url",""),
   ]);
 
+  const logoBuffer = await fetchLogoBuffer(logoUrl || null);
+
+  const emitidoEm = formatDate(data.criadoEm);
+  const emitidoLong = formatDateLong(data.criadoEm);
+  const contractNum = String(data.contractId).padStart(4, "0");
+
   return new Promise((resolve, reject) => {
-    const doc = new PDFDocument({ margin: 50, size: "A4" });
+    const doc = new PDFDocument({ margin: M, size: "A4", autoFirstPage: true });
     const chunks: Buffer[] = [];
-    doc.on("data", (chunk) => chunks.push(chunk));
-    doc.on("end", () => resolve(Buffer.concat(chunks)));
+    doc.on("data", (c) => chunks.push(c));
+    doc.on("end",  () => resolve(Buffer.concat(chunks)));
     doc.on("error", reject);
 
-    const primaryColor = "#1a56db";
-    const grayColor = "#6b7280";
-    const lineColor = "#e5e7eb";
-    const pageWidth = doc.page.width - 100; // margins 50 each side
+    const W = doc.page.width;
+    const H = doc.page.height;
 
-    // ── Header ──────────────────────────────────────────────────────────────
-    // Coluna esquerda: dados da empresa (largura fixa para não invadir a direita)
-    doc.fontSize(20).fillColor(primaryColor).font("Helvetica-Bold")
-      .text(empresaNome, 50, 50, { width: 320 });
-    doc.fontSize(9).fillColor(grayColor).font("Helvetica");
-    doc.text(`CNPJ: ${empresaCnpj}`, 50, doc.y, { width: 320 });
-    const addr = [empresaEndereco, empresaCidade, empresaEstado].filter(Boolean).join(", ");
-    if (addr) doc.text(addr, 50, doc.y, { width: 320 });
-    doc.text(`Tel: ${empresaTelefone}`, 50, doc.y, { width: 320 });
-    doc.text(`E-mail: ${empresaEmail}`, 50, doc.y, { width: 320 });
-    const leftEndY = doc.y;
+    // ── HEADER BAND ──────────────────────────────────────────────────────────
+    doc.rect(0, 0, W, 84).fill(DARK);
+    doc.rect(0, 84, W, 2.5).fill(GOLD);
 
-    // Coluna direita: número do contrato + data
-    doc.fontSize(14).fillColor(primaryColor).font("Helvetica-Bold")
-      .text(`CONTRATO #${data.contractId}`, 50, 50, { align: "right" });
-    doc.fontSize(9).fillColor(grayColor).font("Helvetica")
-      .text(`Emitido em: ${formatDate(data.criadoEm)}`, { align: "right" });
-    const rightEndY = doc.y;
-
-    // Cursor abaixo da coluna mais alta
-    doc.x = 50;
-    doc.y = Math.max(leftEndY, rightEndY) + 15;
-
-    // ── Divider ──────────────────────────────────────────────────────────────
-    doc.moveTo(50, doc.y).lineTo(50 + pageWidth, doc.y).strokeColor(lineColor).stroke();
-    doc.moveDown(0.5);
-
-    // ── Dados do Cliente ─────────────────────────────────────────────────────
-    doc.fontSize(11).fillColor(primaryColor).font("Helvetica-Bold").text("DADOS DO CLIENTE");
-    doc.moveDown(0.3);
-    doc.fontSize(9).fillColor("#111827").font("Helvetica");
-    doc.text(`Nome: ${data.clientName || "—"}`);
-    if (data.clientCpf) doc.text(`CPF: ${data.clientCpf}`);
-    if (data.clientPhone) doc.text(`Telefone: ${data.clientPhone}`);
-    if (data.clientEmail) doc.text(`E-mail: ${data.clientEmail}`);
-    doc.moveDown(1);
-
-    // ── Bicicletas ───────────────────────────────────────────────────────────
-    doc.fontSize(11).fillColor(primaryColor).font("Helvetica-Bold").text("BICICLETAS ALUGADAS");
-    doc.moveDown(0.3);
-    doc.moveTo(50, doc.y).lineTo(50 + pageWidth, doc.y).strokeColor(lineColor).stroke();
-    doc.moveDown(0.3);
-
-    if (data.rentals.length === 0) {
-      doc.fontSize(9).fillColor(grayColor).font("Helvetica").text("Nenhuma bicicleta vinculada.");
-    } else {
-      // Table header
-      const colX = [50, 200, 310, 390, 470];
-      doc.fontSize(8).fillColor(grayColor).font("Helvetica-Bold");
-      doc.text("Modelo / Marca", colX[0], doc.y, { width: 145, continued: false });
-      const headerY = doc.y - doc.currentLineHeight();
-      doc.text("Nº Série", colX[1], headerY, { width: 105 });
-      doc.text("Início", colX[2], headerY, { width: 75 });
-      doc.text("Devolução", colX[3], headerY, { width: 75 });
-      doc.text("Valor", colX[4], headerY, { width: 80, align: "right" });
-      doc.moveDown(0.3);
-      doc.moveTo(50, doc.y).lineTo(50 + pageWidth, doc.y).strokeColor(lineColor).stroke();
-      doc.moveDown(0.3);
-
-      for (const r of data.rentals) {
-        const model = [r.bikeModel, r.bikeBrand].filter(Boolean).join(" / ") || "—";
-        const rowY = doc.y;
-        doc.fontSize(9).fillColor("#111827").font("Helvetica");
-        doc.text(model, colX[0], rowY, { width: 145 });
-        doc.text(r.bikeSerialNumber || "—", colX[1], rowY, { width: 105 });
-        doc.text(formatDate(r.startDate), colX[2], rowY, { width: 75 });
-        doc.text(formatDate(r.endDate), colX[3], rowY, { width: 75 });
-        doc.text(formatCurrency(r.totalAmount), colX[4], rowY, { width: 80, align: "right" });
-        doc.moveDown(0.5);
+    // Logo
+    if (logoBuffer) {
+      try {
+        doc.image(logoBuffer, 28, 10, { fit: [100, 64] });
+      } catch {
+        // sem logo — ok
       }
     }
-    doc.moveDown(0.8);
 
-    // ── Acessórios ───────────────────────────────────────────────────────────
-    if (data.accessories.length > 0) {
-      doc.fontSize(11).fillColor(primaryColor).font("Helvetica-Bold").text("ACESSÓRIOS INCLUÍDOS");
-      doc.moveDown(0.3);
-      doc.moveTo(50, doc.y).lineTo(50 + pageWidth, doc.y).strokeColor(lineColor).stroke();
-      doc.moveDown(0.3);
+    // Título e subtítulo
+    doc.fillColor(WHITE).font("Helvetica-Bold").fontSize(13)
+      .text("CONTRATO DE LOCAÇÃO DE BICICLETA", 140, 24, { width: 220 });
+    doc.fillColor(BANDTX).font("Helvetica").fontSize(8)
+      .text(`${empresaNome} · ${empresaSub}`, 140, 46, { width: 220 });
 
-      for (const a of data.accessories) {
-        const rowY = doc.y;
-        doc.fontSize(9).fillColor("#111827").font("Helvetica");
-        doc.text(`• ${a.accessoryName || "—"}`, 50, rowY, { width: 250 });
-        doc.text(`Qtd: ${a.qty ?? 1}`, 310, rowY, { width: 80 });
-        if (a.serialNumber) doc.text(`Nº Série: ${a.serialNumber}`, 400, rowY, { width: 150 });
-        doc.moveDown(0.5);
-      }
-      doc.moveDown(0.8);
+    // Nº e data (alinhados à direita)
+    doc.fillColor(GOLD).font("Helvetica-Bold").fontSize(13)
+      .text(`Nº ${contractNum}`, 360, 22, { width: CW - 320, align: "right" });
+    doc.fillColor(BANDTX).font("Helvetica").fontSize(8)
+      .text(`Emitido em ${emitidoEm}`, 360, 44, { width: CW - 320, align: "right" });
+
+    doc.y = 104; doc.x = M;
+
+    // ── Helper: título de seção ───────────────────────────────────────────────
+    function sectionTitle(n: number, t: string) {
+      doc.moveDown(0.7);
+      const y = doc.y;
+      doc.fillColor(INK).font("Helvetica-Bold").fontSize(10)
+        .text(`${n}. ${t}`, M, y);
+      doc.moveDown(0.25);
+      doc.moveTo(M, doc.y).lineTo(RIGHT, doc.y)
+        .lineWidth(0.6).strokeColor(GOLD).stroke();
+      doc.moveDown(0.45);
     }
 
-    // ── Total ────────────────────────────────────────────────────────────────
-    doc.moveTo(50, doc.y).lineTo(50 + pageWidth, doc.y).strokeColor(lineColor).stroke();
-    doc.moveDown(0.5);
-    doc.fontSize(11).fillColor(primaryColor).font("Helvetica-Bold")
-      .text(`VALOR TOTAL: ${formatCurrency(data.valorTotal)}`, { align: "right" });
-    doc.moveDown(1.5);
+    // ── 1. PARTES CONTRATANTES ────────────────────────────────────────────────
+    sectionTitle(1, "Partes contratantes");
+    {
+      const gap = 16, bw = (CW - gap) / 2, bx2 = M + bw + gap;
+      const y0 = doc.y, bh = 92, pad = 11;
 
-    // ── Caução ───────────────────────────────────────────────────────────────
-    if (empresaCaucao && empresaCaucao.trim() !== "") {
-      doc.fontSize(9).fillColor(grayColor).font("Helvetica")
-        .text(`Caução: ${empresaCaucao}`, { align: "right" });
-      doc.moveDown(1);
-    }
+      const locadoraRows: [string, string][] = [
+        ["Razão social", empresaNome],
+        ["CNPJ",         empresaCnpj],
+        ["Endereço",     empresaEndereco],
+        ["Cidade",       empresaCidade],
+      ];
+      const locatarioRows: [string, string][] = [
+        ["Nome",     data.clientName || "—"],
+        ["CPF",      data.clientCpf  || "—"],
+        ["RG",       data.clientRg   || "—"],
+        ["Telefone", data.clientPhone || "—"],
+      ];
 
-    // ── Termos e Condições ───────────────────────────────────────────────────
-    if (empresaTermos && empresaTermos.trim() !== "") {
-      doc.moveTo(50, doc.y).lineTo(50 + pageWidth, doc.y).strokeColor(lineColor).stroke();
-      doc.moveDown(0.5);
-      doc.fontSize(10).fillColor(primaryColor).font("Helvetica-Bold").text("TERMOS E CONDIÇÕES");
-      doc.moveDown(0.3);
-      renderTerms(doc, empresaTermos, pageWidth);
-      doc.moveDown(1);
-    }
-
-    // ── Foro ─────────────────────────────────────────────────────────────────
-    if (empresaForo && empresaForo !== "[Foro não configurado]") {
-      doc.fontSize(8).fillColor(grayColor).font("Helvetica")
-        .text(`Foro: ${empresaForo}`, { width: pageWidth });
-      doc.moveDown(1.5);
-    } else {
-      doc.moveDown(1);
-    }
-
-    // ── Assinaturas ──────────────────────────────────────────────────────────
-    const sigY = doc.y;
-    const sigWidth = (pageWidth - 40) / 2;
-    doc.fontSize(9).fillColor(grayColor).font("Helvetica");
-    doc.moveTo(50, sigY + 30).lineTo(50 + sigWidth, sigY + 30).strokeColor("#9ca3af").stroke();
-    doc.text("Assinatura do Cliente", 50, sigY + 35, { width: sigWidth, align: "center" });
-    doc.moveTo(50 + sigWidth + 40, sigY + 30).lineTo(50 + pageWidth, sigY + 30).strokeColor("#9ca3af").stroke();
-    doc.text(`Assinatura — ${empresaNome}`, 50 + sigWidth + 40, sigY + 35, { width: sigWidth, align: "center" });
-
-    // ── Footer ───────────────────────────────────────────────────────────────
-    doc.fontSize(7).fillColor(grayColor)
-      .text(
-        `Documento gerado em ${new Date().toLocaleString("pt-BR")} — Contrato #${data.contractId}`,
-        50, doc.page.height - 50, { align: "center", width: pageWidth, lineBreak: false }
+      ([ [M, "LOCADORA", locadoraRows], [bx2, "LOCATÁRIO(A)", locatarioRows] ] as const).forEach(
+        ([bx, title, rows]) => {
+          doc.rect(bx as number, y0, bw, bh).fill(CREAM);
+          doc.rect(bx as number, y0, 3, bh).fill(GOLD);
+          doc.fillColor(GOLD).font("Helvetica-Bold").fontSize(9)
+            .text(title as string, (bx as number) + pad, y0 + 9);
+          let yy = y0 + 26;
+          (rows as [string, string][]).forEach(([l, v]) => {
+            doc.fontSize(8).fillColor(MUTED).font("Helvetica")
+              .text(`${l}: `, (bx as number) + pad, yy, { continued: true, width: bw - 2 * pad });
+            doc.fillColor(INK).text(v);
+            yy += 15;
+          });
+        }
       );
+      doc.y = y0 + bh; doc.x = M;
+    }
+
+    // ── 2. OBJETO DA LOCAÇÃO ──────────────────────────────────────────────────
+    sectionTitle(2, "Objeto da locação");
+    {
+      const cols = [
+        { k: "n",      x: M,   w: 22,  t: "Nº",          a: "left"  as const },
+        { k: "modelo", x: 62,  w: 130, t: "Modelo",       a: "left"  as const },
+        { k: "tam",    x: 194, w: 36,  t: "Tam.",         a: "left"  as const },
+        { k: "sis",    x: 232, w: 64,  t: "Nº sistema",   a: "left"  as const },
+        { k: "per",    x: 298, w: 100, t: "Período",      a: "left"  as const },
+        { k: "diaria", x: 400, w: 66,  t: "Diária",       a: "right" as const },
+        { k: "sub",    x: 468, w: 87,  t: "Subtotal",     a: "right" as const },
+      ];
+
+      let y = doc.y;
+      doc.rect(M, y, CW, 18).fill(DARK);
+      doc.fillColor(WHITE).font("Helvetica-Bold").fontSize(7.5);
+      cols.forEach((c) =>
+        doc.text(c.t, c.x + 4, y + 5.5, { width: c.w - 8, align: c.a, lineBreak: false })
+      );
+      y += 18;
+
+      data.rentals.forEach((r, i) => {
+        if (i % 2 === 0) doc.rect(M, y, CW, 16).fill(ALT);
+        doc.fillColor(INK).font("Helvetica").fontSize(8.5);
+        const row: Record<string, string> = {
+          n:      String(i + 1),
+          modelo: [r.bikeModel, r.bikeBrand].filter(Boolean).join(" ") || "—",
+          tam:    r.tamanho || "—",
+          sis:    r.bikeSerialNumber || "—",
+          per:    periodLabel(r),
+          diaria: formatCurrency(r.dailyRate),
+          sub:    calcSubtotal(r),
+        };
+        cols.forEach((c) =>
+          doc.text(row[c.k], c.x + 4, y + 4.5, { width: c.w - 8, align: c.a, lineBreak: false })
+        );
+        y += 16;
+      });
+
+      if (data.rentals.length === 0) {
+        doc.fillColor(MUTED).font("Helvetica").fontSize(8.5)
+          .text("Nenhuma bicicleta vinculada.", M + 4, y + 4);
+        y += 16;
+      }
+
+      doc.y = y; doc.x = M;
+      doc.moveDown(0.3);
+      doc.fillColor(GOLD).font("Helvetica-Oblique").fontSize(7.5)
+        .text(
+          "Nº de sistema — número de controle físico de cada bicicleta, conferido na retirada e na devolução.",
+          M, doc.y, { width: CW }
+        );
+    }
+
+    // ── 3. ACESSÓRIOS INCLUSOS ────────────────────────────────────────────────
+    sectionTitle(3, "Acessórios inclusos");
+    {
+      const cols = [
+        { k: "item", x: M,   w: 330, t: "Item",                a: "left"  as const },
+        { k: "un",   x: 370, w: 100, t: "Nº unidade",          a: "left"  as const },
+        { k: "val",  x: 470, w: 85,  t: "Valor de reposição",  a: "right" as const },
+      ];
+
+      let y = doc.y;
+      doc.rect(M, y, CW, 18).fill(DARK);
+      doc.fillColor(WHITE).font("Helvetica-Bold").fontSize(7.5);
+      cols.forEach((c) =>
+        doc.text(c.t, c.x + 4, y + 5.5, { width: c.w - 8, align: c.a, lineBreak: false })
+      );
+      y += 18;
+
+      data.accessories.forEach((a, i) => {
+        if (i % 2 === 0) doc.rect(M, y, CW, 16).fill(ALT);
+        doc.fillColor(INK).font("Helvetica").fontSize(8.5);
+        const row: Record<string, string> = {
+          item: a.accessoryName || "—",
+          un:   a.serialNumber  || "—",
+          val:  formatCurrency(a.valorReposicao),
+        };
+        cols.forEach((c) =>
+          doc.text(row[c.k], c.x + 4, y + 4.5, { width: c.w - 8, align: c.a, lineBreak: false })
+        );
+        y += 16;
+      });
+
+      if (data.accessories.length === 0) {
+        doc.fillColor(MUTED).font("Helvetica").fontSize(8.5)
+          .text("Nenhum acessório vinculado.", M + 4, y + 4);
+        y += 16;
+      }
+
+      doc.y = y; doc.x = M;
+    }
+
+    // ── 4. VALORES ────────────────────────────────────────────────────────────
+    sectionTitle(4, "Valores");
+    {
+      const y = doc.y;
+      doc.fillColor(INK).font("Helvetica-Bold").fontSize(9.5)
+        .text("Total da locação", M, y, { width: 300, lineBreak: false });
+      doc.fillColor(DARK).font("Helvetica-Bold").fontSize(12)
+        .text(formatCurrency(data.valorTotal), M, y - 2, { width: CW, align: "right", lineBreak: false });
+
+      const y2 = y + 22;
+      doc.moveTo(M, y2).lineTo(RIGHT, y2).lineWidth(0.5).strokeColor(LINE).stroke();
+
+      const y3 = y2 + 7;
+      if (empresaCaucao && empresaCaucao.trim() !== "") {
+        doc.fillColor(MUTED).font("Helvetica").fontSize(8.5)
+          .text("Caução (devolvida na entrega das bikes)", M, y3, { width: 300, lineBreak: false });
+        doc.fillColor(INK).font("Helvetica").fontSize(8.5)
+          .text(empresaCaucao, M, y3, { width: CW, align: "right", lineBreak: false });
+      }
+      doc.y = y3 + 14; doc.x = M;
+    }
+
+    // ── 5. TERMOS E CONDIÇÕES ─────────────────────────────────────────────────
+    sectionTitle(5, "Termos e condições");
+    if (empresaTermos && empresaTermos.trim() !== "") {
+      renderTerms(doc, empresaTermos);
+    } else {
+      doc.fillColor(MUTED).font("Helvetica-Oblique").fontSize(8)
+        .text("Os termos e condições serão exibidos após configuração em Configurações → Termos.", M, doc.y, { width: CW });
+      doc.moveDown(0.5);
+    }
+
+    // ── ASSINATURAS ───────────────────────────────────────────────────────────
+    doc.moveDown(2.4);
+    const sy = doc.y;
+    const sw = (CW - 60) / 2;
+
+    doc.moveTo(M, sy).lineTo(M + sw, sy).lineWidth(0.7).strokeColor("#9A9A9A").stroke();
+    doc.moveTo(M + sw + 60, sy).lineTo(RIGHT, sy).lineWidth(0.7).strokeColor("#9A9A9A").stroke();
+
+    doc.fillColor(INK).font("Helvetica").fontSize(9)
+      .text(empresaNome, M, sy + 6, { width: sw, align: "center" });
+    doc.fillColor(GOLD).font("Helvetica-Bold").fontSize(7)
+      .text("LOCADORA", M, sy + 19, { width: sw, align: "center" });
+
+    doc.fillColor(INK).font("Helvetica").fontSize(9)
+      .text(data.clientName || "—", M + sw + 60, sy + 6, { width: sw, align: "center" });
+    doc.fillColor(GOLD).font("Helvetica-Bold").fontSize(7)
+      .text("LOCATÁRIO(A)", M + sw + 60, sy + 19, { width: sw, align: "center" });
+
+    // ── FECHO ─────────────────────────────────────────────────────────────────
+    doc.moveDown(2.2);
+    doc.fillColor(MUTED).font("Helvetica").fontSize(8.5)
+      .text(`${empresaCidade}, ${emitidoLong}.`, M, doc.y, { width: CW, align: "center" });
+
+    // ── FOOTER BAND ───────────────────────────────────────────────────────────
+    doc.page.margins.bottom = 0;
+    doc.rect(0, H - 26, W, 26).fill(DARK);
+    doc.fillColor(BANDTX).font("Helvetica").fontSize(7)
+      .text(
+        `${empresaNome} · CNPJ ${empresaCnpj} · ${empresaCidade} · ${empresaEmail}`,
+        M, H - 17, { width: CW - 60, lineBreak: false }
+      );
+    doc.fillColor(GOLD).font("Helvetica").fontSize(7)
+      .text("Página 1", M, H - 17, { width: CW, align: "right", lineBreak: false });
 
     doc.end();
   });

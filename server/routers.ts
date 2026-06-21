@@ -1231,16 +1231,22 @@ const rentalsRouter = router({
           : [null];
         const rentalsForPdf = await db.select({
           bikeId: rentalsTable.bikeId, startDate: rentalsTable.startDate, endDate: rentalsTable.endDate,
-          totalAmount: rentalsTable.totalAmount,
+          totalAmount: rentalsTable.totalAmount, dailyRate: rentalsTable.dailyRate,
+          bikeSizeId: rentalsTable.bikeSizeId,
         }).from(rentalsTable).where(andPdf(eqPdf(rentalsTable.contractId, input.contractId), isNullPdf(rentalsTable.deletedAt)));
-        const { bikes: bikesT } = await import("../drizzle/schema");
+        const { bikes: bikesT, bikeSizes: bkSizesT } = await import("../drizzle/schema");
         const rentalsWithBike = await Promise.all(rentalsForPdf.map(async (r) => {
           const [bike] = r.bikeId ? await db.select({ model: bikesT.model, brand: bikesT.brand, serialNumber: bikesT.serialNumber }).from(bikesT).where(eqPdf(bikesT.id, r.bikeId)) : [null];
-          return { ...r, bikeModel: bike?.model, bikeBrand: bike?.brand, bikeSerialNumber: bike?.serialNumber };
+          let tamanho: string | null = null;
+          if (r.bikeSizeId) {
+            const [sz] = await db.select({ tamanho: bkSizesT.tamanho }).from(bkSizesT).where(eqPdf(bkSizesT.id, r.bikeSizeId));
+            tamanho = sz?.tamanho ?? null;
+          }
+          return { ...r, bikeModel: bike?.model, bikeBrand: bike?.brand, bikeSerialNumber: bike?.serialNumber, tamanho };
         }));
         const caRows3 = await db.select({
           accessoryId: caTable3.accessoryId, qty: caTable3.qty, unitId: caTable3.unitId,
-          accessoryName: accTable2.name,
+          accessoryName: accTable2.name, replacementValue: accTable2.replacementValue,
         }).from(caTable3).leftJoin(accTable2, eqPdf(caTable3.accessoryId, accTable2.id)).where(eqPdf(caTable3.contractId, input.contractId));
         const accWithSerial = await Promise.all(caRows3.map(async (ca) => {
           let serialNumber: string | null = null;
@@ -1248,14 +1254,14 @@ const rentalsRouter = router({
             const [unit] = await db.select({ serialNumber: auTable3.serialNumber }).from(auTable3).where(eqPdf(auTable3.id, ca.unitId));
             serialNumber = unit?.serialNumber ?? null;
           }
-          return { accessoryName: ca.accessoryName, qty: ca.qty, serialNumber };
+          return { accessoryName: ca.accessoryName, qty: ca.qty, serialNumber, valorReposicao: ca.replacementValue };
         }));
-        // Read company settings
         // Dados da empresa são buscados internamente por generateContractPdf via getSetting("company_*")
         const pdfBuffer = await generateContractPdf({
           contractId: input.contractId,
           clientName: clientRow?.name ?? "—",
           clientCpf: clientRow?.cpf ?? null,
+          clientRg: clientRow?.rg ?? null,
           clientPhone: clientRow?.phone ?? null,
           clientEmail: clientRow?.email ?? null,
           criadoEm: contractRow?.criadoEm ?? new Date(),
@@ -1919,6 +1925,25 @@ const settingsRouter = router({
         await setSetting(e.key, valueToSave);
       }
       return { success: true };
+    }),
+  uploadLogo: adminOnlyProcedure
+    .input(z.object({
+      base64: z.string(),
+      mimeType: z.string().default("image/png"),
+    }))
+    .mutation(async ({ input }) => {
+      const mime = input.mimeType || "image/png";
+      if (!mime.startsWith("image/")) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Apenas imagens são permitidas para a logo." });
+      }
+      const { storagePut } = await import("./storage");
+      const base64Data = input.base64.replace(/^data:[^;]+;base64,/, "");
+      const buffer = Buffer.from(base64Data, "base64");
+      const ext = mime.split("/")[1] || "png";
+      const key = `company/logo-${Date.now()}.${ext}`;
+      const { url } = await storagePut(key, buffer, mime);
+      await setSetting("company_logo_url", url);
+      return { url };
     }),
 });
 
