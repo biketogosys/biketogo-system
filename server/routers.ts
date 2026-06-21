@@ -346,6 +346,8 @@ const clientsRouter = router({
       complement: z.string().optional(),
       lgpdConsent: z.boolean().optional(),
       lgpdConsentAt: z.string().optional(),
+      docFrontUrl: z.string().optional(),
+      docBackUrl: z.string().optional(),
     }))
     .mutation(async ({ input }) => {
       validarDocumentoCliente({
@@ -384,6 +386,8 @@ const clientsRouter = router({
         complement: sanitize(input.complement) as string | null,
         lgpdConsent: input.lgpdConsent ?? false,
         lgpdConsentAt: input.lgpdConsent ? new Date() : null,
+        docFrontUrl: sanitize(input.docFrontUrl) as string | null,
+        docBackUrl: sanitize(input.docBackUrl) as string | null,
       });
       return { id };
     }),
