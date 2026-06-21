@@ -69,6 +69,8 @@ export const clients = pgTable("clients", {
   id: serial("id").primaryKey(),
   // Identification
   name: varchar("name", { length: 255 }).notNull(),
+  firstName: varchar("firstName", { length: 100 }),
+  lastName: varchar("lastName", { length: 100 }),
   cpf: varchar("cpf", { length: 14 }),
   rg: varchar("rg", { length: 20 }),
   birthDate: varchar("birthDate", { length: 10 }),

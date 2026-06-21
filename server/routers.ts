@@ -318,6 +318,8 @@ const clientsRouter = router({
   create: adminAuthProcedure
     .input(z.object({
       name: z.string().min(2),
+      firstName: z.string().min(2).optional(),
+      lastName: z.string().min(2).optional(),
       cpf: z.string().optional(),
       rg: z.string().optional(),
       birthDate: z.string().optional(),
@@ -346,8 +348,6 @@ const clientsRouter = router({
       complement: z.string().optional(),
       lgpdConsent: z.boolean().optional(),
       lgpdConsentAt: z.string().optional(),
-      docFrontUrl: z.string().optional(),
-      docBackUrl: z.string().optional(),
     }))
     .mutation(async ({ input }) => {
       validarDocumentoCliente({
@@ -360,6 +360,8 @@ const clientsRouter = router({
       const id = await createClient({
         ...input,
         source: "manual",
+        firstName: sanitize(input.firstName) as string | null,
+        lastName: sanitize(input.lastName) as string | null,
         cpf: sanitize(input.cpf) as string | null,
         rg: sanitize(input.rg) as string | null,
         birthDate: sanitize(input.birthDate) as string | null,
@@ -386,8 +388,6 @@ const clientsRouter = router({
         complement: sanitize(input.complement) as string | null,
         lgpdConsent: input.lgpdConsent ?? false,
         lgpdConsentAt: input.lgpdConsent ? new Date() : null,
-        docFrontUrl: sanitize(input.docFrontUrl) as string | null,
-        docBackUrl: sanitize(input.docBackUrl) as string | null,
       });
       return { id };
     }),
