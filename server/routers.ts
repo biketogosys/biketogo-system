@@ -2436,7 +2436,7 @@ const contractsRouter = router({
       const [contract] = await db.insert(contracts).values({
         clientId: input.clientId,
         valorTotal: input.valorTotal ?? null,
-        status: "ativo",
+        status: "pendente",
       }).returning({ id: contracts.id });
       // Link rentals to contract
       for (const rentalId of input.rentalIds) {
