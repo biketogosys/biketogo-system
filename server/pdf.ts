@@ -212,31 +212,31 @@ export async function generateContractPdf(data: ContractPdfData): Promise<Buffer
     const H = doc.page.height;
 
     // ── HEADER BAND ──────────────────────────────────────────────────────────
-    doc.rect(0, 0, W, 84).fill(DARK);
-    doc.rect(0, 84, W, 2.5).fill(GOLD);
+    doc.rect(0, 0, W, 90).fill(DARK);
+    doc.rect(0, 90, W, 2.5).fill(GOLD);
 
     // Logo
     if (logoBuffer) {
       try {
-        doc.image(logoBuffer, 28, 10, { fit: [100, 64] });
+        doc.image(logoBuffer, 30, 20, { fit: [84, 52] });
       } catch {
         // sem logo — ok
       }
     }
 
     // Título e subtítulo
-    doc.fillColor(WHITE).font("Helvetica-Bold").fontSize(13)
-      .text("CONTRATO DE LOCAÇÃO DE BICICLETA", 140, 24, { width: 220 });
+    doc.fillColor(WHITE).font("Helvetica-Bold").fontSize(12)
+      .text("CONTRATO DE LOCAÇÃO DE BICICLETA", 126, 30, { width: 236, lineBreak: false });
     doc.fillColor(BANDTX).font("Helvetica").fontSize(8)
-      .text(`${empresaNome} · ${empresaSub}`, 140, 46, { width: 220 });
+      .text(`${empresaNome} · ${empresaSub}`, 126, 50, { width: 236, lineBreak: false });
 
     // Nº e data (alinhados à direita)
-    doc.fillColor(GOLD).font("Helvetica-Bold").fontSize(13)
-      .text(`Nº ${contractNum}`, 360, 22, { width: CW - 320, align: "right" });
+    doc.fillColor(GOLD).font("Helvetica-Bold").fontSize(12)
+      .text(`Nº ${contractNum}`, 360, 28, { width: CW - 320, align: "right", lineBreak: false });
     doc.fillColor(BANDTX).font("Helvetica").fontSize(8)
-      .text(`Emitido em ${emitidoEm}`, 360, 44, { width: CW - 320, align: "right" });
+      .text(`Emitido em ${emitidoEm}`, 360, 50, { width: CW - 320, align: "right", lineBreak: false });
 
-    doc.y = 104; doc.x = M;
+    doc.y = 108; doc.x = M;
 
     // ── Helper: título de seção ───────────────────────────────────────────────
     function sectionTitle(n: number, t: string) {
@@ -291,13 +291,13 @@ export async function generateContractPdf(data: ContractPdfData): Promise<Buffer
     sectionTitle(2, "Objeto da locação");
     {
       const cols = [
-        { k: "n",      x: M,   w: 22,  t: "Nº",          a: "left"  as const },
-        { k: "modelo", x: 62,  w: 130, t: "Modelo",       a: "left"  as const },
-        { k: "tam",    x: 194, w: 36,  t: "Tam.",         a: "left"  as const },
-        { k: "sis",    x: 232, w: 64,  t: "Nº sistema",   a: "left"  as const },
-        { k: "per",    x: 298, w: 100, t: "Período",      a: "left"  as const },
-        { k: "diaria", x: 400, w: 66,  t: "Diária",       a: "right" as const },
-        { k: "sub",    x: 468, w: 87,  t: "Subtotal",     a: "right" as const },
+        { k: "n",      x: M,   w: 20,  t: "Nº",          a: "left"  as const },
+        { k: "modelo", x: 60,  w: 124, t: "Modelo",       a: "left"  as const },
+        { k: "tam",    x: 184, w: 26,  t: "Tam.",         a: "left"  as const },
+        { k: "sis",    x: 210, w: 88,  t: "Nº sistema",   a: "left"  as const },
+        { k: "per",    x: 298, w: 116, t: "Período",      a: "left"  as const },
+        { k: "diaria", x: 414, w: 56,  t: "Diária",       a: "right" as const },
+        { k: "sub",    x: 470, w: 85,  t: "Subtotal",     a: "right" as const },
       ];
 
       let y = doc.y;
@@ -310,7 +310,7 @@ export async function generateContractPdf(data: ContractPdfData): Promise<Buffer
 
       data.rentals.forEach((r, i) => {
         if (i % 2 === 0) doc.rect(M, y, CW, 16).fill(ALT);
-        doc.fillColor(INK).font("Helvetica").fontSize(8.5);
+        doc.fillColor(INK).font("Helvetica").fontSize(8);
         const row: Record<string, string> = {
           n:      String(i + 1),
           modelo: [r.bikeModel, r.bikeBrand].filter(Boolean).join(" ") || "—",
@@ -333,7 +333,7 @@ export async function generateContractPdf(data: ContractPdfData): Promise<Buffer
       }
 
       doc.y = y; doc.x = M;
-      doc.moveDown(0.3);
+      doc.moveDown(0.45);
       doc.fillColor(GOLD).font("Helvetica-Oblique").fontSize(7.5)
         .text(
           "Nº de sistema — número de controle físico de cada bicicleta, conferido na retirada e na devolução.",
@@ -345,9 +345,8 @@ export async function generateContractPdf(data: ContractPdfData): Promise<Buffer
     sectionTitle(3, "Acessórios inclusos");
     {
       const cols = [
-        { k: "item", x: M,   w: 330, t: "Item",                a: "left"  as const },
-        { k: "un",   x: 370, w: 100, t: "Nº unidade",          a: "left"  as const },
-        { k: "val",  x: 470, w: 85,  t: "Valor de reposição",  a: "right" as const },
+        { k: "item", x: M,   w: 378, t: "Item",       a: "left"  as const },
+        { k: "un",   x: 418, w: 137, t: "Nº unidade",  a: "right" as const },
       ];
 
       let y = doc.y;
@@ -364,7 +363,6 @@ export async function generateContractPdf(data: ContractPdfData): Promise<Buffer
         const row: Record<string, string> = {
           item: a.accessoryName || "—",
           un:   a.serialNumber  || "—",
-          val:  formatCurrency(a.valorReposicao),
         };
         cols.forEach((c) =>
           doc.text(row[c.k], c.x + 4, y + 4.5, { width: c.w - 8, align: c.a, lineBreak: false })
@@ -404,13 +402,9 @@ export async function generateContractPdf(data: ContractPdfData): Promise<Buffer
     }
 
     // ── 5. TERMOS E CONDIÇÕES ─────────────────────────────────────────────────
-    sectionTitle(5, "Termos e condições");
     if (empresaTermos && empresaTermos.trim() !== "") {
+      sectionTitle(5, "Termos e condições");
       renderTerms(doc, empresaTermos);
-    } else {
-      doc.fillColor(MUTED).font("Helvetica-Oblique").fontSize(8)
-        .text("Os termos e condições serão exibidos após configuração em Configurações → Termos.", M, doc.y, { width: CW });
-      doc.moveDown(0.5);
     }
 
     // ── ASSINATURAS ───────────────────────────────────────────────────────────
