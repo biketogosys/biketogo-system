@@ -111,7 +111,7 @@ export default function Settings() {
   const [companyEmail, setCompanyEmail] = useState("");
   const [companyWebsite, setCompanyWebsite] = useState("");
   const [companyForo, setCompanyForo] = useState("");
-  const [companyTerms, setCompanyTerms] = useState("");
+  const [clauses, setClauses] = useState<string[]>([""]);
   const [companyCaucao, setCompanyCaucao] = useState("");
 
 
@@ -165,7 +165,12 @@ export default function Settings() {
     setCompanyEmail(map["company_email"] || "");
     setCompanyWebsite(map["company_website"] || "");
     setCompanyForo(map["company_foro"] || "");
-    setCompanyTerms(map["company_terms"] || "");
+    const rawTerms = map["company_terms"] || "";
+    const parsed = rawTerms
+      .split(/\n{2,}/)
+      .map((p) => p.trim().replace(/^\d+[.\-)\s]+/, "").trim())
+      .filter(Boolean);
+    setClauses(parsed.length ? parsed : [""]);
     setCompanyCaucao(map["company_caucao"] || "");
     setCompanyLogoUrl(map["company_logo_url"] || "");
 
@@ -233,7 +238,7 @@ export default function Settings() {
                 { key: "company_website", value: companyWebsite },
                 { key: "company_foro", value: companyForo },
                 { key: "company_caucao", value: companyCaucao },
-                { key: "company_terms", value: companyTerms },
+                { key: "company_terms", value: clauses.map((c) => c.trim()).filter(Boolean).map((c, i) => `${i + 1}. ${c}`).join("\n\n") },
                 { key: "company_logo_url", value: companyLogoUrl },
               ], setSavingCompany)}
             />
@@ -319,14 +324,44 @@ export default function Settings() {
                   hint="Caução exigida no contrato (opcional)"
                 />
                 <div className="sm:col-span-2">
-                  <FieldTextarea
-                    label="Termos e condições do contrato"
-                    value={companyTerms}
-                    onChange={setCompanyTerms}
-                    placeholder="Cláusulas e condições gerais do contrato de aluguel..."
-                    hint="Texto exibido na seção de Termos e Condições do PDF. Use linhas em branco para separar cláusulas."
-                    rows={6}
-                  />
+                  <Label className="text-xs text-muted-foreground mb-1.5 block">Termos e condições do contrato</Label>
+                  <p className="text-xs text-muted-foreground mb-3">Cada cláusula é numerada automaticamente e aparece na seção de Termos do PDF.</p>
+                  <div className="space-y-2">
+                    {clauses.map((clause, i) => (
+                      <div key={i} className="flex items-start gap-2">
+                        <span
+                          className="mt-2 flex-shrink-0 text-xs font-bold px-1.5 py-0.5 rounded"
+                          style={{ background: GOLD, color: GOLD_FG }}
+                        >
+                          {i + 1}.
+                        </span>
+                        <Textarea
+                          rows={2}
+                          value={clause}
+                          onChange={(e) => setClauses((prev) => prev.map((c, idx) => idx === i ? e.target.value : c))}
+                          placeholder={`Cláusula ${i + 1}...`}
+                          className="bg-secondary border-border text-sm resize-y flex-1"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setClauses((prev) => { const next = prev.filter((_, idx) => idx !== i); return next.length ? next : [""]; })}
+                          className="mt-2 text-muted-foreground hover:text-destructive transition-colors"
+                          title="Remover cláusula"
+                        >
+                          <X className="h-4 w-4" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="mt-3"
+                    onClick={() => setClauses((prev) => [...prev, ""])}
+                  >
+                    <Plus className="h-4 w-4 mr-1" /> Adicionar cláusula
+                  </Button>
                 </div>
               </div>
             </div>
