@@ -574,36 +574,61 @@ export function NewContractModal({
                     {/* Variante dropdown + qty when selected and expanded */}
                     {selected && isExpanded && (
                       <div className="px-3 pb-3 pt-1 bg-muted/30 border-t flex flex-wrap gap-3 items-end">
-                        {hasVariants && (
-                          <div className="flex-1 min-w-[140px]">
-                            <Label className="text-xs mb-1 block">Variante</Label>
-                            <Select
-                              value={selected.unitId ? String(selected.unitId) : ""}
-                              onValueChange={(v) => {
-                                const unit = availableUnits.find((u) => String(u.id) === v);
-                                if (unit) setAccessoryVariant(acc.id, unit.id, unit.variante ?? null);
-                              }}
-                            >
-                              <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Selecionar" /></SelectTrigger>
-                              <SelectContent>
-                                {availableUnits.filter((u) => u.variante).map((u) => (
-                                  <SelectItem key={u.id} value={String(u.id)}>{u.variante}</SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          </div>
-                        )}
-                        <div className="w-20">
-                          <Label className="text-xs mb-1 block">Qtd.</Label>
-                          <Input
-                            type="number" min={1} max={10}
-                            value={selected.qty}
-                            onChange={(e) => setAccessories((prev) => prev.map((a) =>
-                              a.accessoryId === acc.id ? { ...a, qty: Number(e.target.value) } : a
-                            ))}
-                            className="h-8 text-xs"
-                          />
-                        </div>
+                        {hasVariants && (() => {
+                            // Agrupar availableUnits por variante e contar disponíveis
+                            const variantMap = new Map<string, number>();
+                            availableUnits.filter((u) => u.variante).forEach((u) => {
+                              const key = u.variante!;
+                              variantMap.set(key, (variantMap.get(key) ?? 0) + 1);
+                            });
+                            return (
+                              <div className="flex-1 min-w-[140px]">
+                                <Label className="text-xs mb-1 block">Variante</Label>
+                                <Select
+                                  value={selected.variante ?? ""}
+                                  onValueChange={(v) => {
+                                    // Selecionar a primeira unidade disponível desta variante
+                                    const unit = availableUnits.find((u) => u.variante === v);
+                                    if (unit) setAccessoryVariant(acc.id, unit.id, unit.variante ?? null);
+                                  }}
+                                >
+                                  <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Selecionar" /></SelectTrigger>
+                                  <SelectContent>
+                                    {Array.from(variantMap.entries()).map(([varName, count]) => (
+                                      <SelectItem key={varName} value={varName}>
+                                        {varName} — {count} disp.
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                            );
+                          })()}
+                        {(() => {
+                            // maxQty: se variante selecionada → contar unidades disponíveis daquela variante;
+                            // sem variante → total disponível do acessório
+                            const maxQty = selected.variante
+                              ? availableUnits.filter((u) => u.variante === selected.variante).length
+                              : availableUnits.length || 10;
+                            return (
+                              <div className="w-20">
+                                <Label className="text-xs mb-1 block">Qtd.</Label>
+                                <Input
+                                  type="number" min={1} max={maxQty}
+                                  value={selected.qty}
+                                  onChange={(e) => {
+                                    const v = Number(e.target.value);
+                                    setAccessories((prev) => prev.map((a) =>
+                                      a.accessoryId === acc.id
+                                        ? { ...a, qty: Math.min(Math.max(1, v), maxQty > 0 ? maxQty : 1) }
+                                        : a
+                                    ));
+                                  }}
+                                  className="h-8 text-xs"
+                                />
+                              </div>
+                            );
+                          })()}
                       </div>
                     )}
                   </div>
