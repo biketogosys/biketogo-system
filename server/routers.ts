@@ -296,7 +296,7 @@ const clientsRouter = router({
   list: adminAuthProcedure
     .input(z.object({
       search: z.string().optional(),
-      status: z.enum(["lead", "verified", "blocked"]).optional(),
+      status: z.enum(["lead", "verified", "blocked", "recusado"]).optional(),
       page: z.number().min(1).default(1),
       limit: z.number().min(1).max(100).default(20),
     }))
@@ -340,7 +340,7 @@ const clientsRouter = router({
       state: z.string().optional(),
       country: z.string().optional(),
       notes: z.string().optional(),
-      status: z.enum(["lead", "verified", "blocked"]).default("lead"),
+      status: z.enum(["lead", "verified", "blocked", "recusado"]).default("lead"),
       // Bloco B — nacionalidade e documento
       nacionalidade: z.enum(["brasileiro", "estrangeiro"]).optional(),
       tipoDocumento: z.enum(["cnh", "rg", "passaporte"]).optional(),
@@ -415,7 +415,7 @@ const clientsRouter = router({
       state: z.string().optional(),
       country: z.string().optional(),
       notes: z.string().optional(),
-      status: z.enum(["lead", "verified", "blocked"]).optional(),
+      status: z.enum(["lead", "verified", "blocked", "recusado"]).optional(),
       receiveEmail: z.boolean().optional(),
       blocked: z.boolean().optional(),
       // Bloco B — nacionalidade e documento
@@ -463,6 +463,13 @@ const clientsRouter = router({
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {
       await updateClient(input.id, { status: "verified" });
+      return { success: true };
+    }),
+
+  reject: adminAuthProcedure
+    .input(z.object({ id: z.number(), motivo: z.string().min(1) }))
+    .mutation(async ({ input }) => {
+      await updateClient(input.id, { status: "recusado", motivoRecusa: input.motivo });
       return { success: true };
     }),
 

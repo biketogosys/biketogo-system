@@ -16,7 +16,7 @@ import {
 // ─── Enums ───────────────────────────────────────────────────────────────────
 export const userRoleEnum = pgEnum("user_role", ["user", "admin"]);
 export const adminRoleEnum = pgEnum("admin_role", ["admin", "operator"]);
-export const clientStatusEnum = pgEnum("client_status", ["lead", "verified", "blocked"]);
+export const clientStatusEnum = pgEnum("client_status", ["lead", "verified", "blocked", "recusado"]);
 export const clientSourceEnum = pgEnum("client_source", ["shopify", "manual", "site"]);
 export const docTypeEnum = pgEnum("doc_type", ["rg_front", "rg_back", "other"]);
 export const bikeCategoryEnum = pgEnum("bike_category", ["mtb", "speed", "gravel"]);
@@ -109,6 +109,7 @@ export const clients = pgTable("clients", {
   blocked: boolean("blocked").default(false).notNull(),
   expiresAt: timestamp("expiresAt"),
   notes: text("notes"),
+  motivoRecusa: text("motivoRecusa"),
   // Source
   source: clientSourceEnum("source").default("manual").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),

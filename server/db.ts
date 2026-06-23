@@ -255,7 +255,7 @@ export async function updateAdminUserLastLogin(id: number) {
 // ─── Clients ─────────────────────────────────────────────────────────────────
 export async function getClients(opts?: {
   search?: string;
-  status?: "lead" | "verified" | "blocked";
+  status?: "lead" | "verified" | "blocked" | "recusado";
   limit?: number;
   offset?: number;
 }) {

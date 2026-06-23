@@ -7,7 +7,7 @@ import {
   ArrowLeft, Loader2, CheckCircle, Mail, Phone,
   Bike, Clock, FileText, Shield,
   User, Image as ImageIcon, Trash2, Upload, X,
-  CheckCircle2, AlertCircle, Edit2, CreditCard, PlusCircle,
+  CheckCircle2, AlertCircle, Edit2, CreditCard, PlusCircle, XCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -19,6 +19,9 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
+} from "@/components/ui/dialog";
 import {
   maskCPF, maskRG, maskCEP, maskPhone, maskDate,
   isValidCPF, fetchViaCEP, dateDisplayToISO, dateISOToDisplay,
@@ -81,6 +84,7 @@ function StatusBadge({ status }: { status: string }) {
     lead: { cls: "badge-lead", label: "Lead" },
     verified: { cls: "badge-verified", label: "Verificado" },
     blocked: { cls: "badge-blocked", label: "Bloqueado" },
+    recusado: { cls: "badge-blocked", label: "Recusado" },
   };
   const s = map[status] ?? { cls: "badge-lead", label: status };
   return <span className={s.cls}>{s.label}</span>;
@@ -795,6 +799,18 @@ export default function ClientProfile() {
     onError: (e) => toast.error(e.message),
   });
 
+  const [showRejectDialog, setShowRejectDialog] = useState(false);
+  const [motivoRecusa, setMotivoRecusa] = useState("");
+  const rejectMutation = trpc.clients.reject.useMutation({
+    onSuccess: () => {
+      toast.success("Cadastro recusado.");
+      setShowRejectDialog(false);
+      setMotivoRecusa("");
+      utils.clients.byId.invalidate({ id: clientId });
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
   const updateMutation = trpc.clients.update.useMutation({
     onSuccess: () => {
       utils.clients.byId.invalidate({ id: clientId });
@@ -894,6 +910,15 @@ export default function ClientProfile() {
               </div>
             )}
 
+            {/* Recusado alert */}
+            {client.status === "recusado" && (
+              <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-3 mb-3">
+                <p className="text-xs text-red-400 font-medium">
+                  Recusado — {(client as any).motivoRecusa || "sem motivo informado"}
+                </p>
+              </div>
+            )}
+
             {/* Validate button */}
             {client.status !== "verified" && (
               <Button
@@ -906,6 +931,47 @@ export default function ClientProfile() {
                 {validateMutation.isPending ? "Validando..." : "Validar cadastro"}
               </Button>
             )}
+
+            {/* Reject button — only for leads */}
+            {client.status === "lead" && (
+              <Button
+                variant="outline"
+                onClick={() => setShowRejectDialog(true)}
+                className="w-full mb-3 text-sm border-red-500/40 text-red-400 hover:bg-red-500/10"
+              >
+                <XCircle className="w-4 h-4 mr-2" />
+                Recusar cadastro
+              </Button>
+            )}
+
+            {/* Reject dialog */}
+            <Dialog open={showRejectDialog} onOpenChange={setShowRejectDialog}>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Recusar cadastro</DialogTitle>
+                </DialogHeader>
+                <div className="py-2">
+                  <Label className="text-xs text-muted-foreground mb-1.5 block">Motivo da recusa (obrigatório)</Label>
+                  <Textarea
+                    rows={3}
+                    value={motivoRecusa}
+                    onChange={(e) => setMotivoRecusa(e.target.value)}
+                    placeholder="Informe o motivo da recusa..."
+                    className="bg-secondary border-border text-sm"
+                  />
+                </div>
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setShowRejectDialog(false)}>Cancelar</Button>
+                  <Button
+                    variant="destructive"
+                    disabled={!motivoRecusa.trim() || rejectMutation.isPending}
+                    onClick={() => rejectMutation.mutate({ id: clientId, motivo: motivoRecusa.trim() })}
+                  >
+                    {rejectMutation.isPending ? "Recusando..." : "Confirmar recusa"}
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
 
             {/* New Rental button — only for verified clients */}
             {client.status === "verified" && (
