@@ -2082,6 +2082,11 @@ const publicApiRouter = router({
   }),
 
   // ─── Número de WhatsApp para reservas (público) ───────────────────────────────────────────────────────────────────────────
+  getCompanyLogo: publicProcedure.query(async () => {
+    const url = await getSetting("company_logo_url");
+    return { url: url || null };
+  }),
+
   getReservationWhatsApp: publicProcedure.query(async () => {
     const raw = await getSetting("whatsapp_reservas");
     const digits = (raw || "").replace(/\D/g, "");

@@ -167,6 +167,8 @@ export default function PublicReservation() {
   const submitMutation = trpc.publicApi.submitPreRegistration.useMutation();
   const uploadDocMutation = trpc.publicApi.uploadDocument.useMutation();
   const { data: waData } = trpc.publicApi.getReservationWhatsApp.useQuery();
+  const { data: logoData } = trpc.publicApi.getCompanyLogo.useQuery();
+  const logoSrc = LOGO_URL || logoData?.url || undefined;
 
   // ─── CEP autocomplete ─────────────────────────────────────────────────────────
   const fetchCEP = useCallback(async (cep: string) => {
@@ -413,8 +415,8 @@ export default function PublicReservation() {
       <header className={`border-b ${headerBg} backdrop-blur sticky top-0 z-50`}>
         <div className="max-w-2xl mx-auto px-4 py-3 flex items-center justify-between gap-3">
           <div className="flex items-center gap-3">
-            {LOGO_URL ? (
-              <img src={LOGO_URL} alt="Bike To Go" className="h-9 w-auto object-contain" />
+            {logoSrc ? (
+              <img src={logoSrc} alt="Bike To Go" className="h-9 w-auto object-contain" />
             ) : (
               <div className="flex items-center gap-2">
                 <div className="w-8 h-8 rounded-lg bg-[#C8920A]/20 flex items-center justify-center">
@@ -733,7 +735,7 @@ export default function PublicReservation() {
             {/* Documentos */}
             <div className={`${cardBg} border rounded-2xl p-6 space-y-5`}>
               <div className={`flex items-center gap-2 pb-3 border-b ${sectionBorder}`}>
-                <span className="text-[#C8920A] text-sm font-bold uppercase tracking-widest">📄 {t.sectionDocumentPhotos}</span>
+                <span className="text-[#C8920A] text-sm font-bold uppercase tracking-widest">{t.sectionDocumentPhotos}</span>
               </div>
 
 

@@ -121,10 +121,8 @@ export default function Settings() {
   const [closingTime, setClosingTime] = useState("19:00");
 
   // ── Notifications ────────────────────────────────────────────────────────────
-  const [whatsappNumber, setWhatsappNumber] = useState("");
   const [whatsappReservas, setWhatsappReservas] = useState("");
   const [notificationEmail, setNotificationEmail] = useState("");
-  const [adminNotificationEmail, setAdminNotificationEmail] = useState("");
 
   // ── Archive ──────────────────────────────────────────────────────────────────
   const [archiveRetentionDays, setArchiveRetentionDays] = useState("5");
@@ -149,10 +147,8 @@ export default function Settings() {
 
     setOpeningTime(map["opening_time"] || "09:00");
     setClosingTime(map["closing_time"] || "19:00");
-    setWhatsappNumber(map["whatsapp_number"] || "");
     setWhatsappReservas(map["whatsapp_reservas"] || "");
     setNotificationEmail(map["notification_email"] || "");
-    setAdminNotificationEmail(map["admin_notification_email"] || "");
     setArchiveRetentionDays(map["archive_retention_days"] || "5");
     setShopifyApiKey(map["shopify_api_key"] || "");
     setCompanyName(map["company_name"] || "");
@@ -399,33 +395,19 @@ export default function Settings() {
             <SectionSaveBtn
               saving={savingNotifications}
               onClick={() => {
-                const digits = whatsappNumber.replace(/\D/g, "");
-                if (whatsappNumber && digits.length < 10) {
-                  toast.error("Número de WhatsApp inválido. Informe DDD + número.");
-                  return;
-                }
                 const resDigits = whatsappReservas.replace(/\D/g, "");
                 if (whatsappReservas && resDigits.length < 10) {
                   toast.error("Número de WhatsApp para reservas inválido. Informe DDD + número.");
                   return;
                 }
                 saveSection([
-                  { key: "whatsapp_number", value: whatsappNumber },
                   { key: "whatsapp_reservas", value: whatsappReservas },
                   { key: "notification_email", value: notificationEmail },
-                  { key: "admin_notification_email", value: adminNotificationEmail },
                 ], setSavingNotifications);
               }}
             />
           </div>
           <div className="space-y-4">
-            <Field
-              label="Número WhatsApp para receber notificações"
-              value={whatsappNumber}
-              onChange={(v) => setWhatsappNumber(maskPhone(v))}
-              placeholder="(48) 99999-9999"
-              hint="Formato: (48) 99999-9999 — DDD + número"
-            />
             <Field
               label="Número de WhatsApp para reservas"
               value={whatsappReservas}
@@ -440,13 +422,7 @@ export default function Settings() {
               placeholder="biketogo.floripa@gmail.com"
               hint="Email usado como remetente nas confirmações de reserva para clientes"
             />
-            <Field
-              label="E-mail de notificação do admin"
-              value={adminNotificationEmail}
-              onChange={setAdminNotificationEmail}
-              placeholder="admin@empresa.com"
-              hint="Receba alertas de novas reservas pendentes neste e-mail"
-            />
+
           </div>
         </div>
 
