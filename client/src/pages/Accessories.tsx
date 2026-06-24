@@ -39,6 +39,8 @@ import {
   Loader2,
   ShieldCheck,
   ShieldOff,
+  Wrench,
+  Check,
 } from "lucide-react";
 
 type AccessoryStatus = "available" | "rented" | "maintenance" | "lost";
@@ -80,6 +82,10 @@ function AccessoryUnitsPanel({ accessoryId, onClose }: { accessoryId: number; on
   const [newVarianteQty, setNewVarianteQty] = useState(1);
   // Draft qty per variante key (for inline editable input)
   const [draftQty, setDraftQty] = useState<Record<string, string>>({});
+  // Manutenção mini-form state per variante key
+  const [manutKey, setManutKey] = useState<string | null>(null);
+  const [manutQty, setManutQty] = useState(1);
+  const [manutObs, setManutObs] = useState("");
 
   const invalidate = () => {
     utils.accessories.getUnits.invalidate();
@@ -244,6 +250,74 @@ function AccessoryUnitsPanel({ accessoryId, onClose }: { accessoryId: number; on
                     </div>
                   </div>
 
+                  {/* Manutenção mini-form */}
+                  {manutKey === key ? (
+                    <div className="border-t border-amber-500/30 bg-amber-500/5 p-3 space-y-2">
+                      <p className="text-xs font-medium text-amber-600">Enviar para manutenção</p>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <Label className="text-xs">Qtd</Label>
+                          <Input
+                            type="number"
+                            min={1}
+                            max={disponivel}
+                            value={manutQty}
+                            onChange={(e) => setManutQty(Math.min(disponivel, Math.max(1, parseInt(e.target.value) || 1)))}
+                            className="h-8 text-sm bg-background"
+                          />
+                        </div>
+                        <div>
+                          <Label className="text-xs">Observação (opcional)</Label>
+                          <Textarea
+                            value={manutObs}
+                            onChange={(e) => setManutObs(e.target.value)}
+                            placeholder="Motivo / descrição do reparo..."
+                            className="text-xs min-h-[32px] resize-none h-8 py-1"
+                          />
+                        </div>
+                      </div>
+                      <div className="flex gap-2">
+                        <Button
+                          size="sm"
+                          className="flex-1 bg-amber-600 hover:bg-amber-700 text-white"
+                          disabled={updateMut.isPending || disponivel === 0}
+                          onClick={() => {
+                            const dispUnits = varianteUnits.filter((u: any) => u.status === "disponivel");
+                            const toSend = dispUnits.slice(0, manutQty);
+                            toSend.forEach((u: any) => {
+                              updateMut.mutate({
+                                unitId: u.id,
+                                status: "manutencao",
+                                observacao: manutObs || undefined,
+                                variante: u.variante ?? undefined,
+                              });
+                            });
+                            // toast after all mutations dispatched
+                            setTimeout(() => {
+                              toast.success(`${toSend.length} unidade(s) enviada(s) para manutenção.`);
+                            }, 100);
+                            setManutKey(null);
+                            setManutQty(1);
+                            setManutObs("");
+                          }}
+                        >
+                          Confirmar
+                        </Button>
+                        <Button size="sm" variant="ghost" onClick={() => { setManutKey(null); setManutQty(1); setManutObs(""); }}>Cancelar</Button>
+                      </div>
+                    </div>
+                  ) : disponivel > 0 ? (
+                    <div className="border-t border-border px-3 py-1.5">
+                      <button
+                        className="flex items-center gap-1.5 text-xs text-amber-600 hover:text-amber-500 font-medium"
+                        onClick={() => { setManutKey(key); setManutQty(1); setManutObs(""); }}
+                      >
+                        <Wrench className="w-3 h-3" />
+                        Enviar pra manutenção
+                      </button>
+                    </div>
+                  ) : null}
+
                   {/* Expanded content */}
                   {isExpanded && (
                     <div className="border-t border-border bg-secondary/10 p-3 space-y-2">
@@ -270,6 +344,18 @@ function AccessoryUnitsPanel({ accessoryId, onClose }: { accessoryId: number; on
                               )}
                             </div>
                             <div className="flex items-center gap-1">
+                              {unit.status === "manutencao" && (
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className="h-6 text-xs gap-1 text-emerald-600 hover:text-emerald-500"
+                                  title="Resolver — voltar para disponível"
+                                  disabled={updateMut.isPending}
+                                  onClick={() => updateMut.mutate({ unitId: unit.id, status: "disponivel", observacao: "", variante: unit.variante ?? undefined })}
+                                >
+                                  <Check className="w-3 h-3" />Resolver
+                                </Button>
+                              )}
                               {unit.status !== "alugado" && (
                                 <Button
                                   size="sm"
