@@ -78,6 +78,8 @@ function AccessoryUnitsPanel({ accessoryId, onClose }: { accessoryId: number; on
   const [showAddVariante, setShowAddVariante] = useState(false);
   const [newVarianteName, setNewVarianteName] = useState("");
   const [newVarianteQty, setNewVarianteQty] = useState(1);
+  // Draft qty per variante key (for inline editable input)
+  const [draftQty, setDraftQty] = useState<Record<string, string>>({});
 
   const invalidate = () => {
     utils.accessories.getUnits.invalidate();
@@ -193,13 +195,42 @@ function AccessoryUnitsPanel({ accessoryId, onClose }: { accessoryId: number; on
                         size="sm"
                         variant="outline"
                         className="h-7 w-7 p-0 text-base font-bold"
-                        onClick={() => removeAvailableMut.mutate({ accessoryId, variante: key === "__null__" ? undefined : key })}
+                        onClick={() => removeAvailableMut.mutate({ accessoryId, variante: key === "__null__" ? undefined : key, quantity: 1 })}
                         disabled={removeAvailableMut.isPending || disponivel === 0}
                         title="Remover 1 unidade disponível"
                       >
                         −
                       </Button>
-                      <span className="text-sm font-semibold w-6 text-center">{total}</span>
+                      <input
+                        type="number"
+                        min={total - disponivel}
+                        className="text-sm font-semibold w-10 text-center border border-border rounded bg-background focus:outline-none focus:ring-1 focus:ring-primary px-1 py-0.5"
+                        value={draftQty[key] ?? String(total)}
+                        onChange={(e) => setDraftQty(prev => ({ ...prev, [key]: e.target.value }))}
+                        onFocus={() => setDraftQty(prev => ({ ...prev, [key]: String(total) }))}
+                        onBlur={() => {
+                          const raw = parseInt(draftQty[key] ?? "", 10);
+                          const minQty = total - disponivel; // can't remove non-disponivel units
+                          if (isNaN(raw) || raw === total) {
+                            setDraftQty(prev => { const n = { ...prev }; delete n[key]; return n; });
+                            return;
+                          }
+                          if (raw < minQty) {
+                            toast.error(`Mínimo é ${minQty} (unidades não disponíveis não podem ser removidas).`);
+                            setDraftQty(prev => { const n = { ...prev }; delete n[key]; return n; });
+                            return;
+                          }
+                          const delta = raw - total;
+                          const varianteArg = key === "__null__" ? undefined : key;
+                          if (delta > 0) {
+                            addUnitsMut.mutate({ accessoryId, variante: varianteArg, quantity: delta });
+                          } else if (delta < 0) {
+                            removeAvailableMut.mutate({ accessoryId, variante: varianteArg, quantity: Math.abs(delta) });
+                          }
+                          setDraftQty(prev => { const n = { ...prev }; delete n[key]; return n; });
+                        }}
+                        onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+                      />
                       <Button
                         size="sm"
                         variant="outline"
@@ -270,7 +301,7 @@ function AccessoryUnitsPanel({ accessoryId, onClose }: { accessoryId: number; on
                                 <Select value={editStatus} onValueChange={(v) => setEditStatus(v as UnitStatus)}>
                                   <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
                                   <SelectContent>
-                                    {(Object.keys(UNIT_STATUS_LABELS) as UnitStatus[]).map((s) => (
+                                    {(Object.keys(UNIT_STATUS_LABELS) as UnitStatus[]).filter(s => s !== "alugado").map((s) => (
                                       <SelectItem key={s} value={s}>{UNIT_STATUS_LABELS[s]}</SelectItem>
                                     ))}
                                   </SelectContent>
@@ -447,7 +478,6 @@ const emptyForm: AccessoryForm = {
 
 export default function Accessories() {
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<AccessoryStatus | "all">("all");
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -461,7 +491,6 @@ export default function Accessories() {
 
   const { data: accessoriesResult, isLoading } = trpc.accessories.list.useQuery({
     search: search || undefined,
-    status: statusFilter !== "all" ? statusFilter : undefined,
     page,
     limit: LIMIT,
   });
@@ -536,7 +565,6 @@ export default function Accessories() {
       category: form.category || undefined,
       serialNumber: form.serialNumber || undefined,
       replacementValue: form.replacementValue || undefined,
-      status: form.status,
       obrigatorio: form.obrigatorio,
       notes: form.notes || undefined,
     };
@@ -550,13 +578,7 @@ export default function Accessories() {
   const items: any[] = categoryFilter === "all"
     ? allItems
     : allItems.filter((i: any) => i.category === categoryFilter);
-  const counts = {
-    all: totalAccessories,
-    available: items.filter((i: any) => i.status === "available").length,
-    rented: items.filter((i: any) => i.status === "rented").length,
-    maintenance: items.filter((i: any) => i.status === "maintenance").length,
-    lost: items.filter((i: any) => i.status === "lost").length,
-  };
+
 
   return (
     <>
@@ -583,11 +605,6 @@ export default function Accessories() {
             <Input placeholder="Buscar por nome ou série..." value={search} onChange={(e) => setSearch(e.target.value)} className="h-9 text-sm pl-8 bg-card border-border" />
           </div>
           <div className="flex gap-1.5 flex-wrap">
-            {(["all", "available", "rented", "maintenance", "lost"] as (AccessoryStatus | "all")[]).map((s) => (
-              <button key={s} onClick={() => setStatusFilter(s)} className={`px-2.5 py-1 rounded text-xs font-medium transition-all border ${statusFilter === s ? "bg-[#C8920A]/15 border-[#C8920A]/40 text-[#C8920A]" : "bg-card border-border text-muted-foreground hover:text-foreground"}`}>
-                {s === "all" ? `Todos (${counts.all})` : `${STATUS_LABELS[s]} (${counts[s]})`}
-              </button>
-            ))}
             {uniqueCategories.length > 0 && (
               <>
                 <span className="hidden sm:inline text-border">|</span>
@@ -598,8 +615,8 @@ export default function Accessories() {
                 ))}
               </>
             )}
-            {(search || statusFilter !== "all" || categoryFilter !== "all") && (
-              <button onClick={() => { setSearch(""); setStatusFilter("all"); setCategoryFilter("all"); }} className="px-2.5 py-1 rounded text-xs font-medium text-muted-foreground hover:text-foreground border border-border bg-card">
+            {(search || categoryFilter !== "all") && (
+              <button onClick={() => { setSearch(""); setCategoryFilter("all"); }} className="px-2.5 py-1 rounded text-xs font-medium text-muted-foreground hover:text-foreground border border-border bg-card">
                 Limpar
               </button>
             )}
@@ -628,7 +645,6 @@ export default function Accessories() {
                     <th className="text-left text-[11px] font-semibold text-muted-foreground uppercase tracking-wider px-3 py-2.5">Categoria</th>
                     <th className="text-left text-[11px] font-semibold text-muted-foreground uppercase tracking-wider px-3 py-2.5">Estoque</th>
                     <th className="text-left text-[11px] font-semibold text-muted-foreground uppercase tracking-wider px-3 py-2.5">Tipo</th>
-                    <th className="text-left text-[11px] font-semibold text-muted-foreground uppercase tracking-wider px-3 py-2.5">Status</th>
                     <th className="w-36 px-3 py-2.5" />
                   </tr>
                 </thead>
@@ -684,11 +700,6 @@ export default function Accessories() {
                           )}
                         </td>
                         <td className="px-3 py-2.5">
-                          <Badge className={`text-[10px] px-2 py-0.5 border ${STATUS_COLORS[item.status as AccessoryStatus]}`} variant="outline">
-                            {STATUS_LABELS[item.status as AccessoryStatus]}
-                          </Badge>
-                        </td>
-                        <td className="px-3 py-2.5">
                           <div className="flex items-center gap-2 row-actions">
                             <button onClick={() => openEdit(item)} className="text-[12px] text-primary hover:underline font-medium">Editar</button>
                             <button onClick={() => setUnitsAccessoryId(item.id)} className="text-[12px] text-muted-foreground hover:text-primary">Unidades</button>
@@ -720,9 +731,6 @@ export default function Accessories() {
                         <p className="text-xs text-muted-foreground">{item.category || 'Sem categoria'} • {dispQty}/{totalQty} disp.</p>
                       </div>
                       <div className="flex flex-col items-end gap-1">
-                        <Badge className={`text-[10px] px-2 py-0.5 border flex-shrink-0 ${STATUS_COLORS[item.status as AccessoryStatus]}`} variant="outline">
-                          {STATUS_LABELS[item.status as AccessoryStatus]}
-                        </Badge>
                         {isObrigatorio && (
                           <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-semibold bg-amber-500/15 text-amber-500 border border-amber-500/30">
                             <ShieldCheck className="w-2.5 h-2.5" />Obrigatório
@@ -787,25 +795,6 @@ export default function Accessories() {
                     {CATEGORIES.map((c) => (
                       <SelectItem key={c} value={c}>
                         {c}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-1">
-                <Label>Status</Label>
-                <Select
-                  value={form.status}
-                  onValueChange={(v) => setForm({ ...form, status: v as AccessoryStatus })}
-                >
-                  <SelectTrigger className="bg-background">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {(Object.keys(STATUS_LABELS) as AccessoryStatus[]).map((s) => (
-                      <SelectItem key={s} value={s}>
-                        {STATUS_LABELS[s]}
                       </SelectItem>
                     ))}
                   </SelectContent>

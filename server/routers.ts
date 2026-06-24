@@ -1718,24 +1718,23 @@ const accessoriesRouter = router({
       return { inserted: inserted.length };
     }),
 
-  // ACC-2: remove one available unit from a variante
+  // ACC-3: remove N available units from a variante
   removeAvailableUnit: adminAuthProcedure
     .input(z.object({
       accessoryId: z.number(),
       variante: z.string().optional(),
+      quantity: z.number().int().min(1).default(1),
     }))
     .mutation(async ({ input }) => {
       const { accessoryUnits, accessories } = await import("../drizzle/schema");
       const { eq, sql, and, isNull, desc } = await import("drizzle-orm");
       const db = await (await import("./db")).getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
-
-      // Find the most recent available unit for this variante
+      // Find the N most-recent available units for this variante
       const varianteFilter = input.variante
         ? eq(accessoryUnits.variante, input.variante)
         : isNull(accessoryUnits.variante);
-
-      const [unit] = await db.select()
+      const units = await db.select()
         .from(accessoryUnits)
         .where(and(
           eq(accessoryUnits.accessoryId, input.accessoryId),
@@ -1743,17 +1742,22 @@ const accessoriesRouter = router({
           varianteFilter,
         ))
         .orderBy(desc(accessoryUnits.id))
-        .limit(1);
-
-      if (!unit) {
+        .limit(input.quantity);
+      if (units.length === 0) {
         throw new TRPCError({
           code: "BAD_REQUEST",
           message: "Sem unidades disponíveis para remover nesta variante.",
         });
       }
-
-      await db.delete(accessoryUnits).where(eq(accessoryUnits.id, unit.id));
-
+      if (units.length < input.quantity) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: `Apenas ${units.length} unidade(s) disponível(is) para remover.`,
+        });
+      }
+      const ids = units.map(u => u.id);
+      const { inArray: inArr } = await import("drizzle-orm");
+      await db.delete(accessoryUnits).where(inArr(accessoryUnits.id, ids));
       // Recalculate quantidadeTotal
       await db.update(accessories)
         .set({
@@ -1761,8 +1765,7 @@ const accessoriesRouter = router({
           quantity: sql`(SELECT COUNT(*) FROM accessory_units WHERE "accessoryId" = ${input.accessoryId})`,
         })
         .where(eq(accessories.id, input.accessoryId));
-
-      return { success: true, removedId: unit.id };
+      return { success: true, removedCount: ids.length };
     }),
 });
 
