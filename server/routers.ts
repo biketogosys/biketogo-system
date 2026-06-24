@@ -2387,7 +2387,7 @@ const auditLogsRouter = router({
 });
 
 // ─── Contracts router ───────────────────────────────────────────────────────────────
-import { and, eq, isNull, sql as drizzleSql } from "drizzle-orm";
+import { and, eq, isNull, inArray, notInArray, sql as drizzleSql } from "drizzle-orm";
 import {
   contracts,
   contractAccessories,
@@ -2466,16 +2466,22 @@ const contractsRouter = router({
       return { id: contract.id };
     }),
 
-  // Lista contratos ativos (sem soft delete)
+  // Lista contratos ativos ou arquivados
   list: adminAuthProcedure
     .input(z.object({
       page: z.number().min(1).default(1),
       limit: z.number().min(1).max(100).default(20),
+      view: z.enum(["ativos", "arquivados"]).default("ativos"),
     }))
     .query(async ({ input }) => {
       const db = await getDb();
       if (!db) return { items: [], total: 0, page: 1, totalPages: 1 };
       const offset = (input.page - 1) * input.limit;
+      const arquivados = ["encerrado", "cancelado"] as const;
+      const statusCond = input.view === "arquivados"
+        ? inArray(contracts.status, arquivados as any)
+        : notInArray(contracts.status, arquivados as any);
+      const where = and(isNull(contracts.deletedAt), statusCond);
       const [items, countResult] = await Promise.all([
         db.select({
           id: contracts.id,
@@ -2488,13 +2494,13 @@ const contractsRouter = router({
         })
           .from(contracts)
           .leftJoin(clientsTable, eq(contracts.clientId, clientsTable.id))
-          .where(isNull(contracts.deletedAt))
+          .where(where)
           .orderBy(contracts.criadoEm)
           .limit(input.limit)
           .offset(offset),
         db.select({ count: drizzleSql<number>`count(*)` })
           .from(contracts)
-          .where(isNull(contracts.deletedAt)),
+          .where(where),
       ]);
       const total = Number(countResult[0]?.count ?? 0);
       const totalPages = Math.ceil(total / input.limit);

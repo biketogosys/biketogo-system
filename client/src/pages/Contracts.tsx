@@ -857,6 +857,7 @@ function ContractDetail({
 export default function Contracts() {
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [page, setPage] = useState(1);
+  const [view, setView] = useState<"ativos" | "arquivados">("ativos");
   const [newContractOpen, setNewContractOpen] = useState(false);
   const limit = 20;
 
@@ -874,6 +875,7 @@ export default function Contracts() {
   const { data, isLoading, refetch } = trpc.contracts.list.useQuery({
     limit,
     page,
+    view,
   });
 
   const items = data?.items ?? [];
@@ -909,6 +911,23 @@ export default function Contracts() {
             <RefreshCw className="h-4 w-4 mr-1" /> Atualizar
           </Button>
         </div>
+      </div>
+
+      {/* Abas Ativos / Arquivados */}
+      <div className="flex gap-1 border-b border-border">
+        {(["ativos", "arquivados"] as const).map((v) => (
+          <button
+            key={v}
+            onClick={() => { setView(v); setPage(1); }}
+            className={`px-4 py-2 text-sm font-medium capitalize transition-colors ${
+              view === v
+                ? "border-b-2 border-primary text-primary"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            {v.charAt(0).toUpperCase() + v.slice(1)}
+          </button>
+        ))}
       </div>
 
       {/* Table */}
