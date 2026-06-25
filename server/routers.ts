@@ -2413,6 +2413,15 @@ import { getDb } from "./db";
 async function recalcContractStatus(contractId: number): Promise<void> {
   const db = await getDb();
   if (!db) return;
+  // GUARD: "pendente" (aguardando pagamento) e "cancelado" são estados-gate.
+  // recalc só gerencia o ciclo ativo↔parcialmente_devolvido↔encerrado;
+  // a saída de "pendente" é exclusiva do confirmPayment.
+  const [current] = await db
+    .select({ status: contracts.status })
+    .from(contracts)
+    .where(eq(contracts.id, contractId));
+  if (!current) return;
+  if (current.status === "pendente" || current.status === "cancelado") return;
   const linked = await db
     .select({ status: rentalsTable.status })
     .from(rentalsTable)

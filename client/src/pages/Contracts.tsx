@@ -10,7 +10,6 @@ import {
   AlertTriangle,
   XCircle,
   Clock,
-  Archive,
   RefreshCw,
   Bike,
   Package,
@@ -382,15 +381,6 @@ function ContractDetail({
   const [returnCondition, setReturnCondition] = useState<"ok" | "damaged">("ok");
   const [returnNotes, setReturnNotes] = useState("");
 
-  const archiveMutation = trpc.contracts.archive.useMutation({
-    onSuccess: () => {
-      toast.success("Contrato arquivado.");
-      utils.contracts.list.invalidate();
-      onBack();
-    },
-    onError: (e) => toast.error("Erro ao arquivar: " + e.message),
-  });
-
   const recalcMutation = trpc.contracts.updateStatus.useMutation({
     onSuccess: () => {
       toast.success("Status recalculado.");
@@ -530,14 +520,7 @@ function ContractDetail({
               <CheckCircle2 className="h-4 w-4 mr-1" /> Encerrar
             </Button>
           )}
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => archiveMutation.mutate({ id: contractId })}
-            disabled={archiveMutation.isPending}
-          >
-            <Archive className="h-4 w-4 mr-1" /> Arquivar
-          </Button>
+
         </div>
       </div>
 

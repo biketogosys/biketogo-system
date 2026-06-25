@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { maskPhone } from "@/hooks/useMask";
 import { toast } from "sonner";
 import {
@@ -88,7 +88,9 @@ function FieldTextarea({
 }
 
 export default function Settings() {
-  const { data: settings, isLoading } = trpc.settings.getAll.useQuery();
+  const { data: settings, isLoading } = trpc.settings.getAll.useQuery(undefined, {
+    refetchOnWindowFocus: false,
+  });
   const setManyMutation = trpc.settings.setMany.useMutation({
     onSuccess: () => toast.success("Configurações salvas!"),
     onError: (e) => toast.error(e.message),
@@ -139,8 +141,11 @@ export default function Settings() {
   const [savingArchive, setSavingArchive] = useState(false);
 
   // ── Load settings ────────────────────────────────────────────────────────────
+  const hydratedRef = useRef(false);
   useEffect(() => {
     if (!settings) return;
+    if (hydratedRef.current) return;
+    hydratedRef.current = true;
     const map: Record<string, string> = {};
     settings.forEach((s: any) => { map[s.key] = s.value; });
 
