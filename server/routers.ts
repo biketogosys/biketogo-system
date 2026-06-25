@@ -2458,6 +2458,35 @@ async function assertAccessoryAvailability(lines: Array<{accessoryId:number;vari
   }
 }
 
+// Como assertAccessoryAvailability, mas para EDIÇÃO: soma as unidades que o próprio
+// contrato já segura, para não falsa-reprovar ao manter o mesmo acessório.
+async function assertAccessoryAvailabilityForUpdate(db: any, contractId: number, lines: Array<{accessoryId:number;variante:string|null;qty:number}>): Promise<void> {
+  const { getAccessoryBreakdown } = await import("./db");
+  const { accessoryUnits, contractAccessories } = await import("../drizzle/schema");
+  const { eq } = await import("drizzle-orm");
+  const held = new Map<string, number>();
+  const heldRows = await db.select({ accessoryId: contractAccessories.accessoryId, variante: accessoryUnits.variante })
+    .from(contractAccessories)
+    .leftJoin(accessoryUnits, eq(contractAccessories.unitId, accessoryUnits.id))
+    .where(eq(contractAccessories.contractId, contractId));
+  for (const r of heldRows) {
+    if (r.accessoryId == null) continue;
+    const k = `${r.accessoryId}::${r.variante ?? "__null__"}`;
+    held.set(k, (held.get(k) ?? 0) + 1);
+  }
+  const need = new Map<string, {accessoryId:number;variante:string|null;qty:number}>();
+  for (const l of lines) {
+    const k = `${l.accessoryId}::${l.variante ?? "__null__"}`;
+    const cur = need.get(k); if (cur) cur.qty += l.qty; else need.set(k, { ...l });
+  }
+  for (const [k, d] of Array.from(need.entries())) {
+    const bd = await getAccessoryBreakdown(d.accessoryId);
+    const disp = d.variante == null ? bd.disponivel : (bd.byVariante.find((v: any) => v.variante === d.variante)?.disponivel ?? 0);
+    const effective = disp + (held.get(k) ?? 0);
+    if (effective < d.qty) throw new TRPCError({ code: "PRECONDITION_FAILED", message: `Acessório indisponível (variante: ${d.variante ?? "—"}). Disponível: ${effective}, pedido: ${d.qty}.` });
+  }
+}
+
 /** Recalcula e persiste o status do contrato com base nos rentals vinculados */
 async function recalcContractStatus(contractId: number): Promise<void> {
   const db = await getDb();
@@ -2827,6 +2856,11 @@ const contractsRouter = router({
         }
       }
 
+      // Validar disponibilidade de ACESSÓRIOS também ANTES de criar nada
+      if (input.accessories && input.accessories.length > 0) {
+        await assertAccessoryAvailability(input.accessories.map((a: any) => ({ accessoryId: a.accessoryId, variante: a.variante ?? null, qty: a.qty })));
+      }
+
       // Calculate total value from all bikes
       let totalValue = 0;
       for (const b of input.bikes) {
@@ -2867,8 +2901,6 @@ const contractsRouter = router({
       // Add accessories to contract_accessories and rental_accessories
       if (input.accessories && input.accessories.length > 0) {
         const { contractAccessories: caSchema } = await import("../drizzle/schema");
-        // pré-validação (não reservar nada se faltar)
-        await assertAccessoryAvailability(input.accessories.map((a: any) => ({ accessoryId: a.accessoryId, variante: a.variante ?? null, qty: a.qty })));
         for (const acc of input.accessories) {
           const accessory = await getAccessoryById(acc.accessoryId);
           // link de preço (agregado), 1 por linha
@@ -3040,6 +3072,11 @@ const contractsRouter = router({
           } as any);
         }
 
+        // validar ANTES de desmontar (conta as unidades que o próprio contrato já segura)
+        if (input.accessories && input.accessories.length > 0) {
+          await assertAccessoryAvailabilityForUpdate(db, input.id, input.accessories.map((a: any) => ({ accessoryId: a.accessoryId, variante: a.variante ?? null, qty: a.qty })));
+        }
+
         // Reconcile accessories: liberar unidades antigas, deletar linhas, recriar
         await releaseAccessoryUnits(db, input.id);
         await db.delete(contractAccessories).where(eq(contractAccessories.contractId, input.id));
@@ -3049,8 +3086,6 @@ const contractsRouter = router({
             .where(and(eq(rentalsTable.contractId, input.id), isNull(rentalsTable.deletedAt)))
             .limit(1);
           const firstRentalId = newRentals[0]?.id;
-          // pré-validação antes de reservar
-          await assertAccessoryAvailability(input.accessories.map((a: any) => ({ accessoryId: a.accessoryId, variante: a.variante ?? null, qty: a.qty })));
           for (const acc of input.accessories) {
             const accessory = await getAccessoryById(acc.accessoryId);
             if (firstRentalId) {
