@@ -1299,7 +1299,7 @@ const rentalsRouter = router({
           valorTotal: contractRow?.valorTotal ?? null,
           rentals: rentalsWithBike,
           accessories: accWithSerial,
-        });
+        }, "pt");
         const suffix = Date.now().toString(36);
         const { url } = await storagePut(`contracts/contrato-${input.contractId}-${suffix}.pdf`, pdfBuffer, "application/pdf");
         pdfUrl = url;
@@ -2965,7 +2965,7 @@ const contractsRouter = router({
           valorTotal: contractRow?.valorTotal ?? null,
           rentals: rentalsWithBike,
           accessories: accWithSerial,
-        });
+        }, "pt");
         const suffix = Date.now().toString(36);
         const { url: pdfS3Url } = await storagePut(`contracts/contrato-${contract.id}-${suffix}.pdf`, pdfBuffer, "application/pdf");
         pdfUrl = pdfS3Url;
@@ -3245,7 +3245,7 @@ const contractsRouter = router({
           valorTotal: contractRow?.valorTotal ?? null,
           rentals: rentalsWithBike,
           accessories: accWithSerial,
-        });
+        }, "pt");
         const suffix = Date.now().toString(36);
         const { url } = await storagePut(`contracts/contrato-${input.id}-${suffix}.pdf`, pdfBuffer, "application/pdf");
         await db.update(cTable2).set({ pdfUrl: url }).where(eqPdf(cTable2.id, input.id));
