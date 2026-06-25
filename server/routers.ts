@@ -1242,15 +1242,9 @@ const rentalsRouter = router({
             // Update the specific linked unit
             await db.update(auTable).set({ status: "alugado" }).where(eqOp2(auTable.id, ca.unitId));
           } else {
-            // No specific unit linked — mark first available unit of this accessory
-            const [availUnit] = await db.select().from(auTable)
-              .where(andOp2(eqOp2(auTable.accessoryId, ca.accessoryId), eqOp2(auTable.status, "disponivel")))
-              .limit(1);
-            if (availUnit) {
-              await db.update(auTable).set({ status: "alugado" }).where(eqOp2(auTable.id, availUnit.id));
-              // Link the unit to the contract_accessory for future tracking
-              await db.update(caTable).set({ unitId: availUnit.id }).where(eqOp2(caTable.id, ca.id));
-            }
+            // No specific unit linked — usar helper de reserva (single-source)
+            const newUnitId = await reserveOneAccessoryUnit(db, ca.accessoryId, null);
+            if (newUnitId) await db.update(caTable).set({ unitId: newUnitId }).where(eqOp2(caTable.id, ca.id));
           }
         }
       } catch (err) { console.warn("[confirmAll] Unit marking error:", err); }
@@ -1587,6 +1581,15 @@ const accessoriesRouter = router({
         .orderBy(asc(accessoryUnits.id));
     }),
 
+  availability: adminAuthProcedure
+    .input(z.object({ accessoryIds: z.array(z.number()).min(1) }))
+    .query(async ({ input }) => {
+      const { getAccessoryBreakdown } = await import("./db");
+      return Promise.all(input.accessoryIds.map(async (id) => {
+        const bd = await getAccessoryBreakdown(id);
+        return { accessoryId: id, variantes: bd.byVariante.map((v: any) => ({ variante: v.variante, disponivel: v.disponivel })) };
+      }));
+    }),
   updateUnitStatus: adminAuthProcedure
     .input(z.object({
       unitId: z.number(),
@@ -2409,6 +2412,52 @@ import {
 } from "../drizzle/schema";
 import { getDb } from "./db";
 
+// Reserva UMA unidade disponível de (accessoryId, variante|null), marca "alugado".
+// Retorna o unitId reservado, ou null se não houver disponível.
+async function reserveOneAccessoryUnit(db: any, accessoryId: number, variante: string | null): Promise<number | null> {
+  const { accessoryUnits } = await import("../drizzle/schema");
+  const { and, eq } = await import("drizzle-orm");
+  const conds: any[] = [eq(accessoryUnits.accessoryId, accessoryId), eq(accessoryUnits.status, "disponivel")];
+  if (variante != null) conds.push(eq(accessoryUnits.variante, variante));
+  const [unit] = await db.select({ id: accessoryUnits.id }).from(accessoryUnits)
+    .where(and(...conds)).orderBy(accessoryUnits.id).limit(1);
+  if (!unit) return null;
+  await db.update(accessoryUnits).set({ status: "alugado" }).where(eq(accessoryUnits.id, unit.id));
+  return unit.id;
+}
+
+// Libera (alugado→disponivel) TODAS as unidades ligadas às linhas deste contrato.
+async function releaseAccessoryUnits(db: any, contractId: number): Promise<void> {
+  const { accessoryUnits, contractAccessories } = await import("../drizzle/schema");
+  const { eq } = await import("drizzle-orm");
+  const rows = await db.select({ unitId: contractAccessories.unitId })
+    .from(contractAccessories).where(eq(contractAccessories.contractId, contractId));
+  for (const r of rows) {
+    if (r.unitId == null) continue;
+    const { and } = await import("drizzle-orm");
+    await db.update(accessoryUnits).set({ status: "disponivel" })
+      .where(and(eq(accessoryUnits.id, r.unitId), eq(accessoryUnits.status, "alugado")));
+  }
+}
+
+// Pré-valida disponibilidade por (accessoryId, variante) ANTES de reservar (evita reserva parcial).
+async function assertAccessoryAvailability(lines: Array<{accessoryId:number;variante:string|null;qty:number}>): Promise<void> {
+  const { getAccessoryBreakdown } = await import("./db");
+  const need = new Map<string, {accessoryId:number;variante:string|null;qty:number}>();
+  for (const l of lines) {
+    const k = `${l.accessoryId}::${l.variante ?? "__null__"}`;
+    const cur = need.get(k); if (cur) cur.qty += l.qty; else need.set(k, { ...l });
+  }
+  for (const d of Array.from(need.values())) {
+    const bd = await getAccessoryBreakdown(d.accessoryId);
+    const disp = d.variante == null
+      ? bd.disponivel
+      : (bd.byVariante.find((v: any) => v.variante === d.variante)?.disponivel ?? 0);
+    if (disp < d.qty) throw new TRPCError({ code: "PRECONDITION_FAILED",
+      message: `Acessório indisponível (variante: ${d.variante ?? "—"}). Disponível: ${disp}, pedido: ${d.qty}.` });
+  }
+}
+
 /** Recalcula e persiste o status do contrato com base nos rentals vinculados */
 async function recalcContractStatus(contractId: number): Promise<void> {
   const db = await getDb();
@@ -2818,23 +2867,18 @@ const contractsRouter = router({
       // Add accessories to contract_accessories and rental_accessories
       if (input.accessories && input.accessories.length > 0) {
         const { contractAccessories: caSchema } = await import("../drizzle/schema");
+        // pré-validação (não reservar nada se faltar)
+        await assertAccessoryAvailability(input.accessories.map((a: any) => ({ accessoryId: a.accessoryId, variante: a.variante ?? null, qty: a.qty })));
         for (const acc of input.accessories) {
           const accessory = await getAccessoryById(acc.accessoryId);
-          // Link to first rental
-          await createRentalAccessory({
-            rentalId: rentalIds[0],
-            accessoryId: acc.accessoryId,
-            quantity: acc.qty,
-            dailyRate: accessory?.dailyRate ?? null,
-          } as any);
-          // Link to contract
-          await db.insert(caSchema).values({
-            contractId: contract.id,
-            accessoryId: acc.accessoryId,
-            qty: acc.qty,
-            unitId: acc.unitId ?? null,
-            status: "ok",
-          });
+          // link de preço (agregado), 1 por linha
+          await createRentalAccessory({ rentalId: rentalIds[0], accessoryId: acc.accessoryId, quantity: acc.qty, dailyRate: accessory?.dailyRate ?? null } as any);
+          // reserva física: 1 linha de contract_accessories POR UNIDADE
+          for (let k = 0; k < acc.qty; k++) {
+            const unitId = await reserveOneAccessoryUnit(db, acc.accessoryId, acc.variante ?? null);
+            if (unitId == null) throw new TRPCError({ code: "PRECONDITION_FAILED", message: `Sem unidade disponível (variante: ${acc.variante ?? "—"}).` });
+            await db.insert(caSchema).values({ contractId: contract.id, accessoryId: acc.accessoryId, qty: 1, unitId, status: "ok" });
+          }
         }
       }
 
@@ -2996,7 +3040,8 @@ const contractsRouter = router({
           } as any);
         }
 
-        // Reconcile accessories: delete old contract_accessories, recreate
+        // Reconcile accessories: liberar unidades antigas, deletar linhas, recriar
+        await releaseAccessoryUnits(db, input.id);
         await db.delete(contractAccessories).where(eq(contractAccessories.contractId, input.id));
         if (input.accessories && input.accessories.length > 0) {
           const newRentals = await db.select({ id: rentalsTable.id })
@@ -3004,6 +3049,8 @@ const contractsRouter = router({
             .where(and(eq(rentalsTable.contractId, input.id), isNull(rentalsTable.deletedAt)))
             .limit(1);
           const firstRentalId = newRentals[0]?.id;
+          // pré-validação antes de reservar
+          await assertAccessoryAvailability(input.accessories.map((a: any) => ({ accessoryId: a.accessoryId, variante: a.variante ?? null, qty: a.qty })));
           for (const acc of input.accessories) {
             const accessory = await getAccessoryById(acc.accessoryId);
             if (firstRentalId) {
@@ -3014,13 +3061,18 @@ const contractsRouter = router({
                 dailyRate: accessory?.dailyRate ?? null,
               } as any);
             }
-            await db.insert(contractAccessories).values({
-              contractId: input.id,
-              accessoryId: acc.accessoryId,
-              qty: acc.qty,
-              unitId: acc.unitId ?? null,
-              status: "ok",
-            });
+            // reserva física: 1 linha de contract_accessories POR UNIDADE
+            for (let k = 0; k < acc.qty; k++) {
+              const unitId = await reserveOneAccessoryUnit(db, acc.accessoryId, acc.variante ?? null);
+              if (unitId == null) throw new TRPCError({ code: "PRECONDITION_FAILED", message: `Sem unidade disponível (variante: ${acc.variante ?? "—"}).` });
+              await db.insert(contractAccessories).values({
+                contractId: input.id,
+                accessoryId: acc.accessoryId,
+                qty: 1,
+                unitId,
+                status: "ok",
+              });
+            }
           }
         }
 
@@ -3194,6 +3246,9 @@ const contractsRouter = router({
         .set({ status: "cancelado" })
         .where(eq(contracts.id, input.id));
       
+      // Liberar unidades de acessórios reservadas
+      await releaseAccessoryUnits(db, input.id);
+
       // Cancel all pending rentals for this contract
       await db.update(rentalsTable)
         .set({ status: "cancelled" })
