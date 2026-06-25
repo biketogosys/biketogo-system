@@ -51,14 +51,7 @@ type BikeEntry = {
   totalAmount: string;
 };
 
-type AccessoryEntry = {
-  accessoryId: number;
-  name: string;
-  qty: number;
-  obrigatorio: boolean;
-  variante?: string;
-  unitId?: number;
-};
+
 
 // ─── VerifiedClientAutocomplete ───────────────────────────────────────────────
 function VerifiedClientAutocomplete({
@@ -161,7 +154,7 @@ type EditPrefill = {
   clientId: number;
   clientName: string;
   bikes: BikeEntry[];
-  accessories: AccessoryEntry[];
+  accessories: Array<{ accessoryId: number; variante: string | null; qty: number }>;
 };
 
 export function NewContractModal({
@@ -182,8 +175,9 @@ export function NewContractModal({
   const [clientName, setClientName] = useState("");
   const [clientStatus, setClientStatus] = useState("verified"); // prefill always verified
   const [bikeEntries, setBikeEntries] = useState<BikeEntry[]>([]);
-  const [accessories, setAccessories] = useState<AccessoryEntry[]>([]);
   const [notes, setNotes] = useState("");
+  const [accSelections, setAccSelections] = useState<Record<number, Record<string, number>>>({});
+  const [prefillSelections, setPrefillSelections] = useState<Record<number, Record<string, number>>>({});
 
   // Prefill state when edit mode opens
   useEffect(() => {
@@ -192,7 +186,14 @@ export function NewContractModal({
       setClientName(editPrefill.clientName);
       setClientStatus("verified");
       setBikeEntries(editPrefill.bikes);
-      setAccessories(editPrefill.accessories);
+      // Convert accessories list to accSelections
+      const sel: Record<number, Record<string, number>> = {};
+      for (const l of editPrefill.accessories) {
+        const k = l.variante ?? "__sem__";
+        (sel[l.accessoryId] ??= {})[k] = (sel[l.accessoryId]?.[k] ?? 0) + l.qty;
+      }
+      setAccSelections(sel);
+      setPrefillSelections(sel);
       setStep(1);
     } else if (open && !isEditMode && initialClient) {
       setClientId(String(initialClient.clientId));
@@ -227,28 +228,12 @@ export function NewContractModal({
   );
   const accList = accData?.data ?? [];
 
-  // Fetch units for accessories selected in step 3 (to show variante dropdown)
-  const [expandedAccId, setExpandedAccId] = useState<number | null>(null);
-  const { data: accUnitsData } = trpc.accessories.getUnits.useQuery(
-    { accessoryId: expandedAccId! },
-    { enabled: !!expandedAccId && step === 3 }
+  // availability query for step 3
+  const accIds = (accData?.data ?? []).map((a: any) => a.id);
+  const { data: availData } = trpc.accessories.availability.useQuery(
+    { accessoryIds: accIds },
+    { enabled: step === 3 && accIds.length > 0 }
   );
-  const accUnits = accUnitsData ?? [];
-  const availableUnits = accUnits.filter((u) => u.status === "disponivel");
-
-  // Initialize mandatory accessories when step 3 opens
-  useEffect(() => {
-    if (step === 3 && accList.length > 0) {
-      setAccessories((prev) => {
-        const mandatory = accList.filter((a) => (a as any).obrigatorio);
-        const existing = new Set(prev.map((p) => p.accessoryId));
-        const toAdd = mandatory
-          .filter((a) => !existing.has(a.id))
-          .map((a) => ({ accessoryId: a.id, name: a.name, qty: 1, obrigatorio: true }));
-        return [...prev, ...toAdd];
-      });
-    }
-  }, [step, accList.length]);
 
   const selectedBike = bikes.find((b) => b.id === Number(selBikeId));
 
@@ -292,25 +277,6 @@ export function NewContractModal({
     setBikeEntries((prev) => prev.filter((_, i) => i !== idx));
   }
 
-  function toggleAccessory(acc: typeof accList[0]) {
-    setAccessories((prev) => {
-      const exists = prev.find((a) => a.accessoryId === acc.id);
-      if (exists) {
-        if (exists.obrigatorio) return prev; // can't remove mandatory
-        return prev.filter((a) => a.accessoryId !== acc.id);
-      }
-      return [...prev, { accessoryId: acc.id, name: acc.name, qty: 1, obrigatorio: false }];
-    });
-    // Expand to show variante options
-    setExpandedAccId((prev) => prev === acc.id ? null : acc.id);
-  }
-
-  function setAccessoryVariant(accessoryId: number, unitId: number, variante: string | null) {
-    setAccessories((prev) => prev.map((a) =>
-      a.accessoryId === accessoryId ? { ...a, unitId, variante: variante ?? undefined } : a
-    ));
-  }
-
   const grandTotal = bikeEntries.reduce((s, b) => s + parseFloat(b.totalAmount), 0);
 
   const createMutation = trpc.contracts.createManual.useMutation({
@@ -337,7 +303,7 @@ export function NewContractModal({
 
   function handleReset() {
     setStep(1); setClientId(""); setClientName(""); setClientStatus("");
-    setBikeEntries([]); setAccessories([]); setNotes("");
+    setBikeEntries([]); setAccSelections({}); setPrefillSelections({}); setNotes("");
     setSelBikeId(""); setSelBikeSizeId(""); setSelStartDate(""); setSelEndDate(""); setSelQty(1);
   }
 
@@ -360,7 +326,10 @@ export function NewContractModal({
       dailyRate: b.dailyRate,
       totalAmount: b.totalAmount,
     }));
-    const accPayload = accessories.map((a) => ({ accessoryId: a.accessoryId, qty: a.qty, variante: a.variante, unitId: a.unitId }));
+    const accPayload: Array<{accessoryId:number;variante?:string;qty:number}> = [];
+    for (const [idStr, byKey] of Object.entries(accSelections))
+      for (const [key, qty] of Object.entries(byKey))
+        if (qty > 0) accPayload.push({ accessoryId: Number(idStr), variante: key === "__sem__" ? undefined : key, qty });
     if (isEditMode && editPrefill) {
       updateMutation.mutate({
         id: editPrefill.contractId,
@@ -546,89 +515,60 @@ export function NewContractModal({
         {/* Step 3: Accessories */}
         {step === 3 && (
           <div className="space-y-3">
-            <p className="text-sm text-muted-foreground">Acessórios obrigatórios já estão incluídos automaticamente. Adicione opcionais se necessário.</p>
-            <div className="space-y-2 max-h-72 overflow-y-auto">
+            <p className="text-sm text-muted-foreground">Selecione a quantidade de cada variante desejada. Acessórios obrigatórios precisam de ao menos 1 unidade.</p>
+            <div className="space-y-3 max-h-80 overflow-y-auto pr-1">
               {accList.map((acc) => {
-                const selected = accessories.find((a) => a.accessoryId === acc.id);
                 const isMandatory = (acc as any).obrigatorio;
-                const isExpanded = expandedAccId === acc.id;
-                const hasVariants = isExpanded && availableUnits.some((u) => u.variante);
+                const accAvail = (availData ?? []).find((av: any) => av.accessoryId === acc.id);
+                const variantes: Array<{variante: string|null; disponivel: number}> = accAvail?.variantes ?? [];
+                const hasUnits = variantes.length > 0;
+                const byKey = accSelections[acc.id] ?? {};
+                const totalSelected = Object.values(byKey).reduce((s, q) => s + q, 0);
                 return (
                   <div key={acc.id} className="border rounded-md overflow-hidden">
-                    <button
-                      type="button"
-                      onClick={() => toggleAccessory(acc)}
-                      disabled={isMandatory}
-                      className={`w-full flex items-center gap-2 p-2.5 text-left text-sm transition-colors ${
-                        selected ? "bg-primary/5" : "hover:bg-muted/50"
-                      } ${isMandatory ? "cursor-default" : ""}`}
-                    >
+                    <div className="flex items-center gap-2 p-2.5 bg-muted/20">
                       <Package className="h-4 w-4 text-muted-foreground shrink-0" />
                       <div className="flex-1 min-w-0">
-                        <div className="font-medium truncate">{acc.name}</div>
-                        {isMandatory && <div className="text-xs text-amber-600">Obrigatório</div>}
-                        {selected?.variante && <div className="text-xs text-muted-foreground">Variante: {selected.variante}</div>}
+                        <span className="font-medium text-sm truncate">{acc.name}</span>
+                        {isMandatory && <span className="ml-2 text-xs bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">Obrigatório</span>}
                       </div>
-                      {selected && <Check className="h-3.5 w-3.5 text-primary shrink-0" />}
-                    </button>
-                    {/* Variante dropdown + qty when selected and expanded */}
-                    {selected && isExpanded && (
-                      <div className="px-3 pb-3 pt-1 bg-muted/30 border-t flex flex-wrap gap-3 items-end">
-                        {hasVariants && (() => {
-                            // Agrupar availableUnits por variante e contar disponíveis
-                            const variantMap = new Map<string, number>();
-                            availableUnits.filter((u) => u.variante).forEach((u) => {
-                              const key = u.variante!;
-                              variantMap.set(key, (variantMap.get(key) ?? 0) + 1);
-                            });
-                            return (
-                              <div className="flex-1 min-w-[140px]">
-                                <Label className="text-xs mb-1 block">Variante</Label>
-                                <Select
-                                  value={selected.variante ?? ""}
-                                  onValueChange={(v) => {
-                                    // Selecionar a primeira unidade disponível desta variante
-                                    const unit = availableUnits.find((u) => u.variante === v);
-                                    if (unit) setAccessoryVariant(acc.id, unit.id, unit.variante ?? null);
-                                  }}
-                                >
-                                  <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Selecionar" /></SelectTrigger>
-                                  <SelectContent>
-                                    {Array.from(variantMap.entries()).map(([varName, count]) => (
-                                      <SelectItem key={varName} value={varName}>
-                                        {varName} — {count} disp.
-                                      </SelectItem>
-                                    ))}
-                                  </SelectContent>
-                                </Select>
-                              </div>
-                            );
-                          })()}
-                        {(() => {
-                            // maxQty: se variante selecionada → contar unidades disponíveis daquela variante;
-                            // sem variante → total disponível do acessório
-                            const maxQty = selected.variante
-                              ? availableUnits.filter((u) => u.variante === selected.variante).length
-                              : availableUnits.length || 10;
-                            return (
-                              <div className="w-20">
-                                <Label className="text-xs mb-1 block">Qtd.</Label>
-                                <Input
-                                  type="number" min={1} max={maxQty}
-                                  value={selected.qty}
+                      {totalSelected > 0 && <span className="text-xs text-primary font-medium">{totalSelected} selecionado(s)</span>}
+                    </div>
+                    {!hasUnits ? (
+                      <div className="px-3 py-2 text-xs text-muted-foreground">Sem unidades cadastradas</div>
+                    ) : (
+                      <div className="px-3 pb-3 pt-2 space-y-2">
+                        {variantes.map(({ variante, disponivel }) => {
+                          const key = variante ?? "__sem__";
+                          const maxQty = disponivel + (isEditMode ? (prefillSelections[acc.id]?.[key] ?? 0) : 0);
+                          const qty = byKey[key] ?? 0;
+                          return (
+                            <div key={key} className="flex items-center gap-3">
+                              <span className="text-sm flex-1">{variante ?? "(padrão)"} <span className="text-xs text-muted-foreground">({disponivel} disp.)</span></span>
+                              <div className="flex items-center gap-1">
+                                <button type="button" className="w-6 h-6 rounded border flex items-center justify-center text-sm hover:bg-muted"
+                                  onClick={() => setAccSelections(prev => {
+                                    const cur = (prev[acc.id] ?? {})[key] ?? 0;
+                                    const next = Math.max(0, cur - 1);
+                                    return { ...prev, [acc.id]: { ...(prev[acc.id] ?? {}), [key]: next } };
+                                  })}>-</button>
+                                <input type="number" className="w-10 h-6 text-center text-sm border rounded"
+                                  min={0} max={maxQty} value={qty}
                                   onChange={(e) => {
-                                    const v = Number(e.target.value);
-                                    setAccessories((prev) => prev.map((a) =>
-                                      a.accessoryId === acc.id
-                                        ? { ...a, qty: Math.min(Math.max(1, v), maxQty > 0 ? maxQty : 1) }
-                                        : a
-                                    ));
-                                  }}
-                                  className="h-8 text-xs"
-                                />
+                                    const v = Math.min(Math.max(0, Number(e.target.value)), maxQty);
+                                    setAccSelections(prev => ({ ...prev, [acc.id]: { ...(prev[acc.id] ?? {}), [key]: v } }));
+                                  }} />
+                                <button type="button" className="w-6 h-6 rounded border flex items-center justify-center text-sm hover:bg-muted"
+                                  disabled={qty >= maxQty}
+                                  onClick={() => setAccSelections(prev => {
+                                    const cur = (prev[acc.id] ?? {})[key] ?? 0;
+                                    const next = Math.min(maxQty, cur + 1);
+                                    return { ...prev, [acc.id]: { ...(prev[acc.id] ?? {}), [key]: next } };
+                                  })}>+</button>
                               </div>
-                            );
-                          })()}
+                            </div>
+                          );
+                        })}
                       </div>
                     )}
                   </div>
@@ -657,17 +597,26 @@ export function NewContractModal({
                 </div>
               ))}
             </div>
-            {accessories.length > 0 && (
-              <div>
-                <p className="text-xs text-muted-foreground uppercase tracking-wide mb-2">Acessórios</p>
-                {accessories.map((a) => (
-                  <div key={a.accessoryId} className="flex justify-between text-sm py-1 border-b last:border-0">
-                    <span>{a.name} × {a.qty}{a.obrigatorio && <span className="ml-1 text-xs text-amber-600">(obrig.)</span>}</span>
-                    <span className="text-muted-foreground">gratuito</span>
+{(() => {
+                const accSummary: Array<{name: string; variante: string|null; qty: number; obrigatorio: boolean}> = [];
+                for (const [idStr, byKey] of Object.entries(accSelections)) {
+                  const accItem = accList.find((a: any) => a.id === Number(idStr));
+                  for (const [key, qty] of Object.entries(byKey)) {
+                    if (qty > 0) accSummary.push({ name: accItem?.name ?? `Acessório #${idStr}`, variante: key === "__sem__" ? null : key, qty, obrigatorio: !!(accItem as any)?.obrigatorio });
+                  }
+                }
+                return accSummary.length > 0 ? (
+                  <div>
+                    <p className="text-xs text-muted-foreground uppercase tracking-wide mb-2">Acessórios</p>
+                    {accSummary.map((a, i) => (
+                      <div key={i} className="flex justify-between text-sm py-1 border-b last:border-0">
+                        <span>{a.name}{a.variante ? ` (${a.variante})` : ""} × {a.qty}{a.obrigatorio && <span className="ml-1 text-xs text-amber-600">(obrig.)</span>}</span>
+                        <span className="text-muted-foreground">gratuito</span>
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
-            )}
+                ) : null;
+              })()}
             <div className="flex justify-between font-bold text-base pt-2 border-t">
               <span>Total</span>
               <span className="text-primary">R$ {grandTotal.toFixed(2)}</span>
@@ -698,6 +647,13 @@ export function NewContractModal({
                   }
                   if (step === 2 && bikeEntries.length === 0) {
                     toast.error("Adicione pelo menos uma bike."); return;
+                  }
+                  if (step === 3) {
+                    const mandatory = accList.filter((a: any) => a.obrigatorio);
+                    for (const ma of mandatory) {
+                      const total = Object.values(accSelections[ma.id] ?? {}).reduce((s, q) => s + q, 0);
+                      if (total < 1) { toast.error(`Selecione ao menos 1 unidade do acessório obrigatório: ${ma.name}`); return; }
+                    }
                   }
                   setStep((s) => s + 1);
                 }}

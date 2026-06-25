@@ -756,13 +756,15 @@ function ContractDetail({
                 : 1,
               totalAmount: r.totalAmount ?? "0.00",
             })),
-            accessories: (data.accessories ?? []).map((a: any) => ({
-              accessoryId: a.accessoryId,
-              name: a.accessoryName ?? `Acessório #${a.accessoryId}`,
-              qty: a.qty ?? 1,
-              obrigatorio: false,
-              unitId: a.unitId ?? undefined,
-            })),
+            accessories: Object.values(
+              (data.accessories ?? []).reduce((acc: any, a: any) => {
+                const variante = a.variante ?? null;
+                const k = `${a.accessoryId}::${variante ?? "__null__"}`;
+                if (!acc[k]) acc[k] = { accessoryId: a.accessoryId, variante, qty: 0 };
+                acc[k].qty += (a.qty ?? 1);
+                return acc;
+              }, {})
+            ) as Array<{ accessoryId: number; variante: string | null; qty: number }>,
           }}
         />
       )}

@@ -2659,12 +2659,14 @@ const contractsRouter = router({
       // Fetch serialNumber for each linked unit
       const accChecklist = await Promise.all(accChecklistRaw.map(async (ca) => {
         let serialNumber: string | null = null;
+        let variante: string | null = null;
         if (ca.unitId) {
-          const [unit] = await db.select({ serialNumber: accessoryUnits.serialNumber })
-            .from(accessoryUnits).where(eq(accessoryUnits.id, ca.unitId));
+          const [unit] = await db.select({ serialNumber: accessoryUnits.serialNumber, variante: accessoryUnits.variante })
+            .from(accessoryUnits).where(eq(accessoryUnits.id, ca.unitId)).limit(1);
           serialNumber = unit?.serialNumber ?? null;
+          variante = unit?.variante ?? null;
         }
-        return { ...ca, serialNumber };
+        return { ...ca, serialNumber, variante };
       }));
       return { ...contract, rentals: linkedRentals, accessories: accChecklist };
     }),
