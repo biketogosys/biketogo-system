@@ -2487,6 +2487,57 @@ async function assertAccessoryAvailabilityForUpdate(db: any, contractId: number,
   }
 }
 
+/** Monta o objeto ContractPdfData a partir do banco para um contractId */
+async function buildContractPdfData(db: Awaited<ReturnType<typeof getDb>>, contractId: number) {
+  if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+  const { contracts: cT, clients: clT, accessories: accT, contractAccessories: caT, accessoryUnits: auT } = await import("../drizzle/schema");
+  const { bikes: bikesT, bikeSizes: bkSizesT } = await import("../drizzle/schema");
+  const { rentals: rT } = await import("../drizzle/schema");
+  const [contractRow] = await db.select().from(cT).where(eq(cT.id, contractId));
+  const [clientRow] = contractRow?.clientId
+    ? await db.select().from(clT).where(eq(clT.id, contractRow.clientId))
+    : [null];
+  const rentalsForPdf = await db.select({
+    bikeId: rT.bikeId, startDate: rT.startDate, endDate: rT.endDate,
+    totalAmount: rT.totalAmount, dailyRate: rT.dailyRate, bikeSizeId: rT.bikeSizeId,
+  }).from(rT).where(and(eq(rT.contractId, contractId), isNull(rT.deletedAt)));
+  const rentalsWithBike = await Promise.all(rentalsForPdf.map(async (r) => {
+    const [bike] = r.bikeId
+      ? await db.select({ model: bikesT.model, brand: bikesT.brand, serialNumber: bikesT.serialNumber }).from(bikesT).where(eq(bikesT.id, r.bikeId))
+      : [null];
+    let tamanho: string | null = null;
+    if (r.bikeSizeId) {
+      const [sz] = await db.select({ tamanho: bkSizesT.tamanho }).from(bkSizesT).where(eq(bkSizesT.id, r.bikeSizeId));
+      tamanho = sz?.tamanho ?? null;
+    }
+    return { ...r, bikeModel: bike?.model, bikeBrand: bike?.brand, bikeSerialNumber: bike?.serialNumber, tamanho };
+  }));
+  const caRows = await db.select({
+    accessoryId: caT.accessoryId, qty: caT.qty, unitId: caT.unitId,
+    accessoryName: accT.name,
+  }).from(caT).leftJoin(accT, eq(caT.accessoryId, accT.id)).where(eq(caT.contractId, contractId));
+  const accWithSerial = await Promise.all(caRows.map(async (ca) => {
+    let serialNumber: string | null = null;
+    if (ca.unitId) {
+      const [unit] = await db.select({ serialNumber: auT.serialNumber }).from(auT).where(eq(auT.id, ca.unitId));
+      serialNumber = unit?.serialNumber ?? null;
+    }
+    return { accessoryName: ca.accessoryName, qty: ca.qty, serialNumber, valorReposicao: null };
+  }));
+  return {
+    contractId,
+    clientName: clientRow?.name ?? "—",
+    clientCpf: clientRow?.cpf ?? null,
+    clientRg: clientRow?.rg ?? null,
+    clientPhone: clientRow?.phone ?? null,
+    clientEmail: clientRow?.email ?? null,
+    criadoEm: contractRow?.criadoEm ?? new Date(),
+    valorTotal: contractRow?.valorTotal ?? null,
+    rentals: rentalsWithBike,
+    accessories: accWithSerial,
+  };
+}
+
 /** Recalcula e persiste o status do contrato com base nos rentals vinculados */
 async function recalcContractStatus(contractId: number): Promise<void> {
   const db = await getDb();
@@ -3354,6 +3405,21 @@ const contractsRouter = router({
         registroId: input.contractId,
       });
       return { success: true, paid: contractRentals.length };
+    }),
+
+  generatePdf: adminAuthProcedure
+    .input(z.object({ contractId: z.number(), language: z.enum(["pt", "en", "es"]).default("pt") }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+      const data = await buildContractPdfData(db, input.contractId);
+      const { generateContractPdf } = await import("./pdf");
+      const { storagePut } = await import("./storage");
+      const pdfBuffer = await generateContractPdf(data, input.language);
+      const suffix = Date.now().toString(36);
+      const { url } = await storagePut(`contracts/contrato-${input.contractId}-${suffix}.pdf`, pdfBuffer, "application/pdf");
+      await db.update(contracts).set({ pdfUrl: url }).where(eq(contracts.id, input.contractId));
+      return { pdfUrl: url };
     }),
 });
 

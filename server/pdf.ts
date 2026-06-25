@@ -101,6 +101,7 @@ export type PdfLanguage = "pt" | "en" | "es";
 const PDF_LABELS: Record<PdfLanguage, {
   contractTitle: string;
   bikesSubtitle: string;
+  contractObject: string;
   section1: string;
   section2: string;
   section3: string;
@@ -149,6 +150,7 @@ const PDF_LABELS: Record<PdfLanguage, {
     locadora:  "LOCADORA",
     locatario: "LOCATÁRIO(A)",
     periodo:   "a",
+    contractObject: "Objeto do contrato",
   },
   en: {
     contractTitle: "BICYCLE RENTAL CONTRACT",
@@ -175,6 +177,7 @@ const PDF_LABELS: Record<PdfLanguage, {
     locadora:  "LESSOR",
     locatario: "LESSEE",
     periodo:   "to",
+    contractObject: "Object of the contract",
   },
   es: {
     contractTitle: "CONTRATO DE ALQUILER DE BICICLETA",
@@ -201,6 +204,7 @@ const PDF_LABELS: Record<PdfLanguage, {
     locadora:  "ARRENDADOR",
     locatario: "ARRENDATARIO",
     periodo:   "a",
+    contractObject: "Objeto del contrato",
   },
 };
 
@@ -539,11 +543,6 @@ export async function generateContractPdf(
      // ── 2. OBJETO DA LOCAÇÃO ────────────────────────────────────────────
     sectionTitle(2, L.section2);
     {
-      // Texto de objeto do contrato (acima da tabela)
-      doc.fillColor(INK).font("Helvetica").fontSize(8)
-        .text(empresaObjetoTexto, M, doc.y, { width: CW });
-      doc.moveDown(0.6);
-
       const cols = [
         { k: "n",      x: M,   w: 20,  t: L.colN,        a: "left"  as const },
         { k: "modelo", x: 60,  w: 124, t: L.colModelo,    a: "left"  as const },
@@ -651,12 +650,16 @@ export async function generateContractPdf(
       }
       doc.y = y3 + 14; doc.x = M;
     }
-
-    // ── 5. TERMOS E CONDIÇÕES ─────────────────────────────────────────────────
+    // ── 5. TERMOS E CONDIÇÕES ───────────────────────────────────────────────────
     // Termos: sempre renderiza (usa default embutido se vazio no banco)
     sectionTitle(5, L.section5);
+    // Subtítulo + texto do objeto do contrato
+    doc.fillColor(GOLD).font("Helvetica-Bold").fontSize(8)
+      .text(L.contractObject, M, doc.y, { width: CW });
+    doc.fillColor(INK).font("Helvetica").fontSize(8)
+      .text(empresaObjetoTexto, M, doc.y, { width: CW });
+    doc.moveDown(0.6);
     renderTerms(doc, empresaTermos);
-
     // ── ASSINATURAS ───────────────────────────────────────────────────────────
     doc.moveDown(2.4);
     const sy = doc.y;
@@ -689,7 +692,7 @@ export async function generateContractPdf(
         M, H - 17, { width: CW - 60, lineBreak: false }
       );
     doc.fillColor(GOLD).font("Helvetica").fontSize(7)
-      .text(language === "pt" ? "Página 1" : "Page 1", M, H - 17, { width: CW, align: "right", lineBreak: false });
+      .text(language === "en" ? "Page 1" : "Página 1", M, H - 17, { width: CW, align: "right", lineBreak: false });
 
     doc.end();
   });
