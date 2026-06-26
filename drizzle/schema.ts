@@ -31,6 +31,7 @@ export const contractStatusEnum = pgEnum("contract_status", ["pendente", "ativo"
 export const accessoryReturnStatusEnum = pgEnum("accessory_return_status", ["ok", "danificado", "perdido", "roubado"]);
 export const maintenanceStatusEnum = pgEnum("maintenance_status", ["em_andamento", "concluida"]);
 export const accessoryUnitStatusEnum = pgEnum("accessory_unit_status", ["disponivel", "alugado", "perdido", "manutencao", "roubado"]);
+export const bikeUnitStatusEnum = pgEnum("bike_unit_status", ["disponivel", "alugado", "perdido", "manutencao", "roubado"]);
 export const nacionalidadeEnum = pgEnum("nacionalidade", ["brasileiro", "estrangeiro"]);
 export const tipoDocumentoEnum = pgEnum("tipo_documento", ["cpf", "rg", "passaporte", "cnh"]);
 
@@ -384,3 +385,15 @@ export const accessoryUnits = pgTable("accessory_units", {
 });
 export type AccessoryUnit = typeof accessoryUnits.$inferSelect;
 export type InsertAccessoryUnit = typeof accessoryUnits.$inferInsert;
+
+// ─── Bike Units (unidades individuais de bicicleta) ──────────────────────────
+export const bikeUnits = pgTable("bike_units", {
+  id: serial("id").primaryKey(),
+  bikeSizeId: integer("bikeSizeId").notNull(),
+  numeroSistema: varchar("numeroSistema", { length: 50 }).notNull(),
+  status: bikeUnitStatusEnum("status").default("disponivel").notNull(),
+  observacao: text("observacao"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type BikeUnit = typeof bikeUnits.$inferSelect;
+export type InsertBikeUnit = typeof bikeUnits.$inferInsert;
