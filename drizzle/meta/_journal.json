@@ -78,6 +78,34 @@
       "when": 1780172082001,
       "tag": "0010_mixed_darkstar",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1781262813496,
+      "tag": "0011_old_killer_shrike",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1782002959422,
+      "tag": "0012_tranquil_ares",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1782212344229,
+      "tag": "0013_romantic_norman_osborn",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1782498890167,
+      "tag": "0014_steep_maggott",
+      "breakpoints": true
     }
   ]
 }
