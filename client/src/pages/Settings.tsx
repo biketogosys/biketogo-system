@@ -3,13 +3,19 @@ import { maskPhone } from "@/hooks/useMask";
 import { toast } from "sonner";
 import {
   Loader2, Save, Settings as SettingsIcon, Truck, Phone, Clock, Mail,
-  MessageCircle, Link, Eye, EyeOff, Building2, Plus, X, Bike,
+  MessageCircle, Link, Eye, EyeOff, Building2, Plus, X, Bike, FileText,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { trpc } from "@/lib/trpc";
+import {
+  Tabs,
+  TabsList,
+  TabsTrigger,
+  TabsContent,
+} from "@/components/ui/tabs";
 
 const GOLD = "oklch(0.68 0.12 65)";
 const GOLD_FG = "oklch(0.10 0.005 240)";
@@ -113,8 +119,13 @@ export default function Settings() {
   const [companyEmail, setCompanyEmail] = useState("");
   const [companyWebsite, setCompanyWebsite] = useState("");
   const [companyForo, setCompanyForo] = useState("");
-  const [clauses, setClauses] = useState<string[]>([""]);
   const [companyCaucao, setCompanyCaucao] = useState("");
+  // ── Contract content (per-language) ─────────────────────────────────────────
+  type Lang = "pt" | "en" | "es";
+  const LANGS: Lang[] = ["pt", "en", "es"];
+  const [objeto, setObjeto] = useState<Record<Lang, string>>({ pt: "", en: "", es: "" });
+  const [clauses, setClauses] = useState<Record<Lang, string[]>>({ pt: [""], en: [""], es: [""] });
+  const [savingContent, setSavingContent] = useState(false);
 
 
 
@@ -166,13 +177,23 @@ export default function Settings() {
     setCompanyEmail(map["company_email"] || "");
     setCompanyWebsite(map["company_website"] || "");
     setCompanyForo(map["company_foro"] || "");
-    const rawTerms = map["company_terms"] || "";
-    const parsed = rawTerms
-      .split(/\n{2,}/)
-      .map((p) => p.trim().replace(/^\d+[.\-)\s]+/, "").trim())
-      .filter(Boolean);
-    setClauses(parsed.length ? parsed : [""]);
     setCompanyCaucao(map["company_caucao"] || "");
+    // Load per-language contract content
+    const parseClauses = (raw: string) => {
+      const parsed = raw.split(/\n{2,}/).map((p) => p.trim().replace(/^\d+[.\-)\s]+/, "").trim()).filter(Boolean);
+      return parsed.length ? parsed : [""];
+    };
+    const newObjeto: Record<Lang, string> = { pt: "", en: "", es: "" };
+    const newClauses: Record<Lang, string[]> = { pt: [""], en: [""], es: [""] };
+    for (const lang of LANGS) {
+      newObjeto[lang] = map[`company_object_${lang}`] || "";
+      const rawLang = map[`company_terms_${lang}`] || "";
+      // Migration: if pt is empty but legacy company_terms has content, use it
+      const raw = rawLang || (lang === "pt" ? (map["company_terms"] || "") : "");
+      newClauses[lang] = parseClauses(raw);
+    }
+    setObjeto(newObjeto);
+    setClauses(newClauses);
     setCompanyLogoUrl(map["company_logo_url"] || "");
 
 
@@ -239,7 +260,6 @@ export default function Settings() {
                 { key: "company_website", value: companyWebsite },
                 { key: "company_foro", value: companyForo },
                 { key: "company_caucao", value: companyCaucao },
-                { key: "company_terms", value: clauses.map((c) => c.trim()).filter(Boolean).map((c, i) => `${i + 1}. ${c}`).join("\n\n") },
                 { key: "company_logo_url", value: companyLogoUrl },
               ], setSavingCompany)}
             />
@@ -324,11 +344,59 @@ export default function Settings() {
                   type="number"
                   hint="Caução exigida no contrato (opcional)"
                 />
-                <div className="sm:col-span-2">
-                  <Label className="text-xs text-muted-foreground mb-1.5 block">Termos e condições do contrato</Label>
-                  <p className="text-xs text-muted-foreground mb-3">Cada cláusula é numerada automaticamente e aparece na seção de Termos do PDF.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* ─── Conteúdo do contrato (por idioma) ──────────────────────────────── */}
+        <div className="bg-card border border-border rounded-xl p-6">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <FileText className="w-5 h-5 text-primary" />
+              <h2 className="text-base font-semibold text-foreground">Conteúdo do contrato</h2>
+            </div>
+            <SectionSaveBtn
+              saving={savingContent}
+              onClick={() => {
+                const entries: Array<{ key: string; value: string }> = [];
+                for (const lang of LANGS) {
+                  entries.push({ key: `company_object_${lang}`, value: objeto[lang] });
+                  entries.push({
+                    key: `company_terms_${lang}`,
+                    value: clauses[lang].map((c) => c.trim()).filter(Boolean).map((c, i) => `${i + 1}. ${c}`).join("\n\n"),
+                  });
+                }
+                saveSection(entries, setSavingContent);
+              }}
+            />
+          </div>
+          <p className="text-xs text-muted-foreground mb-4">
+            Texto do Objeto do contrato e as cláusulas de Termos, editáveis por idioma. Quando vazio, o PDF usa o texto padrão embutido.
+          </p>
+          <Tabs defaultValue="pt">
+            <TabsList className="mb-4">
+              <TabsTrigger value="pt">🇧🇷 PT</TabsTrigger>
+              <TabsTrigger value="en">🇺🇸 EN</TabsTrigger>
+              <TabsTrigger value="es">🇪🇸 ES</TabsTrigger>
+            </TabsList>
+            {LANGS.map((lang) => (
+              <TabsContent key={lang} value={lang} className="space-y-4">
+                <div>
+                  <Label className="text-xs text-muted-foreground mb-1.5 block">Objeto do contrato</Label>
+                  <Textarea
+                    rows={5}
+                    value={objeto[lang]}
+                    onChange={(e) => setObjeto((prev) => ({ ...prev, [lang]: e.target.value }))}
+                    placeholder="Deixe em branco para usar o texto padrão..."
+                    className="bg-secondary border-border text-sm resize-y"
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs text-muted-foreground mb-1.5 block">Termos e condições</Label>
+                  <p className="text-xs text-muted-foreground mb-3">Cada cláusula é numerada automaticamente. Deixe em branco para usar o texto padrão.</p>
                   <div className="space-y-2">
-                    {clauses.map((clause, i) => (
+                    {clauses[lang].map((clause, i) => (
                       <div key={i} className="flex items-start gap-2">
                         <span
                           className="mt-2 flex-shrink-0 text-xs font-bold px-1.5 py-0.5 rounded"
@@ -339,13 +407,16 @@ export default function Settings() {
                         <Textarea
                           rows={2}
                           value={clause}
-                          onChange={(e) => setClauses((prev) => prev.map((c, idx) => idx === i ? e.target.value : c))}
+                          onChange={(e) => setClauses((prev) => ({ ...prev, [lang]: prev[lang].map((c, idx) => idx === i ? e.target.value : c) }))}
                           placeholder={`Cláusula ${i + 1}...`}
                           className="bg-secondary border-border text-sm resize-y flex-1"
                         />
                         <button
                           type="button"
-                          onClick={() => setClauses((prev) => { const next = prev.filter((_, idx) => idx !== i); return next.length ? next : [""]; })}
+                          onClick={() => setClauses((prev) => {
+                            const next = prev[lang].filter((_, idx) => idx !== i);
+                            return { ...prev, [lang]: next.length ? next : [""] };
+                          })}
                           className="mt-2 text-muted-foreground hover:text-destructive transition-colors"
                           title="Remover cláusula"
                         >
@@ -359,14 +430,14 @@ export default function Settings() {
                     variant="outline"
                     size="sm"
                     className="mt-3"
-                    onClick={() => setClauses((prev) => [...prev, ""])}
+                    onClick={() => setClauses((prev) => ({ ...prev, [lang]: [...prev[lang], ""] }))}
                   >
                     <Plus className="h-4 w-4 mr-1" /> Adicionar cláusula
                   </Button>
                 </div>
-              </div>
-            </div>
-          </div>
+              </TabsContent>
+            ))}
+          </Tabs>
         </div>
 
         {/* ─── Operating Hours ──────────────────────────────────────────────── */}

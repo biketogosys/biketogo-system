@@ -44,6 +44,7 @@ export interface ContractPdfData {
     totalAmount?: string | null;
     tamanho?: string | null;
     dailyRate?: string | null;
+    quantity?: number | null;
   }>;
   accessories: Array<{
     accessoryName?: string | null;
@@ -110,6 +111,7 @@ const PDF_LABELS: Record<PdfLanguage, {
   colN: string;
   colModelo: string;
   colTam: string;
+  colQtd: string;
   colSis: string;
   colPeriodo: string;
   colDiaria: string;
@@ -136,6 +138,7 @@ const PDF_LABELS: Record<PdfLanguage, {
     colN:        "Nº",
     colModelo:   "Modelo",
     colTam:      "Tam.",
+    colQtd:      "Qtd",
     colSis:      "Nº sistema",
     colPeriodo:  "Período",
     colDiaria:   "Diária",
@@ -163,6 +166,7 @@ const PDF_LABELS: Record<PdfLanguage, {
     colN:        "No.",
     colModelo:   "Model",
     colTam:      "Size",
+    colQtd:      "Qty",
     colSis:      "System no.",
     colPeriodo:  "Period",
     colDiaria:   "Daily rate",
@@ -190,6 +194,7 @@ const PDF_LABELS: Record<PdfLanguage, {
     colN:        "Nº",
     colModelo:   "Modelo",
     colTam:      "Talla",
+    colQtd:      "Cant.",
     colSis:      "Nº sistema",
     colPeriodo:  "Período",
     colDiaria:   "Tarifa diaria",
@@ -422,8 +427,10 @@ export async function generateContractPdf(
     empresaEndereco,
     empresaCidade,
     empresaEmail,
-    empresaTermosRaw,
-    empresaObjetoRaw,
+    empresaTermosLang,
+    empresaObjetoLang,
+    empresaTermosLegacy,
+    empresaObjetoLegacy,
     empresaCaucao,
     empresaSub,
     logoUrl,
@@ -433,20 +440,24 @@ export async function generateContractPdf(
     fetchSetting("company_address", "[Endereço não configurado]"),
     fetchSetting("company_city",    "[Cidade não configurada]"),
     fetchSetting("company_email",   "[E-mail não configurado]"),
-    fetchSetting("company_terms",   ""),
-    fetchSetting("company_object",  ""),
+    fetchSetting(`company_terms_${language}`,  ""),
+    fetchSetting(`company_object_${language}`, ""),
+    fetchSetting("company_terms",  ""),
+    fetchSetting("company_object", ""),
     fetchSetting("company_caucao",  ""),
     fetchSetting("company_subtitle", L.bikesSubtitle),
     fetchSetting("company_logo_url",""),
   ]);
 
   // Usar defaults embutidos quando o campo estiver vazio
-  const empresaTermos = empresaTermosRaw && empresaTermosRaw.trim() !== ""
-    ? empresaTermosRaw
-    : DEFAULT_TERMOS[language];
-  const empresaObjetoTexto = empresaObjetoRaw && empresaObjetoRaw.trim() !== ""
-    ? empresaObjetoRaw
-    : DEFAULT_OBJETO[language];
+  const empresaTermos =
+    empresaTermosLang.trim() ? empresaTermosLang
+    : (language === "pt" && empresaTermosLegacy.trim() ? empresaTermosLegacy
+    : DEFAULT_TERMOS[language]);
+  const empresaObjetoTexto =
+    empresaObjetoLang.trim() ? empresaObjetoLang
+    : (language === "pt" && empresaObjetoLegacy.trim() ? empresaObjetoLegacy
+    : DEFAULT_OBJETO[language]);
 
   const logoBuffer = await fetchLogoBuffer(logoUrl || null);
 
@@ -546,8 +557,9 @@ export async function generateContractPdf(
       const cols = [
         { k: "n",      x: M,   w: 20,  t: L.colN,        a: "left"  as const },
         { k: "modelo", x: 60,  w: 124, t: L.colModelo,    a: "left"  as const },
-        { k: "tam",    x: 184, w: 26,  t: L.colTam,       a: "left"  as const },
-        { k: "sis",    x: 210, w: 88,  t: L.colSis,       a: "left"  as const },
+        { k: "tam",    x: 184, w: 26,  t: L.colTam,       a: "left"   as const },
+        { k: "qtd",    x: 210, w: 24,  t: L.colQtd,       a: "center" as const },
+        { k: "sis",    x: 234, w: 64,  t: L.colSis,       a: "left"   as const },
         { k: "per",    x: 298, w: 116, t: L.colPeriodo,   a: "left"  as const },
         { k: "diaria", x: 414, w: 56,  t: L.colDiaria,    a: "right" as const },
         { k: "sub",    x: 470, w: 85,  t: L.colSubtotal,  a: "right" as const },
@@ -568,6 +580,7 @@ export async function generateContractPdf(
           n:      String(i + 1),
           modelo: [r.bikeModel, r.bikeBrand].filter(Boolean).join(" ") || "—",
           tam:    r.tamanho || "—",
+          qtd:    String(r.quantity ?? 1),
           sis:    r.bikeSerialNumber || "—",
           per:    periodLabel(r),
           diaria: formatCurrency(r.dailyRate),

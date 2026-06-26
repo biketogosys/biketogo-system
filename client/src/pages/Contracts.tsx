@@ -49,6 +49,12 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type ContractStatus = "pendente" | "ativo" | "parcialmente_devolvido" | "encerrado" | "cancelado";
@@ -425,6 +431,14 @@ function ContractDetail({
     onError: (e) => toast.error("Erro ao confirmar pagamento: " + e.message),
   });
 
+  const generatePdfMutation = trpc.contracts.generatePdf.useMutation({
+    onSuccess: (res) => {
+      window.open(res.pdfUrl, "_blank");
+      utils.contracts.getById.invalidate({ id: contractId });
+    },
+    onError: (e) => toast.error("Erro ao gerar PDF: " + e.message),
+  });
+
   if (isLoading) {
     return (
       <div className="flex justify-center items-center h-64">
@@ -548,19 +562,36 @@ function ContractDetail({
 
       {/* PDF download */}
       <div className="flex items-center gap-2">
-        {data.pdfUrl ? (
-          <a
-            href={data.pdfUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Button variant="outline" size="sm" className="gap-1.5">
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="outline" size="sm" className="gap-1.5" disabled={generatePdfMutation.isPending}>
+              {generatePdfMutation.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <FileText className="h-4 w-4" />
+              )}
+              Gerar PDF
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start">
+            <DropdownMenuItem onClick={() => generatePdfMutation.mutate({ contractId: data.id, language: "pt" })}>
+              🇧🇷 Português
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => generatePdfMutation.mutate({ contractId: data.id, language: "en" })}>
+              🇺🇸 English
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => generatePdfMutation.mutate({ contractId: data.id, language: "es" })}>
+              🇪🇸 Español
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+        {data.pdfUrl && (
+          <a href={data.pdfUrl} target="_blank" rel="noopener noreferrer">
+            <Button variant="ghost" size="sm" className="gap-1.5">
               <Download className="h-4 w-4" />
-              Baixar Contrato PDF
+              Baixar
             </Button>
           </a>
-        ) : (
-          <span className="text-xs text-muted-foreground italic">PDF não gerado</span>
         )}
       </div>
 

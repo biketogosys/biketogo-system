@@ -1263,7 +1263,7 @@ const rentalsRouter = router({
         const rentalsForPdf = await db.select({
           bikeId: rentalsTable.bikeId, startDate: rentalsTable.startDate, endDate: rentalsTable.endDate,
           totalAmount: rentalsTable.totalAmount, dailyRate: rentalsTable.dailyRate,
-          bikeSizeId: rentalsTable.bikeSizeId,
+          bikeSizeId: rentalsTable.bikeSizeId, quantity: rentalsTable.quantity,
         }).from(rentalsTable).where(andPdf(eqPdf(rentalsTable.contractId, input.contractId), isNullPdf(rentalsTable.deletedAt)));
         const { bikes: bikesT, bikeSizes: bkSizesT } = await import("../drizzle/schema");
         const rentalsWithBike = await Promise.all(rentalsForPdf.map(async (r) => {
@@ -2500,6 +2500,7 @@ async function buildContractPdfData(db: Awaited<ReturnType<typeof getDb>>, contr
   const rentalsForPdf = await db.select({
     bikeId: rT.bikeId, startDate: rT.startDate, endDate: rT.endDate,
     totalAmount: rT.totalAmount, dailyRate: rT.dailyRate, bikeSizeId: rT.bikeSizeId,
+    quantity: rT.quantity,
   }).from(rT).where(and(eq(rT.contractId, contractId), isNull(rT.deletedAt)));
   const rentalsWithBike = await Promise.all(rentalsForPdf.map(async (r) => {
     const [bike] = r.bikeId
@@ -2981,7 +2982,7 @@ const contractsRouter = router({
         const rentalsForPdf = await db.select({
           bikeId: rentalsTable.bikeId, startDate: rentalsTable.startDate, endDate: rentalsTable.endDate,
           totalAmount: rentalsTable.totalAmount, dailyRate: rentalsTable.dailyRate,
-          bikeSizeId: rentalsTable.bikeSizeId,
+          bikeSizeId: rentalsTable.bikeSizeId, quantity: rentalsTable.quantity,
         }).from(rentalsTable).where(andPdf(eqPdf(rentalsTable.contractId, contract.id), isNullPdf(rentalsTable.deletedAt)));
         const { bikes: bikesTpdf, bikeSizes: bkSizesTpdf } = await import("../drizzle/schema");
         const rentalsWithBike = await Promise.all(rentalsForPdf.map(async (r) => {
@@ -3261,7 +3262,7 @@ const contractsRouter = router({
         const rentalsForPdf = await db.select({
           bikeId: rentalsTable.bikeId, startDate: rentalsTable.startDate, endDate: rentalsTable.endDate,
           totalAmount: rentalsTable.totalAmount, dailyRate: rentalsTable.dailyRate,
-          bikeSizeId: rentalsTable.bikeSizeId,
+          bikeSizeId: rentalsTable.bikeSizeId, quantity: rentalsTable.quantity,
         }).from(rentalsTable).where(andPdf(eqPdf(rentalsTable.contractId, input.id), isNullPdf(rentalsTable.deletedAt)));
         const { bikes: bikesT, bikeSizes: bkSizesT3 } = await import("../drizzle/schema");
         const rentalsWithBike = await Promise.all(rentalsForPdf.map(async (r) => {
