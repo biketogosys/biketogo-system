@@ -1,4 +1,4 @@
-import { and, between, desc, eq, gte, ilike, inArray, isNull, lte, ne, or, sql } from "drizzle-orm";
+import { and, between, count, desc, eq, gte, ilike, inArray, isNull, lte, ne, notInArray, or, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import {
@@ -35,6 +35,7 @@ import {
   bikeDiscountRules,
   bikeSizes,
   bikeMaintenanceLogs,
+  bikeUnits,
   bikes,
   clientDocuments,
   clients,
@@ -103,10 +104,14 @@ export async function getSizeBreakdown(
   if (!db) return { total: 0, alugada: 0, manutencao: 0, disponivel: 0 };
 
   const [size] = await db
-    .select({ total: bikeSizes.quantidadeTotal, bikeId: bikeSizes.bikeId })
+    .select({ bikeId: bikeSizes.bikeId })
     .from(bikeSizes)
     .where(eq(bikeSizes.id, bikeSizeId));
   if (!size) return { total: 0, alugada: 0, manutencao: 0, disponivel: 0 };
+  const [totalRow] = await db
+    .select({ value: count() })
+    .from(bikeUnits)
+    .where(and(eq(bikeUnits.bikeSizeId, bikeSizeId), notInArray(bikeUnits.status, ["perdido", "roubado"])));
 
   // Alugueis ativos, pendentes e atrasados sobrepostos ao periodo
   // (pending status also reserves stock — created manually on counter)
@@ -145,7 +150,7 @@ export async function getSizeBreakdown(
     );
   const manutencao = maintRows.reduce((s, m) => s + (m.q ?? 1), 0);
 
-  const total = size.total ?? 0;
+  const total = totalRow?.value ?? 0;
   const disponivel = Math.max(0, total - alugada - manutencao);
   return { total, alugada, manutencao, disponivel };
 }

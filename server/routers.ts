@@ -3425,6 +3425,97 @@ const contractsRouter = router({
 });
 
 // ─── App router ───────────────────────────────────────────────────────────────
+// ─── Bike Units Router ───────────────────────────────────────────────────────
+const bikeUnitsRouter = router({
+  list: adminAuthProcedure
+    .input(z.object({ bikeSizeId: z.number() }))
+    .query(async ({ input }) => {
+      const { bikeUnits } = await import("../drizzle/schema");
+      const { eq, asc } = await import("drizzle-orm");
+      const db = await (await import("./db")).getDb();
+      if (!db) return [];
+      return db.select().from(bikeUnits)
+        .where(eq(bikeUnits.bikeSizeId, input.bikeSizeId))
+        .orderBy(asc(bikeUnits.id));
+    }),
+
+  add: adminAuthProcedure
+    .input(z.object({
+      bikeSizeId: z.number(),
+      numeroSistema: z.string().trim().min(1, "Número de sistema obrigatório."),
+      observacao: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const { bikeUnits } = await import("../drizzle/schema");
+      const { eq } = await import("drizzle-orm");
+      const db = await (await import("./db")).getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      // Unicidade global de numeroSistema
+      const [existing] = await db.select({ id: bikeUnits.id })
+        .from(bikeUnits)
+        .where(eq(bikeUnits.numeroSistema, input.numeroSistema));
+      if (existing) throw new TRPCError({ code: "CONFLICT", message: `Número de sistema "${input.numeroSistema}" já existe.` });
+      const [row] = await db.insert(bikeUnits).values({
+        bikeSizeId: input.bikeSizeId,
+        numeroSistema: input.numeroSistema,
+        status: "disponivel",
+        observacao: input.observacao ?? null,
+      }).returning();
+      return row;
+    }),
+
+  update: adminAuthProcedure
+    .input(z.object({
+      id: z.number(),
+      numeroSistema: z.string().trim().min(1).optional(),
+      observacao: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const { bikeUnits } = await import("../drizzle/schema");
+      const { eq, and, ne } = await import("drizzle-orm");
+      const db = await (await import("./db")).getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      if (input.numeroSistema !== undefined) {
+        const [dup] = await db.select({ id: bikeUnits.id })
+          .from(bikeUnits)
+          .where(and(eq(bikeUnits.numeroSistema, input.numeroSistema), ne(bikeUnits.id, input.id)));
+        if (dup) throw new TRPCError({ code: "CONFLICT", message: `Número de sistema "${input.numeroSistema}" já existe.` });
+      }
+      const setData: Record<string, unknown> = {};
+      if (input.numeroSistema !== undefined) setData.numeroSistema = input.numeroSistema;
+      if (input.observacao !== undefined) setData.observacao = input.observacao;
+      await db.update(bikeUnits).set(setData).where(eq(bikeUnits.id, input.id));
+      return { success: true };
+    }),
+
+  remove: adminAuthProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input }) => {
+      const { bikeUnits } = await import("../drizzle/schema");
+      const { eq } = await import("drizzle-orm");
+      const db = await (await import("./db")).getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      const [unit] = await db.select().from(bikeUnits).where(eq(bikeUnits.id, input.id));
+      if (!unit) throw new TRPCError({ code: "NOT_FOUND", message: "Unidade não encontrada." });
+      await db.delete(bikeUnits).where(eq(bikeUnits.id, input.id));
+      return { success: true };
+    }),
+
+  setStatus: adminAuthProcedure
+    .input(z.object({
+      id: z.number(),
+      status: z.enum(["disponivel", "perdido", "roubado"]),
+    }))
+    .mutation(async ({ input }) => {
+      const { bikeUnits } = await import("../drizzle/schema");
+      const { eq } = await import("drizzle-orm");
+      const db = await (await import("./db")).getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      await db.update(bikeUnits).set({ status: input.status }).where(eq(bikeUnits.id, input.id));
+      return { success: true };
+    }),
+});
+
 export const appRouter = router({
   system: systemRouter,
   auth: authRouter,
@@ -3438,6 +3529,7 @@ export const appRouter = router({
   dashboard: dashboardRouter,
   contracts: contractsRouter,
   auditLogs: auditLogsRouter,
+  bikeUnits: bikeUnitsRouter,
 });
 
 export type AppRouter = typeof appRouter;
