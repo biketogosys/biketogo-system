@@ -19,6 +19,9 @@ import {
   Search,
   AlertTriangle,
   History,
+  Hash,
+  ShieldOff,
+  ShieldAlert,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -30,7 +33,14 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 
+type BikeStatus = "available" | "rented" | "maintenance";
 type BikeCategory = "mtb" | "speed" | "gravel";
+
+const statusConfig: Record<BikeStatus, { cls: string; label: string }> = {
+  available: { cls: "bg-emerald-100 text-emerald-700 border border-emerald-200", label: "Disponível" },
+  rented: { cls: "bg-blue-100 text-blue-700 border border-blue-200", label: "Alugada" },
+  maintenance: { cls: "bg-amber-100 text-amber-700 border border-amber-200", label: "Manutenção" },
+};
 
 const categoryLabels: Record<BikeCategory, string> = {
   mtb: "MTB",
@@ -96,18 +106,209 @@ function DiscountRulesEditor({ bikeId, onClose }: { bikeId: number; onClose: () 
   );
 }
 
+// ─── Bike Unit Status helpers ─────────────────────────────────────────────────
+type BikeUnitStatus = "disponivel" | "perdido" | "roubado" | "manutencao" | "alugado";
+
+const BIKE_UNIT_STATUS_LABELS: Record<BikeUnitStatus, string> = {
+  disponivel: "Disponível",
+  perdido: "Perdido",
+  roubado: "Roubado",
+  manutencao: "Manutenção",
+  alugado: "Alugado",
+};
+
+const BIKE_UNIT_STATUS_COLORS: Record<BikeUnitStatus, string> = {
+  disponivel: "bg-emerald-500/20 text-emerald-600 border-emerald-500/30",
+  perdido: "bg-slate-500/20 text-slate-500 border-slate-500/30",
+  roubado: "bg-red-500/20 text-red-600 border-red-500/30",
+  manutencao: "bg-orange-500/20 text-orange-600 border-orange-500/30",
+  alugado: "bg-amber-500/20 text-amber-600 border-amber-500/30",
+};
+
+// ─── Bike Units Subcomponent (rendered only when expanded) ────────────────────
+function BikeUnitsPanel({ bikeSizeId, bikeId }: { bikeSizeId: number; bikeId: number }) {
+  const utils = trpc.useUtils();
+  const { data: units = [], isLoading } = trpc.bikeUnits.list.useQuery({ bikeSizeId });
+
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editNumero, setEditNumero] = useState("");
+  const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
+  const [newNumero, setNewNumero] = useState("");
+
+  const invalidateAll = () => {
+    utils.bikeUnits.list.invalidate({ bikeSizeId });
+    utils.bikes.listSizes.invalidate({ bikeId });
+  };
+
+  const updateMut = trpc.bikeUnits.update.useMutation({
+    onSuccess: () => { invalidateAll(); setEditingId(null); toast.success("Nº atualizado!"); },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const setStatusMut = trpc.bikeUnits.setStatus.useMutation({
+    onSuccess: () => { invalidateAll(); toast.success("Status atualizado!"); },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const removeMut = trpc.bikeUnits.remove.useMutation({
+    onSuccess: () => { invalidateAll(); setConfirmDeleteId(null); toast.success("Unidade removida."); },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const addMut = trpc.bikeUnits.add.useMutation({
+    onSuccess: () => { invalidateAll(); setNewNumero(""); toast.success("Unidade adicionada!"); },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const unitList = units as any[];
+
+  return (
+    <div className="border-t border-border bg-secondary/20 p-3 space-y-2">
+      {isLoading ? (
+        <div className="flex justify-center py-3"><Loader2 className="w-4 h-4 animate-spin text-primary" /></div>
+      ) : unitList.length === 0 ? (
+        <p className="text-xs text-muted-foreground">Nenhuma unidade cadastrada.</p>
+      ) : (
+        <div className="space-y-1.5">
+          {unitList.map((unit: any) => {
+            const st = (unit.status ?? "disponivel") as BikeUnitStatus;
+            return (
+              <div key={unit.id} className="rounded-md border border-border bg-card">
+                {/* Unit row */}
+                <div className="flex items-center gap-2 px-2.5 py-1.5">
+                  <Hash className="w-3 h-3 text-muted-foreground shrink-0" />
+                  {editingId === unit.id ? (
+                    <Input
+                      value={editNumero}
+                      onChange={e => setEditNumero(e.target.value)}
+                      className="h-6 text-xs flex-1"
+                      autoFocus
+                      onKeyDown={e => {
+                        if (e.key === "Enter") updateMut.mutate({ id: unit.id, numeroSistema: editNumero.trim() });
+                        if (e.key === "Escape") setEditingId(null);
+                      }}
+                    />
+                  ) : (
+                    <span className="text-xs font-mono flex-1 truncate">{unit.numeroSistema}</span>
+                  )}
+                  <span className={`text-[10px] px-1.5 py-0.5 rounded border font-medium shrink-0 ${BIKE_UNIT_STATUS_COLORS[st]}`}>
+                    {BIKE_UNIT_STATUS_LABELS[st]}
+                  </span>
+                  <div className="flex gap-0.5 shrink-0">
+                    {editingId === unit.id ? (
+                      <>
+                        <Button size="sm" className="h-6 text-[10px] px-2" onClick={() => updateMut.mutate({ id: unit.id, numeroSistema: editNumero.trim() })} disabled={updateMut.isPending}>Salvar</Button>
+                        <Button size="sm" variant="ghost" className="h-6 text-[10px] px-1" onClick={() => setEditingId(null)}>✕</Button>
+                      </>
+                    ) : (
+                      <button
+                        className="text-muted-foreground hover:text-primary p-0.5 rounded"
+                        title="Editar Nº"
+                        onClick={() => { setEditingId(unit.id); setEditNumero(unit.numeroSistema); }}
+                      >
+                        <Pencil className="w-3 h-3" />
+                      </button>
+                    )}
+                    {/* Status buttons — only disponivel/perdido/roubado (lote 3 adds manutencao/alugado) */}
+                    {st !== "disponivel" && (
+                      <button
+                        className="text-muted-foreground hover:text-emerald-600 p-0.5 rounded"
+                        title="Marcar disponível"
+                        onClick={() => setStatusMut.mutate({ id: unit.id, status: "disponivel" })}
+                      >
+                        <CheckCircle className="w-3 h-3" />
+                      </button>
+                    )}
+                    {st !== "perdido" && (
+                      <button
+                        className="text-muted-foreground hover:text-slate-500 p-0.5 rounded"
+                        title="Marcar perdido"
+                        onClick={() => setStatusMut.mutate({ id: unit.id, status: "perdido" })}
+                      >
+                        <ShieldOff className="w-3 h-3" />
+                      </button>
+                    )}
+                    {st !== "roubado" && (
+                      <button
+                        className="text-muted-foreground hover:text-red-600 p-0.5 rounded"
+                        title="Marcar roubado"
+                        onClick={() => setStatusMut.mutate({ id: unit.id, status: "roubado" })}
+                      >
+                        <ShieldAlert className="w-3 h-3" />
+                      </button>
+                    )}
+                    <button
+                      className="text-muted-foreground hover:text-destructive p-0.5 rounded"
+                      title="Remover unidade"
+                      onClick={() => setConfirmDeleteId(unit.id)}
+                    >
+                      <Trash2 className="w-3 h-3" />
+                    </button>
+                  </div>
+                </div>
+                {/* Confirm delete inline */}
+                {confirmDeleteId === unit.id && (
+                  <div className="px-2.5 pb-2 border-t border-destructive/20 bg-destructive/5">
+                    <div className="flex items-center gap-2 pt-1.5">
+                      <AlertTriangle className="w-3.5 h-3.5 text-destructive shrink-0" />
+                      <p className="text-[11px] text-destructive flex-1">Remover unidade {unit.numeroSistema}?</p>
+                      <Button size="sm" variant="destructive" className="h-6 text-[10px] px-2" onClick={() => removeMut.mutate({ id: unit.id })} disabled={removeMut.isPending}>
+                        {removeMut.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : "Remover"}
+                      </Button>
+                      <Button size="sm" variant="ghost" className="h-6 text-[10px] px-1" onClick={() => setConfirmDeleteId(null)}>Cancelar</Button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+      {/* Add unit footer */}
+      <div className="flex gap-2 pt-1">
+        <Input
+          value={newNumero}
+          onChange={e => setNewNumero(e.target.value)}
+          placeholder="Nº de sistema (ex: TEMP-001)"
+          className="h-7 text-xs flex-1"
+          onKeyDown={e => {
+            if (e.key === "Enter" && newNumero.trim()) addMut.mutate({ bikeSizeId, numeroSistema: newNumero.trim() });
+          }}
+        />
+        <Button
+          size="sm"
+          className="h-7 text-xs px-2.5"
+          onClick={() => { if (!newNumero.trim()) return toast.error("Informe o Nº de sistema."); addMut.mutate({ bikeSizeId, numeroSistema: newNumero.trim() }); }}
+          disabled={addMut.isPending}
+        >
+          {addMut.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <><Plus className="w-3 h-3 mr-0.5" />Adicionar</>}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 // ─── Bike Sizes Tab ───────────────────────────────────────────────────────────
 function BikeSizesTab({ bikeId }: { bikeId: number }) {
   const utils = trpc.useUtils();
   const { data: sizes = [], isLoading } = trpc.bikes.listSizes.useQuery({ bikeId });
   const [tamanho, setTamanho] = useState("");
-  const [qtTotal, setQtTotal] = useState("1");
   const [obs, setObs] = useState("");
   const [editId, setEditId] = useState<number | null>(null);
-  const [editData, setEditData] = useState<{ tamanho: string; quantidadeTotal: string }>({ tamanho: "", quantidadeTotal: "" });
+  const [editData, setEditData] = useState<{ tamanho: string }>({ tamanho: "" });
+  // Expanded sizes
+  const [expandedIds, setExpandedIds] = useState<Set<number>>(new Set());
+
+  const toggleExpand = (id: number) => {
+    setExpandedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
 
   const addMut = trpc.bikes.addSize.useMutation({
-    onSuccess: () => { utils.bikes.listSizes.invalidate(); setTamanho(""); setQtTotal("1"); setObs(""); toast.success("Tamanho adicionado!"); },
+    onSuccess: () => { utils.bikes.listSizes.invalidate(); setTamanho(""); setObs(""); toast.success("Tamanho adicionado!"); },
     onError: (e) => toast.error(e.message),
   });
   const updateMut = trpc.bikes.updateSize.useMutation({
@@ -119,71 +320,96 @@ function BikeSizesTab({ bikeId }: { bikeId: number }) {
     onError: (e) => toast.error(e.message),
   });
 
-  const startEdit = (s: any) => { setEditId(s.id); setEditData({ tamanho: s.tamanho, quantidadeTotal: String(s.quantidadeTotal) }); };
+  const startEdit = (s: any) => { setEditId(s.id); setEditData({ tamanho: s.tamanho }); };
 
   return (
     <div className="space-y-4">
       {isLoading ? <p className="text-sm text-muted-foreground">Carregando...</p> : (
         <div className="space-y-2">
           {(sizes as any[]).length === 0 && <p className="text-sm text-muted-foreground">Nenhum tamanho cadastrado.</p>}
-          {(sizes as any[]).map((s: any) => (
-            <div key={s.id} className="flex items-center justify-between p-3 bg-secondary rounded-lg">
-              {editId === s.id ? (
-                <div className="flex-1 grid grid-cols-2 gap-2 mr-2">
-                  <Input value={editData.tamanho} onChange={e => setEditData(d => ({ ...d, tamanho: e.target.value }))} className="h-8 text-sm" placeholder="Tamanho" />
-                  <Input type="number" value={editData.quantidadeTotal} onChange={e => setEditData(d => ({ ...d, quantidadeTotal: e.target.value }))} className="h-8 text-sm" placeholder="Total" />
+          {(sizes as any[]).map((s: any) => {
+            const isExpanded = expandedIds.has(s.id);
+            return (
+              <div key={s.id} className="border border-border rounded-lg overflow-hidden">
+                {/* Header row */}
+                <div className="flex items-center gap-2 p-3">
+                  {/* Chevron + info — clickable to expand */}
+                  <button
+                    className="flex-1 flex items-center gap-2 text-left min-w-0"
+                    onClick={() => { if (editId !== s.id) toggleExpand(s.id); }}
+                  >
+                    {isExpanded
+                      ? <ChevronUp className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                      : <ChevronDown className="w-3.5 h-3.5 text-muted-foreground shrink-0" />}
+                    {editId === s.id ? (
+                      <Input
+                        value={editData.tamanho}
+                        onChange={e => setEditData(d => ({ ...d, tamanho: e.target.value }))}
+                        className="h-7 text-sm"
+                        placeholder="Tamanho"
+                        onClick={e => e.stopPropagation()}
+                        autoFocus
+                      />
+                    ) : (
+                      <div className="flex-1 min-w-0">
+                        <span className="font-medium text-sm">{s.tamanho}</span>
+                        {/* Breakdown badges */}
+                        <span className="flex flex-wrap gap-x-2 gap-y-0.5 mt-0.5">
+                          {((s as any).disponivel ?? 0) > 0 && (
+                            <span className="text-[11px] text-emerald-600 dark:text-emerald-400 flex items-center gap-0.5">
+                              <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                              {(s as any).disponivel} disponível
+                            </span>
+                          )}
+                          {(s as any).alugada > 0 && (
+                            <span className="text-[11px] flex items-center gap-0.5" style={{ color: '#C8920A' }}>
+                              <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ background: '#C8920A' }} />
+                              {(s as any).alugada} alugada
+                            </span>
+                          )}
+                          {(s as any).manutencao > 0 && (
+                            <span className="text-[11px] text-orange-500 flex items-center gap-0.5">
+                              <span className="inline-block w-1.5 h-1.5 rounded-full bg-orange-500" />
+                              {(s as any).manutencao} manutenção
+                            </span>
+                          )}
+                          {((s as any).total ?? 0) === 0 && (
+                            <span className="text-[11px] text-muted-foreground">Sem unidades</span>
+                          )}
+                        </span>
+                        {s.observacao && <p className="text-xs text-muted-foreground mt-0.5">{s.observacao}</p>}
+                      </div>
+                    )}
+                  </button>
+                  {/* Actions */}
+                  <div className="flex gap-1 shrink-0">
+                    {editId === s.id ? (
+                      <>
+                        <Button size="sm" className="h-7 text-xs" onClick={() => updateMut.mutate({ id: s.id, tamanho: editData.tamanho, quantidadeTotal: s.quantidadeTotal })} disabled={updateMut.isPending}>Salvar</Button>
+                        <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setEditId(null)}>Cancelar</Button>
+                      </>
+                    ) : (
+                      <>
+                        <button onClick={() => startEdit(s)} className="text-muted-foreground hover:text-primary p-1"><Pencil className="w-3.5 h-3.5" /></button>
+                        <button onClick={() => { if (confirm("Remover tamanho e todas as suas unidades?")) deleteMut.mutate({ id: s.id }); }} className="text-muted-foreground hover:text-destructive p-1"><Trash2 className="w-3.5 h-3.5" /></button>
+                      </>
+                    )}
+                  </div>
                 </div>
-              ) : (
-                <div className="flex-1">
-                  <span className="font-medium text-sm">{s.tamanho}</span>
-                  <span className="text-xs text-muted-foreground ml-2">Total: {s.quantidadeTotal}</span>
-                  <span className="flex flex-wrap gap-x-2 gap-y-0.5 mt-0.5">
-                    {((s as any).disponivel ?? s.quantidadeDisponivel) > 0 && (
-                      <span className="text-[11px] text-emerald-600 dark:text-emerald-400 flex items-center gap-0.5">
-                        <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                        {(s as any).disponivel ?? s.quantidadeDisponivel} disponível
-                      </span>
-                    )}
-                    {(s as any).alugada > 0 && (
-                      <span className="text-[11px] flex items-center gap-0.5" style={{ color: '#C8920A' }}>
-                        <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ background: '#C8920A' }} />
-                        {(s as any).alugada} alugada
-                      </span>
-                    )}
-                    {(s as any).manutencao > 0 && (
-                      <span className="text-[11px] text-orange-500 flex items-center gap-0.5">
-                        <span className="inline-block w-1.5 h-1.5 rounded-full bg-orange-500" />
-                        {(s as any).manutencao} manutenção
-                      </span>
-                    )}
-                  </span>
-                  {s.observacao && <p className="text-xs text-muted-foreground mt-0.5">{s.observacao}</p>}
-                </div>
-              )}
-              <div className="flex gap-1">
-                {editId === s.id ? (
-                  <>
-                    <Button size="sm" className="h-7 text-xs" onClick={() => updateMut.mutate({ id: s.id, tamanho: editData.tamanho, quantidadeTotal: parseInt(editData.quantidadeTotal) })}>Salvar</Button>
-                    <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setEditId(null)}>Cancelar</Button>
-                  </>
-                ) : (
-                  <>
-                    <button onClick={() => startEdit(s)} className="text-muted-foreground hover:text-primary p-1"><Pencil className="w-3.5 h-3.5" /></button>
-                    <button onClick={() => { if (confirm("Remover tamanho?")) deleteMut.mutate({ id: s.id }); }} className="text-muted-foreground hover:text-destructive p-1"><Trash2 className="w-3.5 h-3.5" /></button>
-                  </>
-                )}
+                {/* Expanded: units subcomponent */}
+                {isExpanded && <BikeUnitsPanel bikeSizeId={s.id} bikeId={bikeId} />}
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
       <Separator />
-      <div className="grid grid-cols-2 gap-2">
-        <div><Label className="text-xs">Tamanho *</Label><Input value={tamanho} onChange={e => setTamanho(e.target.value)} placeholder="P / M / G / 29" className="h-8 text-sm" /></div>
-        <div><Label className="text-xs">Qtd. Total</Label><Input type="number" value={qtTotal} onChange={e => setQtTotal(e.target.value)} className="h-8 text-sm" /></div>
+      <div>
+        <Label className="text-xs">Tamanho *</Label>
+        <Input value={tamanho} onChange={e => setTamanho(e.target.value)} placeholder="P / M / G / 29" className="h-8 text-sm" />
       </div>
       <Input value={obs} onChange={e => setObs(e.target.value)} placeholder="Observação (opcional)" className="h-8 text-sm" />
-      <Button size="sm" onClick={() => { if (!tamanho) return toast.error("Informe o tamanho."); addMut.mutate({ bikeId, tamanho, quantidadeTotal: parseInt(qtTotal), observacao: obs || undefined }); }} disabled={addMut.isPending} className="w-full">
+      <Button size="sm" onClick={() => { if (!tamanho) return toast.error("Informe o tamanho."); addMut.mutate({ bikeId, tamanho, quantidadeTotal: 0, observacao: obs || undefined }); }} disabled={addMut.isPending} className="w-full">
         <Plus className="w-3.5 h-3.5 mr-1" />Adicionar Tamanho
       </Button>
     </div>
@@ -462,6 +688,7 @@ function BikeFormDialog({ bike, onClose, onSuccess }: { bike: any | null; onClos
     dailyRate: bike?.dailyRate ?? "",
     quantity: bike?.quantity ?? 1,
     notes: bike?.notes ?? "",
+    status: bike?.status ?? "available",
   });
   const [photoUrl, setPhotoUrl] = useState<string | null>(bike?.photoUrl ?? null);
   const [savedId, setSavedId] = useState<number | null>(bike?.id ?? null);
@@ -538,7 +765,17 @@ function BikeFormDialog({ bike, onClose, onSuccess }: { bike: any | null; onClos
               <div><Label className="text-xs">Peso (kg)</Label><Input value={form.weight} onChange={e => set("weight", e.target.value)} className="h-8 text-sm" /></div>
               <div><Label className="text-xs">Limite de peso (kg)</Label><Input value={form.weightLimit} onChange={e => set("weightLimit", e.target.value)} className="h-8 text-sm" /></div>
 
-
+              <div>
+                <Label className="text-xs">Status</Label>
+                <Select value={form.status} onValueChange={v => set("status", v)}>
+                  <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="available">Disponível</SelectItem>
+                    <SelectItem value="rented">Alugada</SelectItem>
+                    <SelectItem value="maintenance">Manutenção</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
             <div><Label className="text-xs">Descrição</Label><Textarea value={form.description} onChange={e => set("description", e.target.value)} className="text-sm min-h-[60px]" /></div>
             <div><Label className="text-xs">Observações internas</Label><Textarea value={form.notes} onChange={e => set("notes", e.target.value)} className="text-sm min-h-[60px]" /></div>
@@ -570,7 +807,7 @@ function BikeFormDialog({ bike, onClose, onSuccess }: { bike: any | null; onClos
 // ─── Main Bikes Page ──────────────────────────────────────────────────────────
 export default function Bikes() {
   const utils = trpc.useUtils();
-  const [statusFilter, setStatusFilter] = useState<"available" | "rented" | "maintenance" | undefined>();
+  const [statusFilter, setStatusFilter] = useState<BikeStatus | undefined>();
   const [categoryFilter, setCategoryFilter] = useState<string | undefined>();
   const [search, setSearch] = useState("");
   const [showForm, setShowForm] = useState(false);
@@ -611,9 +848,9 @@ export default function Bikes() {
           <Input placeholder="Buscar por modelo, série..." value={search} onChange={e => setSearch(e.target.value)} className="h-9 text-sm pl-8 bg-card border-border" />
         </div>
         <div className="flex gap-1.5 flex-wrap">
-          {([undefined, "available", "rented", "maintenance"] as ("available" | "rented" | "maintenance" | undefined)[]).map(s => (
+          {([undefined, "available", "rented", "maintenance"] as (BikeStatus | undefined)[]).map(s => (
             <button key={String(s)} onClick={() => setStatusFilter(s)} className={`px-2.5 py-1 rounded text-xs font-medium transition-all border ${statusFilter === s ? "bg-primary/15 border-primary/40 text-primary" : "bg-card border-border text-muted-foreground hover:text-foreground"}`}>
-              {s === undefined ? "Todos" : s === "available" ? "Disponível" : s === "rented" ? "Alugada" : "Manutenção"}
+              {s === undefined ? "Todos" : statusConfig[s]?.label}
             </button>
           ))}
           <span className="hidden sm:inline text-border">|</span>
