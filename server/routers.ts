@@ -698,7 +698,8 @@ const bikesRouter = router({
       const rows = await db.select().from(bikeSizes).where(eq(bikeSizes.bikeId, input.bikeId));
       return Promise.all(rows.map(async (s) => {
         const bd = await getSizeBreakdown(s.id);
-        return { ...s, quantidadeDisponivel: bd.disponivel, alugada: bd.alugada, manutencao: bd.manutencao };
+        return { ...s, total: bd.total, disponivel: bd.disponivel,
+                 quantidadeDisponivel: bd.disponivel, alugada: bd.alugada, manutencao: bd.manutencao };
       }));
     }),
   addSize: adminAuthProcedure

@@ -160,7 +160,8 @@ function BikeUnitsPanel({ bikeSizeId, bikeId }: { bikeSizeId: number; bikeId: nu
     onError: (e) => toast.error(e.message),
   });
 
-  const unitList = units as any[];
+  const unitList = [...(units as any[])].sort((a, b) =>
+    String(a.numeroSistema).localeCompare(String(b.numeroSistema), undefined, { numeric: true }));
 
   return (
     <div className="border-t border-border bg-secondary/20 p-3 space-y-2">
