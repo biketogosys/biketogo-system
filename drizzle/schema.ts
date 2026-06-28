@@ -397,3 +397,12 @@ export const bikeUnits = pgTable("bike_units", {
 });
 export type BikeUnit = typeof bikeUnits.$inferSelect;
 export type InsertBikeUnit = typeof bikeUnits.$inferInsert;
+
+export const rentalBikeUnits = pgTable("rental_bike_units", {
+  id: serial("id").primaryKey(),
+  rentalId: integer("rentalId").notNull(),
+  bikeUnitId: integer("bikeUnitId").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type RentalBikeUnit = typeof rentalBikeUnits.$inferSelect;
+export type InsertRentalBikeUnit = typeof rentalBikeUnits.$inferInsert;

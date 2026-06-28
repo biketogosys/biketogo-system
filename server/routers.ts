@@ -1251,6 +1251,18 @@ const rentalsRouter = router({
           }
         }
       } catch (err) { console.warn("[confirmAll] Unit marking error:", err); }
+      // Ligar unidades físicas de bike para rentals que ainda não têm ligação (BU-3A)
+      try {
+        const { rentalBikeUnits: rbuTable } = await import("../drizzle/schema");
+        const { eq: eqRbu } = await import("drizzle-orm");
+        for (const rental of pendingRentals) {
+          if (!rental.bikeSizeId) continue;
+          const existing = await db.select({ id: rbuTable.id }).from(rbuTable).where(eqRbu(rbuTable.rentalId, rental.id)).limit(1);
+          if (existing.length === 0) {
+            await assignBikeUnits(db, rental.id, rental.bikeSizeId, rental.quantity ?? 1, rental.startDate, rental.endDate ?? null);
+          }
+        }
+      } catch (err) { console.warn("[confirmAll] Bike unit linkage error:", err); }
       await createAuditLog({ adminId: (ctx as any).adminUser?.id ?? null, acao: "confirmou_reserva", tabela: "contracts", registroId: input.contractId });
       // Generate PDF, upload to S3, save pdfUrl, send email
       let pdfUrl: string | null = null;
@@ -2490,6 +2502,63 @@ async function assertAccessoryAvailabilityForUpdate(db: any, contractId: number,
   }
 }
 
+// ─── Bike Unit Linkage Helpers ──────────────────────────────────────────────
+// Liga `quantity` unidades físicas disponíveis de bikeSizeId ao rental,
+// excluindo unidades já ligadas a rentals ativos sobrepostos ao período.
+// Soft: se faltar unidade física vs quantity, liga as que houver (disponibilidade
+// por quantidade já foi validada no fluxo).
+async function assignBikeUnits(
+  db: any,
+  rentalId: number,
+  bikeSizeId: number,
+  quantity: number,
+  startDate: string,
+  endDate: string | null,
+): Promise<number> {
+  const { bikeUnits, rentalBikeUnits } = await import("../drizzle/schema");
+  const { eq, and, sql: sqlFn } = await import("drizzle-orm");
+  // Busca unidades disponíveis que NÃO estejam ligadas a rental ativo sobreposto
+  const endCond = endDate
+    ? sqlFn`NOT EXISTS (
+        SELECT 1 FROM rental_bike_units rbu
+        JOIN rentals r ON r.id = rbu."rentalId"
+        WHERE rbu."bikeUnitId" = ${bikeUnits.id}
+          AND r.status IN ('pending','active','overdue')
+          AND r."deletedAt" IS NULL
+          AND r.id <> ${rentalId}
+          AND r."startDate" <= ${endDate}
+          AND (r."endDate" IS NULL OR r."endDate" >= ${startDate})
+      )`
+    : sqlFn`NOT EXISTS (
+        SELECT 1 FROM rental_bike_units rbu
+        JOIN rentals r ON r.id = rbu."rentalId"
+        WHERE rbu."bikeUnitId" = ${bikeUnits.id}
+          AND r.status IN ('pending','active','overdue')
+          AND r."deletedAt" IS NULL
+          AND r.id <> ${rentalId}
+          AND (r."endDate" IS NULL OR r."endDate" >= ${startDate})
+      )`;
+  const available = await db
+    .select({ id: bikeUnits.id })
+    .from(bikeUnits)
+    .where(and(eq(bikeUnits.bikeSizeId, bikeSizeId), eq(bikeUnits.status, "disponivel"), endCond))
+    .orderBy(bikeUnits.numeroSistema)
+    .limit(quantity);
+  let linked = 0;
+  for (const unit of available) {
+    await db.insert(rentalBikeUnits).values({ rentalId, bikeUnitId: unit.id });
+    linked++;
+  }
+  return linked;
+}
+
+// Remove TODAS as ligações de um rental da tabela rental_bike_units.
+async function releaseBikeUnits(db: any, rentalId: number): Promise<void> {
+  const { rentalBikeUnits } = await import("../drizzle/schema");
+  const { eq } = await import("drizzle-orm");
+  await db.delete(rentalBikeUnits).where(eq(rentalBikeUnits.rentalId, rentalId));
+}
+
 /** Monta o objeto ContractPdfData a partir do banco para um contractId */
 async function buildContractPdfData(db: Awaited<ReturnType<typeof getDb>>, contractId: number) {
   if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
@@ -2953,6 +3022,10 @@ const contractsRouter = router({
         rentalIds.push(rentalId);
         // Note: Do NOT mark bike as rented or decrease availability here
         // Availability is derived and pending status reserves the stock
+        // Ligar unidades físicas ao rental (BU-3A)
+        if (b.bikeSizeId) {
+          await assignBikeUnits(db, rentalId, b.bikeSizeId, b.quantity, b.startDate, b.endDate ?? null);
+        }
       }
 
       // Add accessories to contract_accessories and rental_accessories
@@ -3104,6 +3177,14 @@ const contractsRouter = router({
           .set({ clientId: input.clientId, valorTotal: totalValue > 0 ? totalValue.toFixed(2) : null })
           .where(eq(contracts.id, input.id));
 
+        // Liberar ligações de unidades físicas dos rentals antigos (BU-3A)
+        {
+          const oldRentals = await db.select({ id: rentalsTable.id })
+            .from(rentalsTable)
+            .where(and(eq(rentalsTable.contractId, input.id), isNull(rentalsTable.deletedAt)));
+          for (const r of oldRentals) await releaseBikeUnits(db, r.id);
+        }
+
         // Soft-delete all current rentals for this contract
         await db.update(rentalsTable)
           .set({ deletedAt: new Date() })
@@ -3111,7 +3192,7 @@ const contractsRouter = router({
 
         // Recreate rentals from input.bikes
         for (const b of input.bikes) {
-          await createRental({
+          const newRentalId = await createRental({
             clientId: input.clientId,
             bikeId: b.bikeId,
             bikeSizeId: b.bikeSizeId ?? null,
@@ -3127,6 +3208,10 @@ const contractsRouter = router({
             contractId: input.id,
             notes: input.notes ?? null,
           } as any);
+          // Ligar unidades físicas ao novo rental (BU-3A)
+          if (b.bikeSizeId) {
+            await assignBikeUnits(db, newRentalId, b.bikeSizeId, b.quantity, b.startDate, b.endDate ?? null);
+          }
         }
 
         // validar ANTES de desmontar (conta as unidades que o próprio contrato já segura)
@@ -3194,6 +3279,8 @@ const contractsRouter = router({
       // Soft-delete rentals NOT present in input (user removed them)
       for (const r of currentRentals) {
         if (!inputRentalIds.has(r.id)) {
+          // Liberar ligações de unidades físicas antes de soft-delete (BU-3A)
+          await releaseBikeUnits(db, r.id);
           await db.update(rentalsTable)
             .set({ deletedAt: new Date() })
             .where(eq(rentalsTable.id, r.id));
@@ -3212,9 +3299,14 @@ const contractsRouter = router({
               dailyRate: b.dailyRate ?? null,
             })
             .where(and(eq(rentalsTable.id, b.rentalId), isNull(rentalsTable.deletedAt)));
+          // Re-ligar unidades físicas após atualizar datas (BU-3A)
+          if (b.bikeSizeId) {
+            await releaseBikeUnits(db, b.rentalId);
+            await assignBikeUnits(db, b.rentalId, b.bikeSizeId, b.quantity, b.startDate, b.endDate ?? null);
+          }
         } else {
           // INSERT new rental (ativo, paid)
-          await createRental({
+          const newRentalIdAtivo = await createRental({
             clientId: input.clientId,
             bikeId: b.bikeId,
             bikeSizeId: b.bikeSizeId ?? null,
@@ -3230,6 +3322,10 @@ const contractsRouter = router({
             contractId: input.id,
             notes: input.notes ?? null,
           } as any);
+          // Ligar unidades físicas ao novo rental ativo (BU-3A)
+          if (b.bikeSizeId) {
+            await assignBikeUnits(db, newRentalIdAtivo, b.bikeSizeId, b.quantity, b.startDate, b.endDate ?? null);
+          }
         }
       }
 
@@ -3340,6 +3436,14 @@ const contractsRouter = router({
       
       // Liberar unidades de acessórios reservadas
       await releaseAccessoryUnits(db, input.id);
+
+      // Liberar ligações de unidades físicas de bike (BU-3A)
+      {
+        const bikeRentals = await db.select({ id: rentalsTable.id })
+          .from(rentalsTable)
+          .where(and(eq(rentalsTable.contractId, input.id), isNull(rentalsTable.deletedAt)));
+        for (const r of bikeRentals) await releaseBikeUnits(db, r.id);
+      }
 
       // Cancel all pending rentals for this contract
       await db.update(rentalsTable)
