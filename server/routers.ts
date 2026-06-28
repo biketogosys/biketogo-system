@@ -705,7 +705,7 @@ const bikesRouter = router({
     .input(z.object({
       bikeId: z.number(),
       tamanho: z.string().min(1),
-      quantidadeTotal: z.number().min(1).default(1),
+      quantidadeTotal: z.number().min(0).default(0),
       quantidadeDisponivel: z.number().min(0).optional(), // inerte — disponibilidade é derivada
       observacao: z.string().optional(),
     }))
@@ -750,10 +750,12 @@ const bikesRouter = router({
   deleteSize: adminAuthProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {
-      const { bikeSizes } = await import("../drizzle/schema");
+      const { bikeSizes, bikeUnits } = await import("../drizzle/schema");
       const { eq } = await import("drizzle-orm");
       const db = await (await import("./db")).getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      // Cascade: remove units first (no FK constraint in app layer)
+      await db.delete(bikeUnits).where(eq(bikeUnits.bikeSizeId, input.id));
       await db.delete(bikeSizes).where(eq(bikeSizes.id, input.id));
       return { success: true };
     }),
