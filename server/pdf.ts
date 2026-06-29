@@ -39,6 +39,7 @@ export interface ContractPdfData {
     bikeModel?: string | null;
     bikeBrand?: string | null;
     bikeSerialNumber?: string | null;
+    bikeUnitNumeros?: string | null;
     startDate?: Date | string | null;
     endDate?: Date | string | null;
     totalAmount?: string | null;
@@ -581,7 +582,7 @@ export async function generateContractPdf(
           modelo: [r.bikeModel, r.bikeBrand].filter(Boolean).join(" ") || "—",
           tam:    r.tamanho || "—",
           qtd:    String(r.quantity ?? 1),
-          sis:    r.bikeSerialNumber || "—",
+          sis:    r.bikeUnitNumeros || r.bikeSerialNumber || "—",
           per:    periodLabel(r),
           diaria: formatCurrency(r.dailyRate),
           sub:    calcSubtotal(r),

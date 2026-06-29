@@ -1276,7 +1276,7 @@ const rentalsRouter = router({
           ? await db.select().from(clTable2).where(eqPdf(clTable2.id, contractRow.clientId))
           : [null];
         const rentalsForPdf = await db.select({
-          bikeId: rentalsTable.bikeId, startDate: rentalsTable.startDate, endDate: rentalsTable.endDate,
+          id: rentalsTable.id, bikeId: rentalsTable.bikeId, startDate: rentalsTable.startDate, endDate: rentalsTable.endDate,
           totalAmount: rentalsTable.totalAmount, dailyRate: rentalsTable.dailyRate,
           bikeSizeId: rentalsTable.bikeSizeId, quantity: rentalsTable.quantity,
         }).from(rentalsTable).where(andPdf(eqPdf(rentalsTable.contractId, input.contractId), isNullPdf(rentalsTable.deletedAt)));
@@ -1288,7 +1288,12 @@ const rentalsRouter = router({
             const [sz] = await db.select({ tamanho: bkSizesT.tamanho }).from(bkSizesT).where(eqPdf(bkSizesT.id, r.bikeSizeId));
             tamanho = sz?.tamanho ?? null;
           }
-          return { ...r, bikeModel: bike?.model, bikeBrand: bike?.brand, bikeSerialNumber: bike?.serialNumber, tamanho };
+          // BU-3B: buscar números reais das unidades ligadas ao rental
+          const { rentalBikeUnits: rbuPdf1, bikeUnits: buPdf1 } = await import("../drizzle/schema");
+          const { eq: eqRbu1, asc: ascRbu1 } = await import("drizzle-orm");
+          const unidades1 = await db.select({ numero: buPdf1.numeroSistema }).from(rbuPdf1).innerJoin(buPdf1, eqRbu1(buPdf1.id, rbuPdf1.bikeUnitId)).where(eqRbu1(rbuPdf1.rentalId, r.id)).orderBy(ascRbu1(buPdf1.numeroSistema));
+          const bikeUnitNumeros1 = unidades1.length ? unidades1.map((u: any) => u.numero).join(", ") : null;
+          return { ...r, bikeModel: bike?.model, bikeBrand: bike?.brand, bikeSerialNumber: bike?.serialNumber, tamanho, bikeUnitNumeros: bikeUnitNumeros1 };
         }));
         const caRows3 = await db.select({
           accessoryId: caTable3.accessoryId, qty: caTable3.qty, unitId: caTable3.unitId,
@@ -2570,7 +2575,7 @@ async function buildContractPdfData(db: Awaited<ReturnType<typeof getDb>>, contr
     ? await db.select().from(clT).where(eq(clT.id, contractRow.clientId))
     : [null];
   const rentalsForPdf = await db.select({
-    bikeId: rT.bikeId, startDate: rT.startDate, endDate: rT.endDate,
+    id: rT.id, bikeId: rT.bikeId, startDate: rT.startDate, endDate: rT.endDate,
     totalAmount: rT.totalAmount, dailyRate: rT.dailyRate, bikeSizeId: rT.bikeSizeId,
     quantity: rT.quantity,
   }).from(rT).where(and(eq(rT.contractId, contractId), isNull(rT.deletedAt)));
@@ -2583,7 +2588,12 @@ async function buildContractPdfData(db: Awaited<ReturnType<typeof getDb>>, contr
       const [sz] = await db.select({ tamanho: bkSizesT.tamanho }).from(bkSizesT).where(eq(bkSizesT.id, r.bikeSizeId));
       tamanho = sz?.tamanho ?? null;
     }
-    return { ...r, bikeModel: bike?.model, bikeBrand: bike?.brand, bikeSerialNumber: bike?.serialNumber, tamanho };
+    // BU-3B: buscar números reais das unidades ligadas ao rental
+    const { rentalBikeUnits: rbuPdf2, bikeUnits: buPdf2 } = await import("../drizzle/schema");
+    const { eq: eqRbu2, asc: ascRbu2 } = await import("drizzle-orm");
+    const unidades2 = await db.select({ numero: buPdf2.numeroSistema }).from(rbuPdf2).innerJoin(buPdf2, eqRbu2(buPdf2.id, rbuPdf2.bikeUnitId)).where(eqRbu2(rbuPdf2.rentalId, r.id)).orderBy(ascRbu2(buPdf2.numeroSistema));
+    const bikeUnitNumeros2 = unidades2.length ? unidades2.map((u: any) => u.numero).join(", ") : null;
+    return { ...r, bikeModel: bike?.model, bikeBrand: bike?.brand, bikeSerialNumber: bike?.serialNumber, tamanho, bikeUnitNumeros: bikeUnitNumeros2 };
   }));
   const caRows = await db.select({
     accessoryId: caT.accessoryId, qty: caT.qty, unitId: caT.unitId,
@@ -3056,7 +3066,7 @@ const contractsRouter = router({
         const [contractRow] = await db.select().from(cTablePdf).where(eqPdf(cTablePdf.id, contract.id));
         const [clientRow] = await db.select().from(clTablePdf).where(eqPdf(clTablePdf.id, input.clientId));
         const rentalsForPdf = await db.select({
-          bikeId: rentalsTable.bikeId, startDate: rentalsTable.startDate, endDate: rentalsTable.endDate,
+          id: rentalsTable.id, bikeId: rentalsTable.bikeId, startDate: rentalsTable.startDate, endDate: rentalsTable.endDate,
           totalAmount: rentalsTable.totalAmount, dailyRate: rentalsTable.dailyRate,
           bikeSizeId: rentalsTable.bikeSizeId, quantity: rentalsTable.quantity,
         }).from(rentalsTable).where(andPdf(eqPdf(rentalsTable.contractId, contract.id), isNullPdf(rentalsTable.deletedAt)));
@@ -3068,7 +3078,12 @@ const contractsRouter = router({
             const [sz] = await db.select({ tamanho: bkSizesTpdf.tamanho }).from(bkSizesTpdf).where(eqPdf(bkSizesTpdf.id, r.bikeSizeId));
             tamanho = sz?.tamanho ?? null;
           }
-          return { ...r, bikeModel: bike?.model, bikeBrand: bike?.brand, bikeSerialNumber: bike?.serialNumber, tamanho };
+          // BU-3B: buscar números reais das unidades ligadas ao rental
+          const { rentalBikeUnits: rbuPdf3, bikeUnits: buPdf3 } = await import("../drizzle/schema");
+          const { eq: eqRbu3, asc: ascRbu3 } = await import("drizzle-orm");
+          const unidades3 = await db.select({ numero: buPdf3.numeroSistema }).from(rbuPdf3).innerJoin(buPdf3, eqRbu3(buPdf3.id, rbuPdf3.bikeUnitId)).where(eqRbu3(rbuPdf3.rentalId, r.id)).orderBy(ascRbu3(buPdf3.numeroSistema));
+          const bikeUnitNumeros3 = unidades3.length ? unidades3.map((u: any) => u.numero).join(", ") : null;
+          return { ...r, bikeModel: bike?.model, bikeBrand: bike?.brand, bikeSerialNumber: bike?.serialNumber, tamanho, bikeUnitNumeros: bikeUnitNumeros3 };
         }));
         const caRowsPdf = await db.select({
           accessoryId: caTablePdf.accessoryId, qty: caTablePdf.qty, unitId: caTablePdf.unitId,
@@ -3359,7 +3374,7 @@ const contractsRouter = router({
           ? await db.select().from(clTable2).where(eqPdf(clTable2.id, contractRow.clientId))
           : [null];
         const rentalsForPdf = await db.select({
-          bikeId: rentalsTable.bikeId, startDate: rentalsTable.startDate, endDate: rentalsTable.endDate,
+          id: rentalsTable.id, bikeId: rentalsTable.bikeId, startDate: rentalsTable.startDate, endDate: rentalsTable.endDate,
           totalAmount: rentalsTable.totalAmount, dailyRate: rentalsTable.dailyRate,
           bikeSizeId: rentalsTable.bikeSizeId, quantity: rentalsTable.quantity,
         }).from(rentalsTable).where(andPdf(eqPdf(rentalsTable.contractId, input.id), isNullPdf(rentalsTable.deletedAt)));
@@ -3371,7 +3386,12 @@ const contractsRouter = router({
             const [sz] = await db.select({ tamanho: bkSizesT3.tamanho }).from(bkSizesT3).where(eqPdf(bkSizesT3.id, r.bikeSizeId));
             tamanho = sz?.tamanho ?? null;
           }
-          return { ...r, bikeModel: bike?.model, bikeBrand: bike?.brand, bikeSerialNumber: bike?.serialNumber, tamanho };
+          // BU-3B: buscar números reais das unidades ligadas ao rental
+          const { rentalBikeUnits: rbuPdf4, bikeUnits: buPdf4 } = await import("../drizzle/schema");
+          const { eq: eqRbu4, asc: ascRbu4 } = await import("drizzle-orm");
+          const unidades4 = await db.select({ numero: buPdf4.numeroSistema }).from(rbuPdf4).innerJoin(buPdf4, eqRbu4(buPdf4.id, rbuPdf4.bikeUnitId)).where(eqRbu4(rbuPdf4.rentalId, r.id)).orderBy(ascRbu4(buPdf4.numeroSistema));
+          const bikeUnitNumeros4 = unidades4.length ? unidades4.map((u: any) => u.numero).join(", ") : null;
+          return { ...r, bikeModel: bike?.model, bikeBrand: bike?.brand, bikeSerialNumber: bike?.serialNumber, tamanho, bikeUnitNumeros: bikeUnitNumeros4 };
         }));
         const caRows3 = await db.select({
           accessoryId: caTable3.accessoryId, qty: caTable3.qty, unitId: caTable3.unitId,
