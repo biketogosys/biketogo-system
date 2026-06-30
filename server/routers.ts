@@ -2508,10 +2508,9 @@ async function assertAccessoryAvailabilityForUpdate(db: any, contractId: number,
 }
 
 // ─── Bike Unit Linkage Helpers ──────────────────────────────────────────────
-// Liga `quantity` unidades físicas disponíveis de bikeSizeId ao rental,
-// excluindo unidades já ligadas a rentals ativos sobrepostos ao período.
-// Soft: se faltar unidade física vs quantity, liga as que houver (disponibilidade
-// por quantidade já foi validada no fluxo).
+// Liga unidades físicas de bikeSizeId ao rental.
+// Se unitIds vier com itens: valida e liga ESSAS (pick manual).
+// Se não vier: auto-pick das disponíveis (comportamento original).
 async function assignBikeUnits(
   db: any,
   rentalId: number,
@@ -2519,10 +2518,57 @@ async function assignBikeUnits(
   quantity: number,
   startDate: string,
   endDate: string | null,
+  unitIds?: number[],
 ): Promise<number> {
   const { bikeUnits, rentalBikeUnits } = await import("../drizzle/schema");
-  const { eq, and, sql: sqlFn } = await import("drizzle-orm");
-  // Busca unidades disponíveis que NÃO estejam ligadas a rental ativo sobreposto
+  const { eq, and, inArray, sql: sqlFn } = await import("drizzle-orm");
+
+  // ── PICK MANUAL: unitIds fornecidos ──────────────────────────────────────
+  if (unitIds && unitIds.length > 0) {
+    const endCond = endDate
+      ? sqlFn`NOT EXISTS (
+          SELECT 1 FROM rental_bike_units rbu
+          JOIN rentals r ON r.id = rbu."rentalId"
+          WHERE rbu."bikeUnitId" = ${bikeUnits.id}
+            AND r.status IN ('pending','active','overdue')
+            AND r."deletedAt" IS NULL
+            AND r.id <> ${rentalId}
+            AND r."startDate" <= ${endDate}
+            AND (r."endDate" IS NULL OR r."endDate" >= ${startDate})
+        )`
+      : sqlFn`NOT EXISTS (
+          SELECT 1 FROM rental_bike_units rbu
+          JOIN rentals r ON r.id = rbu."rentalId"
+          WHERE rbu."bikeUnitId" = ${bikeUnits.id}
+            AND r.status IN ('pending','active','overdue')
+            AND r."deletedAt" IS NULL
+            AND r.id <> ${rentalId}
+            AND (r."endDate" IS NULL OR r."endDate" >= ${startDate})
+        )`;
+    const valid = await db
+      .select({ id: bikeUnits.id })
+      .from(bikeUnits)
+      .where(and(
+        eq(bikeUnits.bikeSizeId, bikeSizeId),
+        eq(bikeUnits.status, "disponivel"),
+        inArray(bikeUnits.id, unitIds),
+        endCond,
+      ));
+    if (valid.length !== unitIds.length) {
+      throw new TRPCError({
+        code: "PRECONDITION_FAILED",
+        message: `Uma ou mais unidades escolhidas não estão disponíveis para o período.`,
+      });
+    }
+    let linked = 0;
+    for (const unit of valid) {
+      await db.insert(rentalBikeUnits).values({ rentalId, bikeUnitId: unit.id });
+      linked++;
+    }
+    return linked;
+  }
+
+  // ── AUTO-PICK: comportamento original ────────────────────────────────────
   const endCond = endDate
     ? sqlFn`NOT EXISTS (
         SELECT 1 FROM rental_bike_units rbu
@@ -2776,6 +2822,13 @@ const contractsRouter = router({
         .from(rentalsTable)
         .leftJoin(bikesTable, eq(rentalsTable.bikeId, bikesTable.id))
         .where(and(eq(rentalsTable.contractId, input.id), isNull(rentalsTable.deletedAt)));
+      // BU-PICK-BACK: enriquecer cada rental com os bikeUnitIds já ligados
+      const { rentalBikeUnits: rbuGet } = await import("../drizzle/schema");
+      const { eq: eqRbuGet } = await import("drizzle-orm");
+      const rentalsWithUnitIds = await Promise.all(linkedRentals.map(async (r) => {
+        const rows = await db.select({ bikeUnitId: rbuGet.bikeUnitId }).from(rbuGet).where(eqRbuGet(rbuGet.rentalId, r.id));
+        return { ...r, bikeUnitIds: rows.map((row: any) => row.bikeUnitId) };
+      }));
       const accChecklistRaw = await db.select({
         id: contractAccessories.id,
         accessoryId: contractAccessories.accessoryId,
@@ -2802,7 +2855,7 @@ const contractsRouter = router({
         }
         return { ...ca, serialNumber, variante };
       }));
-      return { ...contract, rentals: linkedRentals, accessories: accChecklist };
+      return { ...contract, rentals: rentalsWithUnitIds, accessories: accChecklist };
     }),
 
   // Recalcula status do contrato manualmente
@@ -2956,6 +3009,7 @@ const contractsRouter = router({
         quantity: z.number().min(1).default(1),
         dailyRate: z.string().optional(),
         totalAmount: z.string().optional(),
+        unitIds: z.array(z.number()).optional(), // BU-PICK-BACK: unidades escolhidas
       })).min(1),
       accessories: z.array(z.object({
         accessoryId: z.number(),
@@ -3032,9 +3086,9 @@ const contractsRouter = router({
         rentalIds.push(rentalId);
         // Note: Do NOT mark bike as rented or decrease availability here
         // Availability is derived and pending status reserves the stock
-        // Ligar unidades físicas ao rental (BU-3A)
+        // Ligar unidades físicas ao rental (BU-3A / BU-PICK-BACK)
         if (b.bikeSizeId) {
-          await assignBikeUnits(db, rentalId, b.bikeSizeId, b.quantity, b.startDate, b.endDate ?? null);
+          await assignBikeUnits(db, rentalId, b.bikeSizeId, b.quantity, b.startDate, b.endDate ?? null, b.unitIds);
         }
       }
 
@@ -3143,6 +3197,7 @@ const contractsRouter = router({
         quantity: z.number().min(1).default(1),
         dailyRate: z.string().optional(),
         totalAmount: z.string().optional(),
+        unitIds: z.array(z.number()).optional(), // BU-PICK-BACK: unidades escolhidas
       })).min(1),
       accessories: z.array(z.object({
         accessoryId: z.number(),
@@ -3223,9 +3278,9 @@ const contractsRouter = router({
             contractId: input.id,
             notes: input.notes ?? null,
           } as any);
-          // Ligar unidades físicas ao novo rental (BU-3A)
+          // Ligar unidades físicas ao novo rental (BU-3A / BU-PICK-BACK)
           if (b.bikeSizeId) {
-            await assignBikeUnits(db, newRentalId, b.bikeSizeId, b.quantity, b.startDate, b.endDate ?? null);
+            await assignBikeUnits(db, newRentalId, b.bikeSizeId, b.quantity, b.startDate, b.endDate ?? null, b.unitIds);
           }
         }
 
@@ -3314,10 +3369,10 @@ const contractsRouter = router({
               dailyRate: b.dailyRate ?? null,
             })
             .where(and(eq(rentalsTable.id, b.rentalId), isNull(rentalsTable.deletedAt)));
-          // Re-ligar unidades físicas após atualizar datas (BU-3A)
+          // Re-ligar unidades físicas após atualizar datas (BU-3A / BU-PICK-BACK)
           if (b.bikeSizeId) {
             await releaseBikeUnits(db, b.rentalId);
-            await assignBikeUnits(db, b.rentalId, b.bikeSizeId, b.quantity, b.startDate, b.endDate ?? null);
+            await assignBikeUnits(db, b.rentalId, b.bikeSizeId, b.quantity, b.startDate, b.endDate ?? null, b.unitIds);
           }
         } else {
           // INSERT new rental (ativo, paid)
@@ -3337,9 +3392,9 @@ const contractsRouter = router({
             contractId: input.id,
             notes: input.notes ?? null,
           } as any);
-          // Ligar unidades físicas ao novo rental ativo (BU-3A)
+          // Ligar unidades físicas ao novo rental ativo (BU-3A / BU-PICK-BACK)
           if (b.bikeSizeId) {
-            await assignBikeUnits(db, newRentalIdAtivo, b.bikeSizeId, b.quantity, b.startDate, b.endDate ?? null);
+            await assignBikeUnits(db, newRentalIdAtivo, b.bikeSizeId, b.quantity, b.startDate, b.endDate ?? null, b.unitIds);
           }
         }
       }
@@ -3640,6 +3695,37 @@ const bikeUnitsRouter = router({
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
       await db.update(bikeUnits).set({ status: input.status }).where(eq(bikeUnits.id, input.id));
       return { success: true };
+    }),
+
+  // BU-PICK-BACK: unidades disponíveis para um tamanho num período
+  available: adminAuthProcedure
+    .input(z.object({
+      bikeSizeId: z.number(),
+      startDate: z.string(),
+      endDate: z.string(),
+      excludeRentalId: z.number().optional(),
+    }))
+    .query(async ({ input }) => {
+      const { bikeUnits, rentalBikeUnits: rbuT, rentals: rentalsT } = await import("../drizzle/schema");
+      const { eq, and, sql: sqlFn } = await import("drizzle-orm");
+      const db = await (await import("./db")).getDb();
+      if (!db) return [];
+      const excludeId = input.excludeRentalId ?? -1;
+      const overlapCond = sqlFn`NOT EXISTS (
+        SELECT 1 FROM rental_bike_units rbu
+        JOIN rentals r ON r.id = rbu."rentalId"
+        WHERE rbu."bikeUnitId" = ${bikeUnits.id}
+          AND r.status IN ('pending','active','overdue')
+          AND r."deletedAt" IS NULL
+          AND r.id <> ${excludeId}
+          AND r."startDate" <= ${input.endDate}
+          AND (r."endDate" IS NULL OR r."endDate" >= ${input.startDate})
+      )`;
+      return db
+        .select({ id: bikeUnits.id, numeroSistema: bikeUnits.numeroSistema })
+        .from(bikeUnits)
+        .where(and(eq(bikeUnits.bikeSizeId, input.bikeSizeId), eq(bikeUnits.status, "disponivel"), overlapCond))
+        .orderBy(bikeUnits.numeroSistema);
     }),
 });
 
