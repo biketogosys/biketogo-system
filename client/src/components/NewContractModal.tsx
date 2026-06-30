@@ -34,7 +34,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 
-// ─── Types ────────────────────────────────────────────────────────────────────
+// ─── Types ──────────────────────────────────────────────────────────────────────────────────
 type BikeEntry = {
   rentalId?: number;      // present for existing rentals in ativo/parcial edit mode
   locked?: boolean;       // true for returned rentals — cannot be edited or removed
@@ -49,9 +49,9 @@ type BikeEntry = {
   dailyRate: string;
   numDays: number;
   totalAmount: string;
+  unitIds: number[];          // BU-PICK-FRONT: IDs das unidades físicas escolhidas
+  unitNumeros?: string[];     // só para exibir no cart
 };
-
-
 
 // ─── VerifiedClientAutocomplete ───────────────────────────────────────────────
 function VerifiedClientAutocomplete({
@@ -209,6 +209,8 @@ export function NewContractModal({
   const [selStartDate, setSelStartDate] = useState("");
   const [selEndDate, setSelEndDate] = useState("");
   const [selQty, setSelQty] = useState(1);
+  // BU-PICK-FRONT: unidades físicas selecionadas
+  const [selUnitIds, setSelUnitIds] = useState<number[]>([]);
 
   const { data: bikesData } = trpc.bikes.list.useQuery(
     { page: 1, limit: 100 },
@@ -221,6 +223,24 @@ export function NewContractModal({
     { enabled: !!selBikeId && step === 2 }
   );
   const sizes = sizesData ?? [];
+
+  // BU-PICK-FRONT: buscar unidades disponíveis quando tamanho + datas estiverem preenchidos
+  const { data: availUnits = [] } = trpc.bikeUnits.available.useQuery(
+    { bikeSizeId: Number(selBikeSizeId), startDate: selStartDate, endDate: selEndDate },
+    { enabled: !!(selBikeSizeId && selStartDate && selEndDate) }
+  );
+  // Pré-marcar o primeiro ao carregar (sugestão)
+  const prevAvailRef = useRef<typeof availUnits>([]);
+  useEffect(() => {
+    const prev = prevAvailRef.current;
+    if (availUnits.length > 0 && prev.length === 0 && selUnitIds.length === 0) {
+      setSelUnitIds([availUnits[0].id]);
+    }
+    if (availUnits.length === 0 && prev.length > 0) {
+      setSelUnitIds([]);
+    }
+    prevAvailRef.current = availUnits;
+  }, [availUnits]);
 
   const { data: accData } = trpc.accessories.list.useQuery(
     { page: 1, limit: 100 },
@@ -251,12 +271,14 @@ export function NewContractModal({
       toast.error("Selecione a bike, data de início e data de devolução.");
       return;
     }
-    const bike = bikes.find((b) => b.id === Number(selBikeId));
-    const size = sizes.find((s) => s.id === Number(selBikeSizeId));
-    if (size && size.quantidadeDisponivel < selQty) {
-      toast.error(`Disponível: ${size.quantidadeDisponivel} unidade(s) deste tamanho.`);
+    // BU-PICK-FRONT: exigir ao menos 1 unidade quando tamanho selecionado
+    if (selBikeSizeId && selUnitIds.length === 0) {
+      toast.error("Selecione ao menos uma unidade.");
       return;
     }
+    const bike = bikes.find((b) => b.id === Number(selBikeId));
+    const size = sizes.find((s) => s.id === Number(selBikeSizeId));
+    const chosenNumeros = (availUnits as any[]).filter((u) => selUnitIds.includes(u.id)).map((u) => u.numeroSistema);
     const entry: Omit<BikeEntry, "totalAmount" | "numDays"> = {
       bikeId: Number(selBikeId),
       bikeModel: bike?.model ?? "",
@@ -265,12 +287,14 @@ export function NewContractModal({
       tamanho: size?.tamanho ?? "",
       startDate: selStartDate,
       endDate: selEndDate,
-      quantity: selQty,
+      quantity: selBikeSizeId ? selUnitIds.length : selQty,
       dailyRate: bike?.dailyRate ?? "0",
+      unitIds: selBikeSizeId ? selUnitIds : [],
+      unitNumeros: chosenNumeros.length > 0 ? chosenNumeros : undefined,
     };
     const { numDays, totalAmount } = calcTotal(entry);
     setBikeEntries((prev) => [...prev, { ...entry, numDays, totalAmount }]);
-    setSelBikeId(""); setSelBikeSizeId(""); setSelStartDate(""); setSelEndDate(""); setSelQty(1);
+    setSelBikeId(""); setSelBikeSizeId(""); setSelStartDate(""); setSelEndDate(""); setSelQty(1); setSelUnitIds([]);
   }
 
   function handleRemoveBike(idx: number) {
@@ -325,6 +349,7 @@ export function NewContractModal({
       quantity: b.quantity,
       dailyRate: b.dailyRate,
       totalAmount: b.totalAmount,
+      unitIds: b.unitIds?.length ? b.unitIds : undefined, // BU-PICK-FRONT
     }));
     const accPayload: Array<{accessoryId:number;variante?:string;qty:number}> = [];
     for (const [idStr, byKey] of Object.entries(accSelections))
@@ -437,26 +462,55 @@ export function NewContractModal({
                 <Label className="mb-1 block text-xs">Data devolução</Label>
                 <Input type="date" value={selEndDate} onChange={(e) => setSelEndDate(e.target.value)} min={selStartDate} className="text-sm" />
               </div>
-              <div>
-                <Label className="mb-1 block text-xs">Quantidade</Label>
-                {(() => {
-                  const selectedSize = sizes.find((s) => s.id === Number(selBikeSizeId));
-                  const maxQty = selectedSize ? selectedSize.quantidadeDisponivel : 10;
-                  return (
-                    <Input
-                      type="number"
-                      min={1}
-                      max={maxQty}
-                      value={selQty}
-                      onChange={(e) => {
-                        const v = Number(e.target.value);
-                        setSelQty(Math.min(Math.max(1, v), maxQty > 0 ? maxQty : 1));
-                      }}
-                      className="text-sm"
-                    />
-                  );
-                })()}
-              </div>
+              {/* BU-PICK-FRONT: seletor de unidades físicas (substitui campo Quantidade) */}
+              {selBikeSizeId && (
+                <div className="col-span-2">
+                  <Label className="mb-1 block text-xs">Unidades físicas</Label>
+                  {(availUnits as any[]).length === 0 ? (
+                    <p className="text-xs text-muted-foreground py-1">Nenhuma unidade disponível no período.</p>
+                  ) : (
+                    <div className="flex flex-wrap gap-1.5">
+                      {(availUnits as any[]).map((u) => {
+                        const checked = selUnitIds.includes(u.id);
+                        return (
+                          <button
+                            key={u.id}
+                            type="button"
+                            onClick={() =>
+                              setSelUnitIds((prev) =>
+                                checked ? prev.filter((id) => id !== u.id) : [...prev, u.id]
+                              )
+                            }
+                            className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-colors ${
+                              checked
+                                ? "bg-primary text-primary-foreground border-primary"
+                                : "bg-muted text-muted-foreground border-border hover:border-primary/60"
+                            }`}
+                          >
+                            {u.numeroSistema}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                  {selUnitIds.length > 0 && (
+                    <p className="text-xs text-muted-foreground mt-1">{selUnitIds.length} unidade(s) selecionada(s)</p>
+                  )}
+                </div>
+              )}
+              {!selBikeSizeId && (
+                <div>
+                  <Label className="mb-1 block text-xs">Quantidade</Label>
+                  <Input
+                    type="number"
+                    min={1}
+                    max={10}
+                    value={selQty}
+                    onChange={(e) => setSelQty(Math.min(Math.max(1, Number(e.target.value)), 10))}
+                    className="text-sm"
+                  />
+                </div>
+              )}
               {selectedBike && (
                 <div className="flex items-end">
                   <p className="text-xs text-muted-foreground">R$ {selectedBike.dailyRate ?? "—"}/dia</p>
@@ -495,6 +549,9 @@ export function NewContractModal({
                       <span className="font-medium">{b.bikeModel}</span>
                       {b.tamanho && <span className="text-muted-foreground"> · {b.tamanho}</span>}
                       <span className="text-muted-foreground"> · {b.numDays}d · {b.quantity}x</span>
+                      {b.unitNumeros && b.unitNumeros.length > 0 && (
+                        <span className="text-muted-foreground"> · Nº {b.unitNumeros.join(", ")}</span>
+                      )}
                       {b.locked && <span className="ml-1.5 text-xs text-muted-foreground">(devolvida)</span>}
                     </div>
                     <div className="flex items-center gap-2">
@@ -592,7 +649,7 @@ export function NewContractModal({
               <p className="text-xs text-muted-foreground uppercase tracking-wide mb-2">Bikes</p>
               {bikeEntries.map((b, i) => (
                 <div key={i} className="flex justify-between text-sm py-1 border-b last:border-0">
-                  <span>{b.bikeModel}{b.tamanho ? ` (${b.tamanho})` : ""} · {b.numDays}d · {b.quantity}x</span>
+                  <span>{b.bikeModel}{b.tamanho ? ` (${b.tamanho})` : ""} · {b.numDays}d · {b.quantity}x{b.unitNumeros && b.unitNumeros.length > 0 ? ` · Nº ${b.unitNumeros.join(", ")}` : ""}</span>
                   <span className="font-medium">R$ {b.totalAmount}</span>
                 </div>
               ))}

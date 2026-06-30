@@ -786,6 +786,7 @@ function ContractDetail({
                 ? Math.max(1, Math.ceil((new Date(r.endDate).getTime() - new Date(r.startDate).getTime()) / 86400000))
                 : 1,
               totalAmount: r.totalAmount ?? "0.00",
+              unitIds: r.bikeUnitIds ?? [], // BU-PICK-FRONT
             })),
             accessories: Object.values(
               (data.accessories ?? []).reduce((acc: any, a: any) => {
