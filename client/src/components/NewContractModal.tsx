@@ -229,6 +229,12 @@ export function NewContractModal({
     { bikeSizeId: Number(selBikeSizeId), startDate: selStartDate, endDate: selEndDate },
     { enabled: !!(selBikeSizeId && selStartDate && selEndDate) }
   );
+  // BU-PICK-FRONT-FIX: zerar seleção ao trocar tamanho/datas para evitar unitIds do tamanho anterior
+  useEffect(() => {
+    setSelUnitIds([]);
+    prevAvailRef.current = [];
+  }, [selBikeSizeId, selStartDate, selEndDate]);
+
   // Pré-marcar o primeiro ao carregar (sugestão)
   const prevAvailRef = useRef<typeof availUnits>([]);
   useEffect(() => {
