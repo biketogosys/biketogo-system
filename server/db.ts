@@ -34,7 +34,6 @@ import {
   auditLogs,
   bikeDiscountRules,
   bikeSizes,
-  bikeMaintenanceLogs,
   bikeUnits,
   bikes,
   clientDocuments,
@@ -132,23 +131,10 @@ export async function getSizeBreakdown(
     .where(and(...rentalConds));
   const alugada = rentedRows.reduce((s, r) => s + (r.q ?? 1), 0);
 
-  // Manutencoes em andamento para este tamanho (ou para a bike sem tamanho especifico)
-  const maintRows = await db
-    .select({ q: bikeMaintenanceLogs.quantidadeAfetada })
-    .from(bikeMaintenanceLogs)
-    .where(
-      and(
-        eq(bikeMaintenanceLogs.status, "em_andamento"),
-        or(
-          eq(bikeMaintenanceLogs.tamanhoBikeId, bikeSizeId),
-          and(
-            isNull(bikeMaintenanceLogs.tamanhoBikeId),
-            eq(bikeMaintenanceLogs.bikeId, size.bikeId),
-          ),
-        ),
-      ),
-    );
-  const manutencao = maintRows.reduce((s, m) => s + (m.q ?? 1), 0);
+  // BU-3C-BACK: contar unidades com status 'manutencao' para este tamanho
+  const [maintRow] = await db.select({ value: count() }).from(bikeUnits)
+    .where(and(eq(bikeUnits.bikeSizeId, bikeSizeId), eq(bikeUnits.status, "manutencao")));
+  const manutencao = maintRow?.value ?? 0;
 
   const total = totalRow?.value ?? 0;
   const disponivel = Math.max(0, total - alugada - manutencao);

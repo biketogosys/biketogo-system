@@ -1108,36 +1108,22 @@ const rentalsRouter = router({
       } as any);
 
       if (input.bikeCondition === "damaged") {
-        // Create maintenance log and mark bike as in maintenance
-        const { bikeMaintenanceLogs, bikes, bikeSizes } = await import("../drizzle/schema");
-        const { eq, sql: sqlMaint } = await import("drizzle-orm");
-        const db = await (await import("./db")).getDb();
-        if (db) {
-          const descricao = input.returnNotes?.trim() || `Danificada na devolução (aluguel #${input.id})`;
-          await db.insert(bikeMaintenanceLogs).values({
-            bikeId: rental.bikeId,
-            tamanhoBikeId: rental.bikeSizeId ?? null,
-            quantidadeAfetada: 1,
-            descricao,
-            status: "em_andamento",
-            dataEntrada: new Date(),
-          });
-          // Decrement quantidadeDisponivel (same logic as addMaintenance)
-          if (rental.bikeSizeId) {
-            await db.update(bikeSizes)
-              .set({ quantidadeDisponivel: sqlMaint`GREATEST(0, ${bikeSizes.quantidadeDisponivel} - 1)` })
-              .where(eq(bikeSizes.id, rental.bikeSizeId));
-          } else {
-            await db.update(bikeSizes)
-              .set({ quantidadeDisponivel: sqlMaint`GREATEST(0, ${bikeSizes.quantidadeDisponivel} - 1)` })
-              .where(eq(bikeSizes.bikeId, rental.bikeId));
+        // BU-3C-BACK: setar unidades ligadas ao aluguel como manutencao
+        const { rentalBikeUnits, bikeUnits: bikeUnitsT } = await import("../drizzle/schema");
+        const { eq: eqD } = await import("drizzle-orm");
+        const dbD = await (await import("./db")).getDb();
+        if (dbD) {
+          const nota = input.returnNotes?.trim() || `Danificada na devolução (aluguel #${input.id})`;
+          const links = await dbD.select({ unitId: rentalBikeUnits.bikeUnitId })
+            .from(rentalBikeUnits).where(eqD(rentalBikeUnits.rentalId, input.id));
+          for (const l of links) {
+            await dbD.update(bikeUnitsT)
+              .set({ status: "manutencao", observacao: nota })
+              .where(eqD(bikeUnitsT.id, l.unitId));
           }
-          await db.update(bikes).set({ status: "maintenance" }).where(eq(bikes.id, rental.bikeId));
         }
-      } else {
-        // ok: return bike to available
-        await updateBike(rental.bikeId, { status: "available" });
       }
+      // ok: nao mexe em status (unidade fica livre porque rental vira 'returned' e sai do overlap)
       return { success: true };
     }),
 
@@ -3686,7 +3672,7 @@ const bikeUnitsRouter = router({
   setStatus: adminAuthProcedure
     .input(z.object({
       id: z.number(),
-      status: z.enum(["disponivel", "perdido", "roubado"]),
+      status: z.enum(["disponivel", "perdido", "roubado", "manutencao"]),
     }))
     .mutation(async ({ input }) => {
       const { bikeUnits } = await import("../drizzle/schema");
