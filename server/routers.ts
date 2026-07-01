@@ -3717,6 +3717,8 @@ const bikeUnitsRouter = router({
   byBike: adminAuthProcedure
     .input(z.object({ bikeId: z.number() }))
     .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return [];
       const { bikeUnits, bikeSizes } = await import("../drizzle/schema");
       const { eq, asc } = await import("drizzle-orm");
       return db
