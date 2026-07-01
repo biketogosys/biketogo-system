@@ -22,6 +22,7 @@ import {
   Hash,
   ShieldOff,
   ShieldAlert,
+  Wrench,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -210,7 +211,7 @@ function BikeUnitsPanel({ bikeSizeId, bikeId }: { bikeSizeId: number; bikeId: nu
                         <Pencil className="w-3 h-3" />
                       </button>
                     )}
-                    {/* Status buttons — only disponivel/perdido/roubado (lote 3 adds manutencao/alugado) */}
+                    {/* Status buttons — disponivel/perdido/roubado/manutencao (BU-3C-FRONT-1) */}
                     {st !== "disponivel" && (
                       <button
                         className="text-muted-foreground hover:text-emerald-600 p-0.5 rounded"
@@ -236,6 +237,15 @@ function BikeUnitsPanel({ bikeSizeId, bikeId }: { bikeSizeId: number; bikeId: nu
                         onClick={() => setStatusMut.mutate({ id: unit.id, status: "roubado" })}
                       >
                         <ShieldAlert className="w-3 h-3" />
+                      </button>
+                    )}
+                    {st !== "manutencao" && (
+                      <button
+                        className="text-muted-foreground hover:text-orange-600 p-0.5 rounded"
+                        title="Enviar pra manutenção"
+                        onClick={() => setStatusMut.mutate({ id: unit.id, status: "manutencao" })}
+                      >
+                        <Wrench className="w-3 h-3" />
                       </button>
                     )}
                     <button
