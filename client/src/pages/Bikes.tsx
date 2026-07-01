@@ -29,6 +29,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
@@ -430,203 +431,38 @@ function BikeSizesTab({ bikeId }: { bikeId: number }) {
 // ─── Maintenance Tab ──────────────────────────────────────────────────────────
 function MaintenanceTab({ bikeId }: { bikeId: number }) {
   const utils = trpc.useUtils();
-  const { data: logs = [], isLoading } = trpc.bikes.listMaintenance.useQuery({ bikeId });
-  const { data: sizes = [] } = trpc.bikes.listSizes.useQuery({ bikeId });
-  const [showForm, setShowForm] = useState(false);
-  const [desc, setDesc] = useState("");
-  const [custo, setCusto] = useState("");
-  const [dataPrevista, setDataPrevista] = useState("");
-  const [status, setStatus] = useState<"em_andamento" | "concluida">("em_andamento");
-  const [expandedId, setExpandedId] = useState<number | null>(null);
-  const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
-  const [showHistory, setShowHistory] = useState(false);
-  // Tamanho afetado: null = todos os tamanhos
-  const [tamanhoBikeId, setTamanhoBikeId] = useState<number | null>(null);
-  const [quantidadeAfetada, setQuantidadeAfetada] = useState("1");
-  const [serialAfetado, setSerialAfetado] = useState("");
-
-  const selectedSize = (sizes as any[]).find((s: any) => s.id === tamanhoBikeId);
-  const maxQty = selectedSize ? (selectedSize.quantidadeDisponivel ?? selectedSize.quantidadeTotal ?? 99) : 99;
-
-  // Filter: hide completed logs older than 30 days unless showHistory is true
-  const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-  const visibleLogs = showHistory
-    ? (logs as any[])
-    : (logs as any[]).filter((l: any) => l.status !== "concluida" || new Date(l.dataEntrada) >= cutoff);
-  const hiddenCount = (logs as any[]).length - visibleLogs.length;
-
-  const addMut = trpc.bikes.addMaintenance.useMutation({
+  const { data: units = [], isLoading } = trpc.bikeUnits.byBike.useQuery({ bikeId });
+  const emManutencao = (units as any[]).filter((u) => u.status === "manutencao");
+  const resolveMut = trpc.bikeUnits.setStatus.useMutation({
     onSuccess: () => {
-      utils.bikes.listMaintenance.invalidate();
-      utils.bikes.list.invalidate();
-      utils.bikes.listSizes.invalidate();
-      setShowForm(false);
-      setDesc(""); setCusto(""); setDataPrevista(""); setStatus("em_andamento");
-      setTamanhoBikeId(null); setQuantidadeAfetada("1"); setSerialAfetado("");
-      toast.success("Manutenção registrada!");
+      utils.bikeUnits.byBike.invalidate({ bikeId });
+      utils.bikes.listSizes.invalidate({ bikeId });
+      utils.bikeUnits.list.invalidate();
+      toast.success("Bike liberada da manutenção.");
     },
     onError: (e) => toast.error(e.message),
   });
-  const updateMut = trpc.bikes.updateMaintenance.useMutation({
-    onSuccess: () => {
-      utils.bikes.listMaintenance.invalidate();
-      utils.bikes.list.invalidate();
-      utils.bikes.listSizes.invalidate();
-      toast.success("Manutenção atualizada!");
-    },
-    onError: (e) => toast.error(e.message),
-  });
-  const deleteMut = trpc.bikes.deleteMaintenanceLog.useMutation({
-    onSuccess: () => {
-      utils.bikes.listMaintenance.invalidate();
-      utils.bikes.list.invalidate();
-      utils.bikes.listSizes.invalidate();
-      setConfirmDeleteId(null);
-      toast.success("Registro excluído.");
-    },
-    onError: (e) => { toast.error(e.message); setConfirmDeleteId(null); },
-  });
-
+  if (isLoading) return <p className="text-sm text-muted-foreground py-4">Carregando…</p>;
+  if (emManutencao.length === 0)
+    return <p className="text-sm text-muted-foreground py-4">Nenhuma bike em manutenção.</p>;
   return (
-    <div className="space-y-3">
-      {isLoading ? <p className="text-sm text-muted-foreground">Carregando...</p> : (
-        <div className="space-y-2">
-          {visibleLogs.length === 0 && <p className="text-sm text-muted-foreground">Nenhum registro de manutenção.</p>}
-          {visibleLogs.map((log: any) => (
-            <div key={log.id} className="border border-border rounded-lg overflow-hidden">
-              <div className="flex items-center justify-between p-3 cursor-pointer hover:bg-secondary/50" onClick={() => setExpandedId(expandedId === log.id ? null : log.id)}>
-                <div className="flex items-center gap-2 min-w-0">
-                  {log.status === "concluida" ? <CheckCircle className="w-4 h-4 text-emerald-500 shrink-0" /> : <Clock className="w-4 h-4 text-amber-500 shrink-0" />}
-                  <span className="text-sm font-medium line-clamp-1">{log.descricao}</span>
-                </div>
-                <div className="flex items-center gap-1 shrink-0">
-                  <Badge variant={log.status === "concluida" ? "default" : "secondary"} className="text-xs">{log.status === "concluida" ? "Concluída" : "Em andamento"}</Badge>
-                  <button
-                    className="p-1 rounded hover:bg-destructive/10 text-destructive/70 hover:text-destructive transition-colors"
-                    title="Excluir registro"
-                    onClick={(e) => { e.stopPropagation(); setConfirmDeleteId(log.id); }}
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-                  {expandedId === log.id ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
-                </div>
-              </div>
-              {/* Confirm delete inline */}
-              {confirmDeleteId === log.id && (
-                <div className="px-3 pb-3 border-t border-destructive/20 bg-destructive/5">
-                  <div className="flex items-center gap-2 py-2">
-                    <AlertTriangle className="w-4 h-4 text-destructive shrink-0" />
-                    <p className="text-xs text-destructive flex-1">
-                      {log.status === "em_andamento"
-                        ? "Excluir este registro irá restaurar a disponibilidade da bike. Confirmar?"
-                        : "Excluir este registro de manutenção? Esta ação não pode ser desfeita."}
-                    </p>
-                    <Button size="sm" variant="destructive" className="h-6 text-xs px-2" onClick={() => deleteMut.mutate({ logId: log.id, bikeId })} disabled={deleteMut.isPending}>
-                      {deleteMut.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : "Excluir"}
-                    </Button>
-                    <Button size="sm" variant="ghost" className="h-6 text-xs px-2" onClick={() => setConfirmDeleteId(null)}>Cancelar</Button>
-                  </div>
-                </div>
-              )}
-              {expandedId === log.id && confirmDeleteId !== log.id && (
-                <div className="p-3 pt-0 border-t border-border bg-secondary/20 space-y-2">
-                  <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
-                    <span>Entrada: {new Date(log.dataEntrada).toLocaleDateString("pt-BR")}</span>
-                    {log.dataPrevistaRetorno && <span>Prev. retorno: {new Date(log.dataPrevistaRetorno).toLocaleDateString("pt-BR")}</span>}
-                    {log.custo && <span>Custo: R$ {parseFloat(log.custo).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</span>}
-                  </div>
-                  {log.status === "em_andamento" && (
-                    <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => updateMut.mutate({ id: log.id, bikeId, status: "concluida" })} disabled={updateMut.isPending}>
-                      {updateMut.isPending ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <CheckCircle className="w-3 h-3 mr-1" />}Marcar como concluída
-                    </Button>
-                  )}
-                </div>
-              )}
+    <div className="space-y-2 py-1">
+      {emManutencao.map((u) => (
+        <div key={u.id} className="flex items-center justify-between gap-2 rounded-lg border p-2.5">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <Wrench className="w-3.5 h-3.5 text-orange-600 shrink-0" />
+              <span className="font-medium text-sm">Nº {u.numeroSistema}</span>
+              <Badge variant="outline" className="text-xs">{u.tamanho}</Badge>
             </div>
-          ))}
-          {hiddenCount > 0 && (
-            <button
-              className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors w-full justify-center py-1"
-              onClick={() => setShowHistory(true)}
-            >
-              <History className="w-3.5 h-3.5" />
-              Ver histórico completo ({hiddenCount} registro{hiddenCount !== 1 ? "s" : ""} oculto{hiddenCount !== 1 ? "s" : ""})
-            </button>
-          )}
-          {showHistory && hiddenCount > 0 && (
-            <button
-              className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors w-full justify-center py-1"
-              onClick={() => setShowHistory(false)}
-            >
-              <ChevronUp className="w-3.5 h-3.5" />
-              Ocultar histórico antigo
-            </button>
-          )}
+            {u.observacao && <p className="text-xs text-muted-foreground mt-1 truncate">{u.observacao}</p>}
+          </div>
+          <Button size="sm" variant="outline" disabled={resolveMut.isPending}
+            onClick={() => resolveMut.mutate({ id: u.id, status: "disponivel" })}>
+            <CheckCircle className="w-3.5 h-3.5 mr-1" />Resolver
+          </Button>
         </div>
-      )}
-      {showForm ? (
-        <div className="border border-border rounded-lg p-3 space-y-3 bg-secondary/20">
-          <Label className="text-sm font-medium">Novo registro de manutenção</Label>
-          <div><Label className="text-xs">Descrição *</Label><Textarea value={desc} onChange={e => setDesc(e.target.value)} placeholder="Descreva o problema ou serviço..." className="text-sm min-h-[60px]" /></div>
-          <div>
-            <Label className="text-xs">Tamanho afetado *</Label>
-            <Select value={tamanhoBikeId === null ? "__todos__" : String(tamanhoBikeId)} onValueChange={(v) => { setTamanhoBikeId(v === "__todos__" ? null : parseInt(v)); setQuantidadeAfetada("1"); }}>
-              <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Selecionar tamanho..." /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="__todos__">Todos os tamanhos</SelectItem>
-                {(sizes as any[]).map((s: any) => (
-                  <SelectItem key={s.id} value={String(s.id)}>
-                    {s.tamanho} — {s.quantidadeDisponivel ?? s.quantidadeTotal} disp.
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div>
-            <Label className="text-xs">Quantidade em manutenção</Label>
-            <Input type="number" min={1} max={maxQty} value={quantidadeAfetada} onChange={e => setQuantidadeAfetada(e.target.value)} className="h-8 text-sm" />
-            {selectedSize && <p className="text-xs text-muted-foreground mt-0.5">Máx. disponível: {maxQty}</p>}
-          </div>
-          <div>
-            <Label className="text-xs">Número de série da unidade afetada <span className="text-muted-foreground">(opcional)</span></Label>
-            <Input
-              value={serialAfetado}
-              onChange={e => setSerialAfetado(e.target.value)}
-              placeholder="Ex: BK-007"
-              className="h-8 text-sm"
-              maxLength={50}
-            />
-          </div>
-          <div className="grid grid-cols-2 gap-2">
-            <div><Label className="text-xs">Custo (R$)</Label><Input value={custo} onChange={e => setCusto(e.target.value)} placeholder="0,00" className="h-8 text-sm" /></div>
-            <div><Label className="text-xs">Prev. retorno</Label><Input type="date" value={dataPrevista} onChange={e => setDataPrevista(e.target.value)} className="h-8 text-sm" /></div>
-          </div>
-          <div>
-            <Label className="text-xs">Status</Label>
-            <Select value={status} onValueChange={(v) => setStatus(v as any)}>
-              <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="em_andamento">Em andamento</SelectItem>
-                <SelectItem value="concluida">Concluída</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="flex gap-2">
-            <Button size="sm" onClick={() => {
-            if (!desc) return toast.error("Informe a descrição.");
-            const qty = parseInt(quantidadeAfetada) || 1;
-            // Append serial number to description if provided
-            const descFinal = serialAfetado.trim()
-              ? `${desc} [Série: ${serialAfetado.trim()}]`
-              : desc;
-            addMut.mutate({ bikeId, tamanhoBikeId, quantidadeAfetada: qty, descricao: descFinal, custo: custo || undefined, dataPrevistaRetorno: dataPrevista || undefined, status });
-          }} disabled={addMut.isPending} className="flex-1">Salvar</Button>
-            <Button size="sm" variant="ghost" onClick={() => setShowForm(false)}>Cancelar</Button>
-          </div>
-        </div>
-      ) : (
-        <Button size="sm" variant="outline" onClick={() => setShowForm(true)} className="w-full"><Plus className="w-3.5 h-3.5 mr-1" />Registrar Manutenção</Button>
-      )}
+      ))}
     </div>
   );
 }

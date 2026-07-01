@@ -3713,6 +3713,26 @@ const bikeUnitsRouter = router({
         .where(and(eq(bikeUnits.bikeSizeId, input.bikeSizeId), eq(bikeUnits.status, "disponivel"), overlapCond))
         .orderBy(bikeUnits.numeroSistema);
     }),
+
+  byBike: adminAuthProcedure
+    .input(z.object({ bikeId: z.number() }))
+    .query(async ({ input }) => {
+      const { bikeUnits, bikeSizes } = await import("../drizzle/schema");
+      const { eq, asc } = await import("drizzle-orm");
+      return db
+        .select({
+          id: bikeUnits.id,
+          numeroSistema: bikeUnits.numeroSistema,
+          status: bikeUnits.status,
+          observacao: bikeUnits.observacao,
+          tamanho: bikeSizes.tamanho,
+          bikeSizeId: bikeSizes.id,
+        })
+        .from(bikeUnits)
+        .innerJoin(bikeSizes, eq(bikeSizes.id, bikeUnits.bikeSizeId))
+        .where(eq(bikeSizes.bikeId, input.bikeId))
+        .orderBy(asc(bikeSizes.tamanho), asc(bikeUnits.numeroSistema));
+    }),
 });
 
 export const appRouter = router({
