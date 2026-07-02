@@ -101,6 +101,7 @@ function NewClientModal({ open, onClose, onSuccess }: NewClientModalProps) {
   });
 
   const uploadDocMutation = trpc.publicApi.uploadDocument.useMutation();
+  const getUploadTokenMut = trpc.clients.getUploadToken.useMutation();
 
   function resetForm() {
     setForm(emptyForm());
@@ -261,16 +262,20 @@ function NewClientModal({ open, onClose, onSuccess }: NewClientModalProps) {
         status: "lead",
       });
 
-      if (form.docFrontBase64 && result?.id) {
-        await uploadDocMutation.mutateAsync({
-          clientId: result.id,
-          base64: form.docFrontBase64,
-          side: "front",
-          mimeType: form.docFrontMime,
-        });
+      if ((form.docFrontBase64 || form.docBackBase64) && result?.id) {
+        // SEC-1: obtain HMAC token before uploading
+        const { uploadToken } = await getUploadTokenMut.mutateAsync({ clientId: result.id });
+        if (form.docFrontBase64) {
+          await uploadDocMutation.mutateAsync({
+            token: uploadToken,
+            base64: form.docFrontBase64,
+            side: "front",
+            mimeType: form.docFrontMime,
+          });
+        }
         if (form.docBackBase64) {
           await uploadDocMutation.mutateAsync({
-            clientId: result.id,
+            token: uploadToken,
             base64: form.docBackBase64,
             side: "back",
             mimeType: form.docBackMime,

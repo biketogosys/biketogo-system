@@ -1,4 +1,5 @@
 import { TRPCError } from "@trpc/server";
+import crypto from "crypto";
 import { z } from "zod";
 import { sanitize, sanitizeDate, sanitizeDateString, sanitizeNumeric, sanitizePhone } from "./_core/utils";
 import bcrypt from "bcryptjs";
@@ -538,6 +539,13 @@ const clientsRouter = router({
     .mutation(async ({ input }) => {
       await deleteClientDocument(input.id);
       return { success: true };
+    }),
+
+  // SEC-1: admin obtains a short-lived upload token for a given clientId
+  getUploadToken: adminAuthProcedure
+    .input(z.object({ clientId: z.number() }))
+    .mutation(({ input }) => {
+      return { uploadToken: signUploadToken(input.clientId) };
     }),
 });
 
@@ -1996,6 +2004,34 @@ const settingsRouter = router({
     }),
 });
 
+// ─── SEC-1: Upload token helpers (HMAC, stateless, 2h TTL) ─────────────────
+const UPLOAD_TOKEN_TTL_MS = 2 * 60 * 60 * 1000; // 2h
+
+function signUploadToken(clientId: number): string {
+  const exp = Date.now() + UPLOAD_TOKEN_TTL_MS;
+  const payload = `${clientId}.${exp}`;
+  const sig = crypto.createHmac("sha256", ENV.cookieSecret).update(payload).digest("hex");
+  return `${payload}.${sig}`;
+}
+
+function verifyUploadToken(token: string): number | null {
+  const parts = token.split(".");
+  if (parts.length !== 3) return null;
+  const [clientIdStr, expStr, sig] = parts;
+  const payload = `${clientIdStr}.${expStr}`;
+  const expected = crypto.createHmac("sha256", ENV.cookieSecret).update(payload).digest("hex");
+  const a = Buffer.from(sig);
+  const b = Buffer.from(expected);
+  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
+  if (Date.now() > Number(expStr)) return null;
+  const id = Number(clientIdStr);
+  return Number.isInteger(id) && id > 0 ? id : null;
+}
+
+if (!ENV.cookieSecret) {
+  console.warn("[SEC-1] WARNING: cookieSecret is empty — upload tokens will be insecure!");
+}
+
 // ─── Public API (for Shopify integration) ────────────────────────────────────
 const publicApiRouter = router({
   // Get bike sizes with real-time availability
@@ -2188,18 +2224,22 @@ const publicApiRouter = router({
         console.warn("[submitPreRegistration] Notification error:", err);
       }
 
-      return { clientId, success: true };
+      return { clientId, success: true, uploadToken: signUploadToken(clientId) };
     }),
 
   // ─── Upload document photo (base64) ────────────────────────────────────────
   uploadDocument: publicProcedure
     .input(z.object({
-      clientId: z.number(),
+      token: z.string(),
       side: z.enum(["front", "back"]),
-      base64: z.string(),
+      base64: z.string().max(14_000_000),
       mimeType: z.string().default("image/jpeg"),
     }))
     .mutation(async ({ input }) => {
+      // SEC-1: verify HMAC token — never trust clientId from input
+      const clientId = verifyUploadToken(input.token);
+      if (!clientId) throw new TRPCError({ code: "UNAUTHORIZED",
+        message: "Sessão de envio expirada. Refaça o pré-cadastro." });
       const mime = input.mimeType || "image/jpeg";
       const isImage = mime.startsWith("image/");
       const isPdf = mime === "application/pdf";
@@ -2209,11 +2249,14 @@ const publicApiRouter = router({
       const { storagePut } = await import("./storage");
       const base64Data = input.base64.replace(/^data:[^;]+;base64,/, "");
       const buffer = Buffer.from(base64Data, "base64");
+      // SEC-1: validate real decoded size
+      if (buffer.byteLength > 10 * 1024 * 1024) throw new TRPCError({ code: "BAD_REQUEST",
+        message: "Arquivo muito grande. Envie até 10MB." });
       const ext = isPdf ? "pdf" : (mime.split("/")[1] || "jpg");
-      const key = `clients/${input.clientId}/doc-${input.side}-${Date.now()}.${ext}`;
+      const key = `clients/${clientId}/doc-${input.side}-${Date.now()}.${ext}`;
       const { url } = await storagePut(key, buffer, mime);
       const field = input.side === "front" ? "docFrontUrl" : "docBackUrl";
-      await updateClient(input.clientId, { [field]: url } as any);
+      await updateClient(clientId, { [field]: url } as any);
       return { url };
     }),
 });

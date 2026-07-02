@@ -175,6 +175,7 @@ function EditClientModal({ open, onClose, client, clientId, onSuccess }: EditCli
   });
 
   const uploadDocMutation = trpc.publicApi.uploadDocument.useMutation();
+  const getUploadTokenMut = trpc.clients.getUploadToken.useMutation();
 
   function fileToBase64(file: File): Promise<string> {
     return new Promise((resolve, reject) => {
@@ -267,13 +268,16 @@ function EditClientModal({ open, onClose, client, clientId, onSuccess }: EditCli
         lgpdConsent: form.lgpdConsent,
       });
 
-      // Upload documents if selected
-      if (form.docFrontBase64) {
-        const mimeType = form.docFrontIsPdf ? "application/pdf" : "image/jpeg";
-        await uploadDocMutation.mutateAsync({ clientId, base64: form.docFrontBase64, side: "front", mimeType });
-      }
-      if (form.docBackBase64) {
-        await uploadDocMutation.mutateAsync({ clientId, base64: form.docBackBase64, side: "back", mimeType: "image/jpeg" });
+      // Upload documents if selected (SEC-1: obtain HMAC token first)
+      if (form.docFrontBase64 || form.docBackBase64) {
+        const { uploadToken } = await getUploadTokenMut.mutateAsync({ clientId });
+        if (form.docFrontBase64) {
+          const mimeType = form.docFrontIsPdf ? "application/pdf" : "image/jpeg";
+          await uploadDocMutation.mutateAsync({ token: uploadToken, base64: form.docFrontBase64, side: "front", mimeType });
+        }
+        if (form.docBackBase64) {
+          await uploadDocMutation.mutateAsync({ token: uploadToken, base64: form.docBackBase64, side: "back", mimeType: "image/jpeg" });
+        }
       }
 
       toast.success("Cliente atualizado com sucesso!");

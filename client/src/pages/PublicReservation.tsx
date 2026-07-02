@@ -306,16 +306,17 @@ export default function PublicReservation() {
         lgpdConsent,
       });
 
-      // Upload documents after client is created
-      if (result.clientId) {
+      // Upload documents after client is created (SEC-1: use HMAC token, never raw clientId)
+      const { clientId: _cid, uploadToken } = result as any;
+      if (uploadToken) {
         if (docFrontBase64) {
           setDocFrontUploading(true);
-          try { await uploadDocMutation.mutateAsync({ clientId: result.clientId, base64: docFrontBase64, side: "front", mimeType: docFrontMime }); }
+          try { await uploadDocMutation.mutateAsync({ token: uploadToken, base64: docFrontBase64, side: "front", mimeType: docFrontMime }); }
           finally { setDocFrontUploading(false); }
         }
         if (docBackBase64) {
           setDocBackUploading(true);
-          try { await uploadDocMutation.mutateAsync({ clientId: result.clientId, base64: docBackBase64, side: "back", mimeType: docBackMime }); }
+          try { await uploadDocMutation.mutateAsync({ token: uploadToken, base64: docBackBase64, side: "back", mimeType: docBackMime }); }
           finally { setDocBackUploading(false); }
         }
       }
