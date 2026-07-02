@@ -130,14 +130,34 @@ export default function Dashboard() {
   const periodDates = useMemo(() => getPeriodDates(period), [period]);
   const periodLabel = PERIOD_OPTIONS.find((o) => o.key === period)?.label ?? "Mês atual";
 
-  const { data, isLoading } = trpc.dashboard.summary.useQuery(periodDates);
-  const { data: weeklyData, isLoading: weeklyLoading } = trpc.dashboard.weeklyRevenue.useQuery(periodDates);
-  const { data: bikeRevenueData = [], isLoading: bikeRevenueLoading } = trpc.dashboard.revenueByBike.useQuery(periodDates);
+  const { data, isLoading, error: summaryError, refetch: refetchSummary } = trpc.dashboard.summary.useQuery(periodDates);
+  const { data: weeklyData, isLoading: weeklyLoading, error: weeklyError, refetch: refetchWeekly } = trpc.dashboard.weeklyRevenue.useQuery(periodDates);
+  const { data: bikeRevenueData = [], isLoading: bikeRevenueLoading, error: bikeRevenueError, refetch: refetchBikeRevenue } = trpc.dashboard.revenueByBike.useQuery(periodDates);
 
-  if (isLoading) {
+  const anyError = summaryError || weeklyError || bikeRevenueError;
+  const anyLoading = isLoading || weeklyLoading || bikeRevenueLoading;
+
+  if (anyLoading && !anyError) {
     return (
       <div className="flex items-center justify-center h-64">
         <Loader2 className="w-6 h-6 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  if (anyError) {
+    return (
+      <div className="flex flex-col items-center justify-center h-64 gap-4">
+        <div className="text-center">
+          <p className="text-sm font-medium text-destructive">Erro ao carregar o dashboard</p>
+          <p className="text-xs text-muted-foreground mt-1">{(summaryError || weeklyError || bikeRevenueError)?.message}</p>
+        </div>
+        <button
+          onClick={() => { refetchSummary(); refetchWeekly(); refetchBikeRevenue(); }}
+          className="px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors"
+        >
+          Tentar novamente
+        </button>
       </div>
     );
   }

@@ -35,14 +35,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 
-type BikeStatus = "available" | "rented" | "maintenance";
+// LOTE-2: BikeStatus and statusConfig removed (bikes.status is now inert)
 type BikeCategory = "mtb" | "speed" | "gravel";
-
-const statusConfig: Record<BikeStatus, { cls: string; label: string }> = {
-  available: { cls: "bg-emerald-100 text-emerald-700 border border-emerald-200", label: "Disponível" },
-  rented: { cls: "bg-blue-100 text-blue-700 border border-blue-200", label: "Alugada" },
-  maintenance: { cls: "bg-amber-100 text-amber-700 border border-amber-200", label: "Manutenção" },
-};
 
 const categoryLabels: Record<BikeCategory, string> = {
   mtb: "MTB",
@@ -535,7 +529,6 @@ function BikeFormDialog({ bike, onClose, onSuccess }: { bike: any | null; onClos
     dailyRate: bike?.dailyRate ?? "",
     quantity: bike?.quantity ?? 1,
     notes: bike?.notes ?? "",
-    status: bike?.status ?? "available",
   });
   const [photoUrl, setPhotoUrl] = useState<string | null>(bike?.photoUrl ?? null);
   const [savedId, setSavedId] = useState<number | null>(bike?.id ?? null);
@@ -612,17 +605,7 @@ function BikeFormDialog({ bike, onClose, onSuccess }: { bike: any | null; onClos
               <div><Label className="text-xs">Peso (kg)</Label><Input value={form.weight} onChange={e => set("weight", e.target.value)} className="h-8 text-sm" /></div>
               <div><Label className="text-xs">Limite de peso (kg)</Label><Input value={form.weightLimit} onChange={e => set("weightLimit", e.target.value)} className="h-8 text-sm" /></div>
 
-              <div>
-                <Label className="text-xs">Status</Label>
-                <Select value={form.status} onValueChange={v => set("status", v)}>
-                  <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="available">Disponível</SelectItem>
-                    <SelectItem value="rented">Alugada</SelectItem>
-                    <SelectItem value="maintenance">Manutenção</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+              {/* LOTE-2: Status field removed — availability derived from bike_units */}
             </div>
             <div><Label className="text-xs">Descrição</Label><Textarea value={form.description} onChange={e => set("description", e.target.value)} className="text-sm min-h-[60px]" /></div>
             <div><Label className="text-xs">Observações internas</Label><Textarea value={form.notes} onChange={e => set("notes", e.target.value)} className="text-sm min-h-[60px]" /></div>
@@ -654,7 +637,6 @@ function BikeFormDialog({ bike, onClose, onSuccess }: { bike: any | null; onClos
 // ─── Main Bikes Page ──────────────────────────────────────────────────────────
 export default function Bikes() {
   const utils = trpc.useUtils();
-  const [statusFilter, setStatusFilter] = useState<BikeStatus | undefined>();
   const [categoryFilter, setCategoryFilter] = useState<string | undefined>();
   const [search, setSearch] = useState("");
   const [showForm, setShowForm] = useState(false);
@@ -663,7 +645,7 @@ export default function Bikes() {
   const [page, setPage] = useState(1);
   const LIMIT = 20;
 
-  const { data: bikesResult, isLoading } = trpc.bikes.list.useQuery({ status: statusFilter, category: categoryFilter, search: search || undefined, page, limit: LIMIT });
+  const { data: bikesResult, isLoading } = trpc.bikes.list.useQuery({ category: categoryFilter, search: search || undefined, page, limit: LIMIT });
   const bikes: any[] = bikesResult?.data ?? [];
   const totalBikes = bikesResult?.total ?? 0;
   const totalPages = bikesResult?.totalPages ?? 1;
@@ -695,19 +677,13 @@ export default function Bikes() {
           <Input placeholder="Buscar por modelo, série..." value={search} onChange={e => setSearch(e.target.value)} className="h-9 text-sm pl-8 bg-card border-border" />
         </div>
         <div className="flex gap-1.5 flex-wrap">
-          {([undefined, "available", "rented", "maintenance"] as (BikeStatus | undefined)[]).map(s => (
-            <button key={String(s)} onClick={() => setStatusFilter(s)} className={`px-2.5 py-1 rounded text-xs font-medium transition-all border ${statusFilter === s ? "bg-primary/15 border-primary/40 text-primary" : "bg-card border-border text-muted-foreground hover:text-foreground"}`}>
-              {s === undefined ? "Todos" : statusConfig[s]?.label}
-            </button>
-          ))}
-          <span className="hidden sm:inline text-border">|</span>
           {([undefined, "mtb", "speed", "gravel"] as (string | undefined)[]).map(c => (
             <button key={String(c)} onClick={() => setCategoryFilter(c)} className={`px-2.5 py-1 rounded text-xs font-medium transition-all border ${categoryFilter === c ? "bg-primary/15 border-primary/40 text-primary" : "bg-card border-border text-muted-foreground hover:text-foreground"}`}>
               {c === undefined ? "Todas" : categoryLabels[c as BikeCategory] || c}
             </button>
           ))}
-          {(search || statusFilter || categoryFilter) && (
-            <button onClick={() => { setSearch(""); setStatusFilter(undefined); setCategoryFilter(undefined); setPage(1); }} className="px-2.5 py-1 rounded text-xs font-medium text-muted-foreground hover:text-foreground border border-border bg-card">
+          {(search || categoryFilter) && (
+            <button onClick={() => { setSearch(""); setCategoryFilter(undefined); setPage(1); }} className="px-2.5 py-1 rounded text-xs font-medium text-muted-foreground hover:text-foreground border border-border bg-card">
               Limpar
             </button>
           )}

@@ -341,11 +341,11 @@ export async function deleteClientDocument(id: number) {
 }
 
 // ─── Bikes ───────────────────────────────────────────────────────────────────
-export async function getBikes(opts?: { status?: Bike["status"]; search?: string; category?: string }) {
+export async function getBikes(opts?: { search?: string; category?: string }) {
   const db = await getDb();
   if (!db) return [];
   const conditions = [];
-  if (opts?.status) conditions.push(eq(bikes.status, opts.status));
+  // LOTE-2: bikes.status removed — availability is derived from bike_units
   if (opts?.category) conditions.push(eq(bikes.category, opts.category as any));
   if (opts?.search) {
     const q = `%${opts.search}%`;
@@ -384,21 +384,42 @@ export async function deleteBike(id: number) {
 }
 
 export async function getBikeStats() {
+  // LOTE-2: count by bike_units, not by bikes.status (which is now inert)
   const db = await getDb();
   if (!db) return { total: 0, available: 0, rented: 0, maintenance: 0 };
-  const result = await db
-    .select({ status: bikes.status, count: sql<number>`count(*)` })
-    .from(bikes)
-    .groupBy(bikes.status);
-  const stats = { total: 0, available: 0, rented: 0, maintenance: 0 };
-  for (const row of result) {
-    const count = Number(row.count);
-    stats.total += count;
-    if (row.status === "available") stats.available = count;
-    if (row.status === "rented") stats.rented = count;
-    if (row.status === "maintenance") stats.maintenance = count;
-  }
-  return stats;
+
+  // total = units not lost/stolen
+  const [totalRow] = await db
+    .select({ value: count() })
+    .from(bikeUnits)
+    .where(notInArray(bikeUnits.status, ["perdido", "roubado"]));
+  const total = totalRow?.value ?? 0;
+
+  // maintenance = units with status manutencao
+  const [maintRow] = await db
+    .select({ value: count() })
+    .from(bikeUnits)
+    .where(eq(bikeUnits.status, "manutencao"));
+  const maintenance = maintRow?.value ?? 0;
+
+  // rented = sum of rentals.quantity overlapping today (same logic as getSizeBreakdown)
+  const today = new Date().toISOString().split("T")[0];
+  const rentedRows = await db
+    .select({ q: rentals.quantity })
+    .from(rentals)
+    .where(
+      and(
+        inArray(rentals.status, ["pending", "active", "overdue"]),
+        isNull(rentals.deletedAt),
+        // only bike rentals (bikeSizeId IS NOT NULL) — rentals without bikeSizeId are accessories
+        lte(rentals.startDate, today),
+        or(isNull(rentals.endDate), gte(rentals.endDate, today))!,
+      )
+    );
+  const rented = rentedRows.reduce((s, r) => s + (r.q ?? 1), 0);
+
+  const available = Math.max(0, total - rented - maintenance);
+  return { total, available, rented, maintenance };
 }
 
 // ─── Bike Discount Rules ─────────────────────────────────────────────────────

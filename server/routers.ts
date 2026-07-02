@@ -553,7 +553,7 @@ const clientsRouter = router({
 const bikesRouter = router({
   list: adminAuthProcedure
     .input(z.object({
-      status: z.enum(["available", "rented", "maintenance"]).nullish(),
+      // LOTE-2: status removed — availability derived from bike_units
       search: z.string().nullish(),
       category: z.string().nullish(),
       page: z.number().min(1).default(1),
@@ -562,7 +562,6 @@ const bikesRouter = router({
     .query(async ({ input }) => {
       const { page, limit, ...rawFilters } = input;
       const filters = {
-        status: rawFilters.status ?? undefined,
         search: rawFilters.search ?? undefined,
         category: rawFilters.category ?? undefined,
       };
@@ -614,7 +613,6 @@ const bikesRouter = router({
       photoUrl: z.string().optional(),
       quantity: z.number().min(1).default(1),
       notes: z.string().optional(),
-      status: z.enum(["available", "rented", "maintenance"]).default("available"),
     }))
     .mutation(async ({ input }) => {
       const id = await createBike(input as any);
@@ -638,14 +636,10 @@ const bikesRouter = router({
       photoUrl: z.string().optional(),
       quantity: z.number().optional(),
       notes: z.string().optional(),
-      status: z.enum(["available", "rented", "maintenance"]).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       const { id, ...data } = input;
       await updateBike(id, data as any);
-      if (data.status) {
-        await createAuditLog({ adminId: (ctx as any).adminUser?.id ?? null, acao: `mudou_status_bike_${data.status}`, tabela: "bikes", registroId: id });
-      }
       return { success: true };
     }),
 
@@ -656,7 +650,7 @@ const bikesRouter = router({
       return { success: true };
     }),
 
-  stats: adminAuthProcedure.query(() => getBikeStats()),
+  // LOTE-2: bikes.stats endpoint removed (zero front consumers; dashboard.summary calls getBikeStats directly)
 
   // Discount rules
   discountRules: adminAuthProcedure
@@ -769,116 +763,9 @@ const bikesRouter = router({
       return { success: true };
     }),
   // ─── Bike Maintenance Logs ───────────────────────────────────────────────
-  listMaintenance: adminAuthProcedure
-    .input(z.object({ bikeId: z.number() }))
-    .query(async ({ input }) => {
-      const { bikeMaintenanceLogs } = await import("../drizzle/schema");
-      const { eq, desc } = await import("drizzle-orm");
-      const db = await (await import("./db")).getDb();
-      if (!db) return [];
-      return db.select().from(bikeMaintenanceLogs)
-        .where(eq(bikeMaintenanceLogs.bikeId, input.bikeId))
-        .orderBy(desc(bikeMaintenanceLogs.dataEntrada));
-    }),
-  addMaintenance: adminAuthProcedure
-    .input(z.object({
-      bikeId: z.number(),
-      tamanhoBikeId: z.number().nullable().optional(), // null = todos os tamanhos
-      quantidadeAfetada: z.number().min(1).default(1),
-      descricao: z.string().min(1),
-      custo: z.string().optional(),
-      dataEntrada: z.string().optional(),
-      dataPrevistaRetorno: z.string().optional(),
-      status: z.enum(["em_andamento", "concluida"]).default("em_andamento"),
-      fotos: z.array(z.string()).optional(),
-    }))
-    .mutation(async ({ input }) => {
-      const { bikeMaintenanceLogs, bikes, bikeSizes } = await import("../drizzle/schema");
-      const { eq, sql } = await import("drizzle-orm");
-      const db = await (await import("./db")).getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
-      const [row] = await db.insert(bikeMaintenanceLogs).values({
-        bikeId: input.bikeId,
-        tamanhoBikeId: input.tamanhoBikeId ?? null,
-        quantidadeAfetada: input.quantidadeAfetada,
-        descricao: input.descricao,
-        custo: sanitize(input.custo) as string | null,
-        dataEntrada: input.dataEntrada ? new Date(input.dataEntrada) : new Date(),
-        dataPrevistaRetorno: input.dataPrevistaRetorno ? new Date(input.dataPrevistaRetorno) : null,
-        status: input.status,
-        fotos: input.fotos ?? null,
-      }).returning();
-      if (input.status === "em_andamento") {
-        // Decrement quantidadeDisponivel for affected sizes
-        if (input.tamanhoBikeId) {
-          // Specific size: decrement by quantidadeAfetada
-          await db.update(bikeSizes)
-            .set({ quantidadeDisponivel: sql`GREATEST(0, ${bikeSizes.quantidadeDisponivel} - ${input.quantidadeAfetada})` })
-            .where(eq(bikeSizes.id, input.tamanhoBikeId));
-        } else {
-          // All sizes of this bike: decrement each by quantidadeAfetada
-          const { eq: eqOp } = await import("drizzle-orm");
-          await db.update(bikeSizes)
-            .set({ quantidadeDisponivel: sql`GREATEST(0, ${bikeSizes.quantidadeDisponivel} - ${input.quantidadeAfetada})` })
-            .where(eqOp(bikeSizes.bikeId, input.bikeId));
-        }
-        await db.update(bikes).set({ status: "maintenance" }).where(eq(bikes.id, input.bikeId));
-      }
-      return row;
-    }),
-  updateMaintenance: adminAuthProcedure
-    .input(z.object({
-      id: z.number(),
-      bikeId: z.number(),
-      descricao: z.string().optional(),
-      custo: z.string().optional(),
-      dataPrevistaRetorno: z.string().optional(),
-      status: z.enum(["em_andamento", "concluida"]).optional(),
-      fotos: z.array(z.string()).optional(),
-    }))
-    .mutation(async ({ input }) => {
-      const { bikeMaintenanceLogs, bikes, bikeSizes } = await import("../drizzle/schema");
-      const { eq, sql } = await import("drizzle-orm");
-      const db = await (await import("./db")).getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
-      const { id, bikeId, ...data } = input;
-      // Fetch current log to know tamanhoBikeId and quantidadeAfetada before updating
-      const [currentLog] = await db.select().from(bikeMaintenanceLogs).where(eq(bikeMaintenanceLogs.id, id));
-      await db.update(bikeMaintenanceLogs).set({
-        ...(data.descricao !== undefined ? { descricao: data.descricao } : {}),
-        custo: data.custo !== undefined ? (sanitize(data.custo) as string | null) : undefined,
-        dataPrevistaRetorno: data.dataPrevistaRetorno ? new Date(data.dataPrevistaRetorno) : undefined,
-        ...(data.status !== undefined ? { status: data.status } : {}),
-        ...(data.fotos !== undefined ? { fotos: data.fotos } : {}),
-        updatedAt: new Date(),
-      }).where(eq(bikeMaintenanceLogs.id, id));
-      if (data.status === "concluida" && currentLog) {
-        // Restore quantidadeDisponivel for the affected sizes
-        const qty = currentLog.quantidadeAfetada ?? 1;
-        if (currentLog.tamanhoBikeId) {
-          // Restore specific size
-          const sizeRow = await db.select({ total: bikeSizes.quantidadeTotal })
-            .from(bikeSizes).where(eq(bikeSizes.id, currentLog.tamanhoBikeId));
-          const maxQty = sizeRow[0]?.total ?? qty;
-          await db.update(bikeSizes)
-            .set({ quantidadeDisponivel: sql`LEAST(${maxQty}, ${bikeSizes.quantidadeDisponivel} + ${qty})` })
-            .where(eq(bikeSizes.id, currentLog.tamanhoBikeId));
-        } else {
-          // Restore all sizes of this bike
-          await db.update(bikeSizes)
-            .set({ quantidadeDisponivel: sql`LEAST(${bikeSizes.quantidadeTotal}, ${bikeSizes.quantidadeDisponivel} + ${qty})` })
-            .where(eq(bikeSizes.bikeId, bikeId));
-        }
-        const remaining = await db.select({ id: bikeMaintenanceLogs.id, status: bikeMaintenanceLogs.status })
-          .from(bikeMaintenanceLogs)
-          .where(eq(bikeMaintenanceLogs.bikeId, bikeId));
-        const hasOngoing = remaining.some((r: any) => r.id !== id && r.status === "em_andamento");
-        if (!hasOngoing) {
-          await db.update(bikes).set({ status: "available" }).where(eq(bikes.id, bikeId));
-        }
-      }
-      return { success: true };
-    }),
+  // LOTE-2: listMaintenance removed (vestigial — zero front consumers after BU-3C-FRONT-2)
+  // LOTE-2: addMaintenance removed (was corrupting quantidadeDisponivel and freezing bikes.status — active mine)
+  // LOTE-2: updateMaintenance removed (vestigial — was restoring quantidadeDisponivel from stale logs)
   uploadBikePhoto: adminAuthProcedure
     .input(z.object({
       bikeId: z.number(),
