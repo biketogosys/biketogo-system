@@ -411,7 +411,7 @@ export async function getBikeStats() {
       and(
         inArray(rentals.status, ["pending", "active", "overdue"]),
         isNull(rentals.deletedAt),
-        // only bike rentals (bikeSizeId IS NOT NULL) — rentals without bikeSizeId are accessories
+        // all rentals rows are bike rentals (accessories live in rental_accessories)
         lte(rentals.startDate, today),
         or(isNull(rentals.endDate), gte(rentals.endDate, today))!,
       )

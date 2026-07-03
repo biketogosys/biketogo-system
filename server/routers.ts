@@ -786,68 +786,8 @@ const bikesRouter = router({
       await db.update(bikes).set({ photoUrl: url }).where(eq(bikes.id, input.bikeId));
       return { url };
     }),
-  uploadMaintenancePhoto: adminAuthProcedure
-    .input(z.object({
-      bikeId: z.number(),
-      base64: z.string(),
-      mimeType: z.string().default("image/jpeg"),
-    }))
-    .mutation(async ({ input }) => {
-      const { storagePut } = await import("./storage");
-      const base64Data = input.base64.replace(/^data:[^;]+;base64,/, "");
-      const buffer = Buffer.from(base64Data, "base64");
-      const ext = input.mimeType.split("/")[1] || "jpg";
-      const key = `bikes/${input.bikeId}/maintenance-${Date.now()}.${ext}`;
-      const { url } = await storagePut(key, buffer, input.mimeType);
-      return { url };
-    }),
-  deleteMaintenanceLog: adminAuthProcedure
-    .input(z.object({ logId: z.number(), bikeId: z.number() }))
-    .mutation(async ({ input, ctx }) => {
-      const { bikeMaintenanceLogs, bikes, bikeSizes, auditLogs } = await import("../drizzle/schema");
-      const { eq, sql } = await import("drizzle-orm");
-      const db = await (await import("./db")).getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
-      // Fetch the log before deleting so we can restore quantities
-      const [log] = await db.select().from(bikeMaintenanceLogs).where(eq(bikeMaintenanceLogs.id, input.logId));
-      if (!log) throw new TRPCError({ code: "NOT_FOUND", message: "Registro de manutenção não encontrado." });
-      // If the log was still active, restore quantidadeDisponivel
-      if (log.status === "em_andamento") {
-        const qty = log.quantidadeAfetada ?? 1;
-        if (log.tamanhoBikeId) {
-          const sizeRow = await db.select({ total: bikeSizes.quantidadeTotal })
-            .from(bikeSizes).where(eq(bikeSizes.id, log.tamanhoBikeId));
-          const maxQty = sizeRow[0]?.total ?? qty;
-          await db.update(bikeSizes)
-            .set({ quantidadeDisponivel: sql`LEAST(${maxQty}, ${bikeSizes.quantidadeDisponivel} + ${qty})` })
-            .where(eq(bikeSizes.id, log.tamanhoBikeId));
-        } else {
-          await db.update(bikeSizes)
-            .set({ quantidadeDisponivel: sql`LEAST(${bikeSizes.quantidadeTotal}, ${bikeSizes.quantidadeDisponivel} + ${qty})` })
-            .where(eq(bikeSizes.bikeId, input.bikeId));
-        }
-        // Check if there are other active maintenance logs; if not, restore bike status
-        const remaining = await db.select({ id: bikeMaintenanceLogs.id, status: bikeMaintenanceLogs.status })
-          .from(bikeMaintenanceLogs)
-          .where(eq(bikeMaintenanceLogs.bikeId, input.bikeId));
-        const hasOngoing = remaining.some((r: any) => r.id !== input.logId && r.status === "em_andamento");
-        if (!hasOngoing) {
-          await db.update(bikes).set({ status: "available" }).where(eq(bikes.id, input.bikeId));
-        }
-      }
-      // Delete the log
-      await db.delete(bikeMaintenanceLogs).where(eq(bikeMaintenanceLogs.id, input.logId));
-      // Audit log
-      await db.insert(auditLogs).values({
-        adminId: ctx.user?.id ?? null,
-        acao: "delete",
-        tabela: "bike_maintenance_logs",
-        registroId: input.logId,
-        dadosAntes: log as any,
-        dadosDepois: null,
-      });
-      return { success: true };
-    }),
+  // LOTE-2B: uploadMaintenancePhoto removed (vestigial model-level maintenance)
+  // LOTE-2B: deleteMaintenanceLog removed (vestigial model-level maintenance)
 });
 
 // ─── Rentals router ───────────────────────────────────────────────────────────
@@ -932,9 +872,7 @@ const rentalsRouter = router({
 
       const id = await createRental(data);
 
-      // Mark bike as rented
-      await updateBike(input.bikeId, { status: "rented" });
-
+      // LOTE-2B: updateBike({ status }) removed — availability derived from bike_units
       // Add accessories
       if (rentalAccs && rentalAccs.length > 0) {
         for (const acc of rentalAccs) {
@@ -977,10 +915,7 @@ const rentalsRouter = router({
 
       await updateRental(id, updateData);
 
-      // If returned or cancelled, free the bike
-      if (data.status === "returned" || data.status === "cancelled") {
-        await updateBike(rental.bikeId, { status: "available" });
-      }
+      // LOTE-2B: updateBike({ status }) removed — availability derived from bike_units
       return { success: true };
     }),
 
@@ -1026,9 +961,7 @@ const rentalsRouter = router({
     .input(z.object({ id: z.number() }))
     .mutation(async ({ ctx, input }) => {
       const rental = await getRentalById(input.id);
-      if (rental && rental.status === "active") {
-        await updateBike(rental.bikeId, { status: "available" });
-      }
+      // LOTE-2B: updateBike({ status }) removed — availability derived from bike_units
       await archiveRental(input.id);
       await createAuditLog({ adminId: (ctx as any).adminUser?.id ?? null, acao: "arquivou_aluguel", tabela: "rentals", registroId: input.id });
       return { success: true };
@@ -1103,10 +1036,10 @@ const rentalsRouter = router({
           }
         }
       }
-      // Confirm each rental: set status to active, mark bike as rented
+      // Confirm each rental: set status to active
+      // LOTE-2B: updateBike({ status }) removed — availability derived from bike_units
       for (const rental of pendingRentals) {
         await updateRental(rental.id, { status: "active" } as any);
-        await updateBike(rental.bikeId, { status: "rented" });
       }
       // Register revenue for the contract total
       try {

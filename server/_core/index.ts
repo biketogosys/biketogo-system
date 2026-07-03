@@ -120,11 +120,7 @@ async function startServer() {
         const bike = await getBikeById(bikeId);
         if (!bike) return res.status(404).json({ error: "Bike não encontrada" });
 
-        // Se em manutenção, retornar imediatamente
-        if (bike.status === "maintenance") {
-          return res.json({ disponivel: false, status: "manutencao", tamanhos: [] });
-        }
-
+        // LOTE-2B: short-circuit de maintenance removido — disponibilidade derivada de bike_units via getSizeAvailability
         // Buscar tamanhos com disponibilidade derivada (modelo fonte única de verdade)
         const { bikeSizes: bs } = await import("../../drizzle/schema");
         const { eq } = await import("drizzle-orm");
@@ -141,8 +137,8 @@ async function startServer() {
 
         let statusBike: "disponivel" | "parcialmente" | "indisponivel" | "manutencao";
         if (tamanhos.length === 0) {
-          // Sem tamanhos cadastrados — usar status da bike diretamente
-          statusBike = bike.status === "available" ? "disponivel" : "indisponivel";
+          // LOTE-2B: bike sem tamanhos = sem unidades = nada para alugar
+          statusBike = "indisponivel";
         } else {
           const totalDisp = tamanhos.reduce((s, t) => s + t.quantidadeDisponivel, 0);
           const totalTotal = tamanhos.length;
