@@ -27,6 +27,7 @@ import {
   isValidCPF, fetchViaCEP, dateDisplayToISO, dateISOToDisplay,
 } from "@/hooks/useMask";
 import { HelpCircle, Smartphone, Download } from "lucide-react";
+import { friendlyError } from "@/lib/utils";
 
 // ─── DDI list ─────────────────────────────────────────────────────────────────
 const DDI_LIST = [
@@ -171,7 +172,7 @@ function EditClientModal({ open, onClose, client, clientId, onSuccess }: EditCli
   const utils = trpc.useUtils();
 
   const updateMutation = trpc.clients.update.useMutation({
-    onError: (err) => toast.error(err.message),
+    onError: (err) => toast.error(friendlyError(err)),
   });
 
   const uploadDocMutation = trpc.publicApi.uploadDocument.useMutation();
@@ -800,7 +801,7 @@ export default function ClientProfile() {
       toast.success("Cadastro validado!");
       utils.clients.byId.invalidate({ id: clientId });
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toast.error(friendlyError(e)),
   });
 
   const [showRejectDialog, setShowRejectDialog] = useState(false);
@@ -812,14 +813,14 @@ export default function ClientProfile() {
       setMotivoRecusa("");
       utils.clients.byId.invalidate({ id: clientId });
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toast.error(friendlyError(e)),
   });
 
   const updateMutation = trpc.clients.update.useMutation({
     onSuccess: () => {
       utils.clients.byId.invalidate({ id: clientId });
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toast.error(friendlyError(e)),
   });
 
   const deleteDocMutation = trpc.clients.deleteDocument.useMutation({

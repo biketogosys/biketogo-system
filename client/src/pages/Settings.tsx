@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { trpc } from "@/lib/trpc";
+import { friendlyError } from "@/lib/utils";
 import {
   Tabs,
   TabsList,
@@ -99,7 +100,7 @@ export default function Settings() {
   });
   const setManyMutation = trpc.settings.setMany.useMutation({
     onSuccess: () => toast.success("Configurações salvas!"),
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toast.error(friendlyError(e)),
   });
 
   // ── Company ──────────────────────────────────────────────────────────────────
@@ -108,7 +109,7 @@ export default function Settings() {
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const uploadLogoMutation = trpc.settings.uploadLogo.useMutation({
     onSuccess: (data) => { setCompanyLogoUrl(data.url); toast.success("Logo salva com sucesso!"); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toast.error(friendlyError(e)),
   });
   const [companyCnpj, setCompanyCnpj] = useState("");
   const [companyAddress, setCompanyAddress] = useState("");
@@ -294,7 +295,7 @@ export default function Settings() {
                       reader.onerror = () => { toast.error("Erro ao ler arquivo"); setUploadingLogo(false); };
                       reader.readAsDataURL(file);
                     } catch (err: any) {
-                      toast.error(err.message || "Erro ao enviar logo");
+                      toast.error(friendlyError(err, "Erro ao enviar logo"));
                       setUploadingLogo(false);
                     }
                   }}

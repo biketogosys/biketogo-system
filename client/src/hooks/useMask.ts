@@ -14,6 +14,14 @@ export function maskCPF(value: string): string {
     .replace(/(\d{3})(\d{1,2})$/, "$1-$2");
 }
 
+/** CPF obfuscado para exibição (LGPD): 066.***.***-06 */
+export function obfuscateCPF(cpf: string | null | undefined): string {
+  if (!cpf) return "";
+  const d = cpf.replace(/\D/g, "");
+  if (d.length !== 11) return cpf; // não-CPF (estrangeiro/incompleto): devolve como está
+  return `${d.slice(0, 3)}.***.***-${d.slice(9)}`;
+}
+
 /** RG: 00.000.000-0 (padrão SP — aceita outros formatos) */
 export function maskRG(value: string): string {
   const clean = value.replace(/[^\dXx]/g, "").slice(0, 9).toUpperCase();

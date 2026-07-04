@@ -17,9 +17,30 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   maskCPF, maskRG, maskCEP, maskPhone, isValidCPF, fetchViaCEP,
-  dateDisplayToISO, maskDate,
+  dateDisplayToISO, maskDate, obfuscateCPF,
 } from "@/hooks/useMask";
 import { trpc } from "@/lib/trpc";
+import { Eye, EyeOff } from "lucide-react";
+import { useConfirm } from "@/components/ConfirmDialog";
+import { friendlyError } from "@/lib/utils";
+
+// ─── CPF Cell (LGPD — LOTE-3) ─────────────────────────────────────────────────────────────────────────────
+function CpfCell({ cpf, className }: { cpf: string; className?: string }) {
+  const [visible, setVisible] = useState(false);
+  return (
+    <span className={`inline-flex items-center gap-1 ${className ?? ""}`}>
+      <span>{visible ? cpf : obfuscateCPF(cpf)}</span>
+      <button
+        type="button"
+        onClick={() => setVisible(v => !v)}
+        className="text-muted-foreground hover:text-foreground p-0"
+        aria-label={visible ? "Ocultar CPF" : "Mostrar CPF"}
+      >
+        {visible ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+      </button>
+    </span>
+  );
+}
 
 // ─── Status Badge ─────────────────────────────────────────────────────────────
 type Status = "lead" | "verified" | "blocked" | "recusado" | undefined;
@@ -97,7 +118,7 @@ function NewClientModal({ open, onClose, onSuccess }: NewClientModalProps) {
       onSuccess();
       resetForm();
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err) => toast.error(friendlyError(err)),
   });
 
   const uploadDocMutation = trpc.publicApi.uploadDocument.useMutation();
@@ -648,6 +669,7 @@ function NewClientModal({ open, onClose, onSuccess }: NewClientModalProps) {
 
 // ─── Main Clients page ────────────────────────────────────────────────────────
 export default function Clients() {
+  const confirmDialog = useConfirm();
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<Status>(undefined);
   const [showNew, setShowNew] = useState(false);
@@ -689,7 +711,7 @@ export default function Clients() {
 
   const deleteMutation = trpc.clients.delete.useMutation({
     onSuccess: () => { toast.success("Cliente arquivado."); utils.clients.list.invalidate(); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toast.error(friendlyError(e)),
   });
 
   const restoreMutation = trpc.clients.restore.useMutation({
@@ -698,7 +720,7 @@ export default function Clients() {
       utils.clients.listArchived.invalidate();
       utils.clients.list.invalidate();
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toast.error(friendlyError(e)),
   });
 
   const clients = data?.items ?? [];
@@ -835,7 +857,7 @@ export default function Clients() {
                           </div>
                           <div>
                             <p className="text-sm font-medium text-foreground">{client.name}</p>
-                            {client.cpf && <p className="text-xs text-muted-foreground">{client.cpf}</p>}
+                            {client.cpf && <CpfCell cpf={client.cpf} className="text-xs text-muted-foreground" />}
                           </div>
                         </div>
                       </td>
@@ -924,7 +946,7 @@ export default function Clients() {
                         </div>
                         <div className="min-w-0">
                           <p className="text-[13px] font-medium text-foreground truncate">{client.name}</p>
-                          {client.cpf && <p className="text-[11px] text-muted-foreground">{client.cpf}</p>}
+                          {client.cpf && <CpfCell cpf={client.cpf} className="text-[11px] text-muted-foreground" />}
                         </div>
                       </div>
                     </td>
@@ -947,7 +969,7 @@ export default function Clients() {
                           <button className="text-[12px] text-primary hover:underline font-medium">Ver</button>
                         </Link>
                         <button
-                          onClick={() => { if (confirm(`Arquivar ${client.name}?`)) deleteMutation.mutate({ id: client.id }); }}
+                          onClick={async () => { if (await confirmDialog({ title: `Arquivar ${client.name}?`, description: "O cliente será movido para a lista de arquivados.", confirmText: "Arquivar", destructive: true })) deleteMutation.mutate({ id: client.id }); }}
                           className="text-muted-foreground hover:text-destructive"
                         >
                           <Trash2 className="w-3.5 h-3.5" />

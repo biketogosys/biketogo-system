@@ -49,6 +49,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { useConfirm } from "@/components/ConfirmDialog";
+import { friendlyError } from "@/lib/utils";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -162,7 +164,7 @@ function CloseContractDialog({
       utils.contracts.getById.invalidate({ id: contractId });
       onClose();
     },
-    onError: (e) => toast.error("Erro ao encerrar contrato: " + e.message),
+    onError: (e) => toast.error(friendlyError(e, "Erro ao encerrar contrato.")),
   });
 
   const handleClose = () => {
@@ -377,6 +379,7 @@ function ContractDetail({
   contractId: number;
   onBack: () => void;
 }) {
+  const confirmDialog = useConfirm();
   const utils = trpc.useUtils();
   const { data, isLoading } = trpc.contracts.getById.useQuery({ id: contractId });
   const [closeOpen, setCloseOpen] = useState(false);
@@ -401,7 +404,7 @@ function ContractDetail({
       utils.contracts.getById.invalidate({ id: contractId });
       utils.contracts.list.invalidate();
     },
-    onError: (e) => toast.error("Erro ao confirmar: " + e.message),
+    onError: (e) => toast.error(friendlyError(e, "Erro ao confirmar.")),
   });
 
   const rejectAllMutation = trpc.rentals.rejectAll.useMutation({
@@ -410,7 +413,7 @@ function ContractDetail({
       utils.contracts.getById.invalidate({ id: contractId });
       utils.contracts.list.invalidate();
     },
-    onError: (e) => toast.error("Erro ao recusar: " + e.message),
+    onError: (e) => toast.error(friendlyError(e, "Erro ao recusar.")),
   });
 
   const returnRentalMutation = trpc.rentals.returnRental.useMutation({
@@ -419,7 +422,7 @@ function ContractDetail({
       utils.contracts.getById.invalidate({ id: contractId });
       utils.contracts.list.invalidate();
     },
-    onError: (e) => toast.error("Erro ao devolver: " + e.message),
+    onError: (e) => toast.error(friendlyError(e, "Erro ao devolver.")),
   });
 
   const confirmPaymentMutation = trpc.contracts.confirmPayment.useMutation({
@@ -428,7 +431,7 @@ function ContractDetail({
       utils.contracts.getById.invalidate({ id: contractId });
       utils.contracts.list.invalidate();
     },
-    onError: (e) => toast.error("Erro ao confirmar pagamento: " + e.message),
+    onError: (e) => toast.error(friendlyError(e, "Erro ao confirmar pagamento.")),
   });
 
   const generatePdfMutation = trpc.contracts.generatePdf.useMutation({
@@ -436,7 +439,7 @@ function ContractDetail({
       window.open(res.pdfUrl, "_blank");
       utils.contracts.getById.invalidate({ id: contractId });
     },
-    onError: (e) => toast.error("Erro ao gerar PDF: " + e.message),
+    onError: (e) => toast.error(friendlyError(e, "Erro ao gerar PDF.")),
   });
 
   if (isLoading) {
@@ -505,8 +508,8 @@ function ContractDetail({
               <Button
                 size="sm"
                 variant="destructive"
-                onClick={() => {
-                  if (confirm("Tem certeza que deseja recusar esta reserva? Todos os aluguéis pendentes serão cancelados."))
+                onClick={async () => {
+                  if (await confirmDialog({ title: "Recusar reserva?", description: "Todos os aluguéis pendentes serão cancelados.", confirmText: "Recusar", destructive: true }))
                     rejectAllMutation.mutate({ contractId });
                 }}
                 disabled={rejectAllMutation.isPending}
@@ -548,8 +551,8 @@ function ContractDetail({
           <Button
             size="sm"
             className="bg-amber-600 hover:bg-amber-700 text-white"
-            onClick={() => {
-              if (confirm("Confirmar recebimento do pagamento presencial? A receita será registrada automaticamente."))
+            onClick={async () => {
+              if (await confirmDialog({ title: "Confirmar pagamento?", description: "A receita será registrada automaticamente.", confirmText: "Confirmar" }))
                 confirmPaymentMutation.mutate({ contractId });
             }}
             disabled={confirmPaymentMutation.isPending}
@@ -872,6 +875,7 @@ function ContractDetail({
 
 // ─── Contracts List ───────────────────────────────────────────────────────────
 export default function Contracts() {
+  const confirmDialog = useConfirm();
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [page, setPage] = useState(1);
   const [view, setView] = useState<"ativos" | "arquivados">("ativos");

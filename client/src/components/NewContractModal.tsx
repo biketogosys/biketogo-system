@@ -26,6 +26,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { friendlyError } from "@/lib/utils";
 import {
   Dialog,
   DialogContent,
@@ -316,7 +317,7 @@ export function NewContractModal({
       handleReset();
       onClose();
     },
-    onError: (e) => toast.error("Erro ao criar contrato: " + e.message),
+    onError: (e) => toast.error(friendlyError(e, "Erro ao criar contrato.")),
   });
 
   const updateMutation = trpc.contracts.update.useMutation({
@@ -328,7 +329,7 @@ export function NewContractModal({
       handleReset();
       onClose();
     },
-    onError: (e) => toast.error("Erro ao atualizar contrato: " + e.message),
+    onError: (e) => toast.error(friendlyError(e, "Erro ao atualizar contrato.")),
   });
 
   function handleReset() {

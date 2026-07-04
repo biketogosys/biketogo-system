@@ -9,6 +9,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { useConfirm } from "@/components/ConfirmDialog";
+import { friendlyError } from "@/lib/utils";
 
 type TabType = "expenses" | "revenues" | "report";
 
@@ -20,6 +22,7 @@ function CategoryManager({
   type: "expense" | "revenue";
   onClose: () => void;
 }) {
+  const confirmDialog = useConfirm();
   const [newName, setNewName] = useState("");
   const utils = trpc.useUtils();
 
@@ -30,21 +33,21 @@ function CategoryManager({
   const createMutation = type === "expense"
     ? trpc.financial.createExpenseCategory.useMutation({
         onSuccess: () => { toast.success("Categoria criada!"); utils.financial.expenseCategories.invalidate(); setNewName(""); },
-        onError: (e) => toast.error(e.message),
+        onError: (e) => toast.error(friendlyError(e)),
       })
     : trpc.financial.createRevenueCategory.useMutation({
         onSuccess: () => { toast.success("Categoria criada!"); utils.financial.revenueCategories.invalidate(); setNewName(""); },
-        onError: (e) => toast.error(e.message),
+        onError: (e) => toast.error(friendlyError(e)),
       });
 
   const deleteMutation = type === "expense"
     ? trpc.financial.deleteExpenseCategory.useMutation({
         onSuccess: () => { toast.success("Categoria removida."); utils.financial.expenseCategories.invalidate(); },
-        onError: (e) => toast.error(e.message),
+        onError: (e) => toast.error(friendlyError(e)),
       })
     : trpc.financial.deleteRevenueCategory.useMutation({
         onSuccess: () => { toast.success("Categoria removida."); utils.financial.revenueCategories.invalidate(); },
-        onError: (e) => toast.error(e.message),
+        onError: (e) => toast.error(friendlyError(e)),
       });
 
   return (
@@ -86,7 +89,7 @@ function CategoryManager({
                 <div key={cat.id} className="flex items-center justify-between px-3 py-2 rounded-md hover:bg-secondary/50 group">
                   <span className="text-sm text-foreground">{cat.name}</span>
                   <button
-                    onClick={() => { if (confirm("Remover esta categoria?")) deleteMutation.mutate({ id: cat.id }); }}
+                    onClick={async () => { if (await confirmDialog({ title: "Remover categoria?", confirmText: "Remover", destructive: true })) deleteMutation.mutate({ id: cat.id }); }}
                     className="text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
@@ -130,19 +133,19 @@ function TransactionFormDialog({
 
   const createExpense = trpc.financial.createExpense.useMutation({
     onSuccess: () => { toast.success("Despesa registrada!"); onSuccess(); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toast.error(friendlyError(e)),
   });
   const updateExpense = trpc.financial.updateExpense.useMutation({
     onSuccess: () => { toast.success("Despesa atualizada!"); onSuccess(); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toast.error(friendlyError(e)),
   });
   const createRevenue = trpc.financial.createRevenue.useMutation({
     onSuccess: () => { toast.success("Receita registrada!"); onSuccess(); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toast.error(friendlyError(e)),
   });
   const updateRevenue = trpc.financial.updateRevenue.useMutation({
     onSuccess: () => { toast.success("Receita atualizada!"); onSuccess(); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toast.error(friendlyError(e)),
   });
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -346,6 +349,7 @@ function ReportTab() {
 
 // ─── Transaction List Tab ────────────────────────────────────────────────────
 function TransactionListTab({ type }: { type: "expense" | "revenue" }) {
+  const confirmDialog = useConfirm();
   const [search, setSearch] = useState("");
   const [showForm, setShowForm] = useState(false);
   const [editItem, setEditItem] = useState<any>(null);
@@ -368,11 +372,11 @@ function TransactionListTab({ type }: { type: "expense" | "revenue" }) {
 
   const deleteExpense = trpc.financial.deleteExpense.useMutation({
     onSuccess: () => { toast.success("Despesa removida."); utils.financial.expenses.invalidate(); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toast.error(friendlyError(e)),
   });
   const deleteRevenue = trpc.financial.deleteRevenue.useMutation({
     onSuccess: () => { toast.success("Receita removida."); utils.financial.revenues.invalidate(); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toast.error(friendlyError(e)),
   });
 
   const items = useMemo(() => {
@@ -385,8 +389,8 @@ function TransactionListTab({ type }: { type: "expense" | "revenue" }) {
     );
   }, [data, search, categoryMap]);
 
-  const handleDelete = (id: number) => {
-    if (!confirm("Remover este lançamento?")) return;
+  const handleDelete = async (id: number) => {
+    if (!await confirmDialog({ title: "Remover lançamento?", confirmText: "Remover", destructive: true })) return;
     if (type === "expense") deleteExpense.mutate({ id });
     else deleteRevenue.mutate({ id });
   };
@@ -484,6 +488,7 @@ function TransactionListTab({ type }: { type: "expense" | "revenue" }) {
 
 // ─── Main Page ───────────────────────────────────────────────────────────────
 export default function Financial() {
+  const confirmDialog = useConfirm();
   const [tab, setTab] = useState<TabType>("expenses");
 
   const tabs: { key: TabType; label: string; icon: any }[] = [

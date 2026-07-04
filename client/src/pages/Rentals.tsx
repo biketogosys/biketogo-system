@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { Plus, Loader2, Bike, Search, X, RotateCcw, Archive, ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { friendlyError } from "@/lib/utils";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type ContractStatus = "pendente" | "ativo" | "parcialmente_devolvido" | "encerrado" | "cancelado";
@@ -155,7 +156,7 @@ export default function Rentals() {
       utils.rentals.listArchived.invalidate();
       utils.rentals.listGroupedByContract.invalidate();
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toast.error(friendlyError(e)),
   });
 
   const archivedRentals = archivedData?.items ?? [];

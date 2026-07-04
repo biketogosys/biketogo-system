@@ -18,6 +18,7 @@ import PublicReservation from "./pages/PublicReservation";
 import Contracts from "./pages/Contracts";
 import AuditLog from "./pages/AuditLog";
 import { useAuth } from "./_core/hooks/useAuth";
+import { ConfirmProvider } from "@/components/ConfirmDialog";
 import { Loader2 } from "lucide-react";
 import DashboardLayout from "./components/DashboardLayout";
 
@@ -69,8 +70,10 @@ function AppInner() {
   const { theme } = useTheme();
   return (
     <TooltipProvider>
-      <Toaster richColors theme={theme as "light" | "dark"} />
-      <Router />
+      <ConfirmProvider>
+        <Toaster richColors theme={theme as "light" | "dark"} />
+        <Router />
+      </ConfirmProvider>
     </TooltipProvider>
   );
 }

@@ -21,6 +21,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
+import { friendlyError } from "@/lib/utils";
 import {
   Plus,
   Search,
@@ -94,22 +95,22 @@ function AccessoryUnitsPanel({ accessoryId, onClose }: { accessoryId: number; on
 
   const updateMut = trpc.accessories.updateUnitStatus.useMutation({
     onSuccess: () => { invalidate(); setEditingUnitId(null); toast.success("Unidade atualizada!"); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toast.error(friendlyError(e)),
   });
 
   const addUnitsMut = trpc.accessories.addUnits.useMutation({
     onSuccess: (r) => { invalidate(); toast.success(`${r.inserted} unidade(s) adicionada(s)!`); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toast.error(friendlyError(e)),
   });
 
   const removeAvailableMut = trpc.accessories.removeAvailableUnit.useMutation({
     onSuccess: () => { invalidate(); toast.success("Unidade removida."); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toast.error(friendlyError(e)),
   });
 
   const deleteMut = trpc.accessories.deleteUnit.useMutation({
     onSuccess: () => { invalidate(); setDeleteUnitId(null); toast.success("Unidade excluída."); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toast.error(friendlyError(e)),
   });
 
   function startEdit(unit: any) {
@@ -596,7 +597,7 @@ export default function Accessories() {
       setDialogOpen(false);
       setForm(emptyForm);
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toast.error(friendlyError(e)),
   });
 
   const updateMutation = trpc.accessories.update.useMutation({
@@ -607,7 +608,7 @@ export default function Accessories() {
       setEditingId(null);
       setForm(emptyForm);
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toast.error(friendlyError(e)),
   });
 
   const deleteMutation = trpc.accessories.delete.useMutation({
@@ -616,7 +617,7 @@ export default function Accessories() {
       toast.success("Acessório removido.");
       setDeleteConfirmId(null);
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toast.error(friendlyError(e)),
   });
 
   function openCreate() {

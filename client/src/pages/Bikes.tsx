@@ -34,6 +34,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
+import { useConfirm } from "@/components/ConfirmDialog";
+import { friendlyError } from "@/lib/utils";
 
 // LOTE-2: BikeStatus and statusConfig removed (bikes.status is now inert)
 type BikeCategory = "mtb" | "speed" | "gravel";
@@ -58,7 +60,7 @@ function DiscountRulesEditor({ bikeId, onClose }: { bikeId: number; onClose: () 
 
   const setRules = trpc.bikes.setDiscountRules.useMutation({
     onSuccess: () => { utils.bikes.discountRules.invalidate(); toast.success("Regras salvas!"); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toast.error(friendlyError(e)),
   });
 
   const addRule = () => setLocalRules([...localRules, { minDays: "", discountPercent: "" }]);
@@ -138,22 +140,22 @@ function BikeUnitsPanel({ bikeSizeId, bikeId }: { bikeSizeId: number; bikeId: nu
 
   const updateMut = trpc.bikeUnits.update.useMutation({
     onSuccess: () => { invalidateAll(); setEditingId(null); toast.success("Nº atualizado!"); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toast.error(friendlyError(e)),
   });
 
   const setStatusMut = trpc.bikeUnits.setStatus.useMutation({
     onSuccess: () => { invalidateAll(); toast.success("Status atualizado!"); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toast.error(friendlyError(e)),
   });
 
   const removeMut = trpc.bikeUnits.remove.useMutation({
     onSuccess: () => { invalidateAll(); setConfirmDeleteId(null); toast.success("Unidade removida."); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toast.error(friendlyError(e)),
   });
 
   const addMut = trpc.bikeUnits.add.useMutation({
     onSuccess: () => { invalidateAll(); setNewNumero(""); toast.success("Unidade adicionada!"); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toast.error(friendlyError(e)),
   });
 
   const unitList = [...(units as any[])].sort((a, b) =>
@@ -296,6 +298,7 @@ function BikeUnitsPanel({ bikeSizeId, bikeId }: { bikeSizeId: number; bikeId: nu
 
 // ─── Bike Sizes Tab ───────────────────────────────────────────────────────────
 function BikeSizesTab({ bikeId }: { bikeId: number }) {
+  const confirmDialog = useConfirm();
   const utils = trpc.useUtils();
   const { data: sizes = [], isLoading } = trpc.bikes.listSizes.useQuery({ bikeId });
   const [tamanho, setTamanho] = useState("");
@@ -315,15 +318,15 @@ function BikeSizesTab({ bikeId }: { bikeId: number }) {
 
   const addMut = trpc.bikes.addSize.useMutation({
     onSuccess: () => { utils.bikes.listSizes.invalidate(); setTamanho(""); setObs(""); toast.success("Tamanho adicionado!"); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toast.error(friendlyError(e)),
   });
   const updateMut = trpc.bikes.updateSize.useMutation({
     onSuccess: () => { utils.bikes.listSizes.invalidate(); setEditId(null); toast.success("Tamanho atualizado!"); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toast.error(friendlyError(e)),
   });
   const deleteMut = trpc.bikes.deleteSize.useMutation({
     onSuccess: () => { utils.bikes.listSizes.invalidate(); toast.success("Tamanho removido!"); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toast.error(friendlyError(e)),
   });
 
   const startEdit = (s: any) => { setEditId(s.id); setEditData({ tamanho: s.tamanho }); };
@@ -397,7 +400,7 @@ function BikeSizesTab({ bikeId }: { bikeId: number }) {
                     ) : (
                       <>
                         <button onClick={() => startEdit(s)} className="text-muted-foreground hover:text-primary p-1"><Pencil className="w-3.5 h-3.5" /></button>
-                        <button onClick={() => { if (confirm("Remover tamanho e todas as suas unidades?")) deleteMut.mutate({ id: s.id }); }} className="text-muted-foreground hover:text-destructive p-1"><Trash2 className="w-3.5 h-3.5" /></button>
+                        <button onClick={async () => { if (await confirmDialog({ title: "Remover tamanho?", description: "Todas as unidades deste tamanho serão removidas.", confirmText: "Remover", destructive: true })) deleteMut.mutate({ id: s.id }); }} className="text-muted-foreground hover:text-destructive p-1"><Trash2 className="w-3.5 h-3.5" /></button>
                       </>
                     )}
                   </div>
@@ -434,7 +437,7 @@ function MaintenanceTab({ bikeId }: { bikeId: number }) {
       utils.bikeUnits.list.invalidate();
       toast.success("Bike liberada da manutenção.");
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toast.error(friendlyError(e)),
   });
   if (isLoading) return <p className="text-sm text-muted-foreground py-4">Carregando…</p>;
   if (emManutencao.length === 0)
@@ -467,7 +470,7 @@ function BikePhotoUpload({ bikeId, currentUrl, onUploaded }: { bikeId: number; c
   const [sizeWarning, setSizeWarning] = useState(false);
   const uploadMut = trpc.bikes.uploadBikePhoto.useMutation({
     onSuccess: (data) => { onUploaded(data.url); toast.success("Foto atualizada!"); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toast.error(friendlyError(e)),
   });
 
   const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -536,11 +539,11 @@ function BikeFormDialog({ bike, onClose, onSuccess }: { bike: any | null; onClos
 
   const createMut = trpc.bikes.create.useMutation({
     onSuccess: (data) => { setSavedId(data.id); toast.success("Bicicleta criada! Use as abas para adicionar foto e tamanhos."); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toast.error(friendlyError(e)),
   });
   const updateMut = trpc.bikes.update.useMutation({
     onSuccess: () => { toast.success("Bicicleta atualizada!"); onSuccess(); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toast.error(friendlyError(e)),
   });
 
   const handleSubmit = () => {
@@ -636,6 +639,7 @@ function BikeFormDialog({ bike, onClose, onSuccess }: { bike: any | null; onClos
 
 // ─── Main Bikes Page ──────────────────────────────────────────────────────────
 export default function Bikes() {
+  const confirmDialog = useConfirm();
   const utils = trpc.useUtils();
   const [categoryFilter, setCategoryFilter] = useState<string | undefined>();
   const [search, setSearch] = useState("");
@@ -652,7 +656,7 @@ export default function Bikes() {
 
   const deleteMutation = trpc.bikes.delete.useMutation({
     onSuccess: () => { utils.bikes.list.invalidate(); toast.success("Bicicleta removida!"); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toast.error(friendlyError(e)),
   });
 
   return (
@@ -749,7 +753,7 @@ export default function Bikes() {
                       <div className="flex items-center gap-2 row-actions">
                         <button onClick={() => { setEditBike(bike); setShowForm(true); }} className="text-[12px] text-primary hover:underline font-medium">Editar</button>
                         <button onClick={() => setDiscountBikeId(bike.id)} className="text-[12px] text-muted-foreground hover:text-primary">Descontos</button>
-                        <button onClick={() => { if (confirm("Remover?")) deleteMutation.mutate({ id: bike.id }); }} className="text-muted-foreground hover:text-destructive"><Trash2 className="w-3.5 h-3.5" /></button>
+                        <button onClick={async () => { if (await confirmDialog({ title: "Remover bike?", confirmText: "Remover", destructive: true })) deleteMutation.mutate({ id: bike.id }); }} className="text-muted-foreground hover:text-destructive"><Trash2 className="w-3.5 h-3.5" /></button>
                       </div>
                     </td>
                   </tr>
@@ -786,7 +790,7 @@ export default function Bikes() {
                 <div className="flex gap-3 pt-2 mt-2 border-t border-border/50">
                   <button onClick={() => { setEditBike(bike); setShowForm(true); }} className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary"><Pencil className="w-3 h-3" />Editar</button>
                   <button onClick={() => setDiscountBikeId(bike.id)} className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary"><Percent className="w-3 h-3" />Descontos</button>
-                  <button onClick={() => { if (confirm("Remover?")) deleteMutation.mutate({ id: bike.id }); }} className="flex items-center gap-1 text-xs text-muted-foreground hover:text-destructive ml-auto"><Trash2 className="w-3 h-3" /></button>
+                  <button onClick={async () => { if (await confirmDialog({ title: "Remover bike?", confirmText: "Remover", destructive: true })) deleteMutation.mutate({ id: bike.id }); }} className="flex items-center gap-1 text-xs text-muted-foreground hover:text-destructive ml-auto"><Trash2 className="w-3 h-3" /></button>
                 </div>
               </div>
             ))}
