@@ -1,9 +1,0 @@
-{
-  "query": "ALTER TABLE contract_accessories ADD COLUMN unitId integer;\nALTER TABLE rental_accessories ADD COLUMN unitId integer;",
-  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway05.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2uiJuwepBaepVjU.root --database 9oQjN6PX9fNMedgfErUfQE --execute ALTER TABLE contract_accessories ADD COLUMN unitId integer;\nALTER TABLE rental_accessories ADD COLUMN unitId integer;",
-  "rows": [],
-  "messages": [],
-  "stdout": "",
-  "stderr": "",
-  "execution_time_ms": 641
-}

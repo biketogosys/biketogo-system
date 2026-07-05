@@ -1,8 +1,0 @@
-{
-  "query": "SHOW CREATE TABLE contracts;",
-  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway05.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2uiJuwepBaepVjU.root --database 9oQjN6PX9fNMedgfErUfQE --execute SHOW CREATE TABLE contracts;",
-  "returncode": 1,
-  "logs": [
-    "ERROR 1146 (42S02) at line 1: Table '9oqjn6px9fnmedgferufqe.contracts' doesn't exist"
-  ]
-}
