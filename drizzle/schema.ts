@@ -11,6 +11,7 @@ import {
   integer,
   json,
   jsonb,
+  index,
 } from "drizzle-orm/pg-core";
 
 // ─── Enums ───────────────────────────────────────────────────────────────────
@@ -204,7 +205,10 @@ export const rentals = pgTable("rentals", {
   notes: text("notes"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().notNull(),
-});
+}, (t) => [
+  index("rentals_size_dates_idx").on(t.bikeSizeId, t.startDate, t.endDate),
+  index("rentals_contract_idx").on(t.contractId),
+]);
 export type Rental = typeof rentals.$inferSelect;
 export type InsertRental = typeof rentals.$inferInsert;
 
@@ -394,7 +398,9 @@ export const bikeUnits = pgTable("bike_units", {
   status: bikeUnitStatusEnum("status").default("disponivel").notNull(),
   observacao: text("observacao"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-});
+}, (t) => [
+  index("bike_units_size_status_idx").on(t.bikeSizeId, t.status),
+]);
 export type BikeUnit = typeof bikeUnits.$inferSelect;
 export type InsertBikeUnit = typeof bikeUnits.$inferInsert;
 
@@ -403,6 +409,9 @@ export const rentalBikeUnits = pgTable("rental_bike_units", {
   rentalId: integer("rentalId").notNull(),
   bikeUnitId: integer("bikeUnitId").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-});
+}, (t) => [
+  index("rbu_rental_idx").on(t.rentalId),
+  index("rbu_bike_unit_idx").on(t.bikeUnitId),
+]);
 export type RentalBikeUnit = typeof rentalBikeUnits.$inferSelect;
 export type InsertRentalBikeUnit = typeof rentalBikeUnits.$inferInsert;

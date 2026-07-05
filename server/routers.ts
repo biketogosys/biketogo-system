@@ -698,11 +698,15 @@ const bikesRouter = router({
       const { bikeSizes } = await import("../drizzle/schema");
       const { eq } = await import("drizzle-orm");
       const rows = await db.select().from(bikeSizes).where(eq(bikeSizes.bikeId, input.bikeId));
-      return Promise.all(rows.map(async (s) => {
-        const bd = await getSizeBreakdown(s.id);
+      // LOTE-4C: batch query para eliminar N+1
+      const { getSizeBreakdowns } = await import("./db");
+      const sizeIds = rows.map(r => r.id);
+      const breakdownMap = await getSizeBreakdowns(sizeIds);
+      return rows.map((s) => {
+        const bd = breakdownMap.get(s.id) ?? { total: 0, alugada: 0, manutencao: 0, disponivel: 0 };
         return { ...s, total: bd.total, disponivel: bd.disponivel,
                  quantidadeDisponivel: bd.disponivel, alugada: bd.alugada, manutencao: bd.manutencao };
-      }));
+      });
     }),
   addSize: adminAuthProcedure
     .input(z.object({
@@ -1089,51 +1093,8 @@ const rentalsRouter = router({
         const [clientRow] = contractRow?.clientId
           ? await db.select().from(clTable2).where(eqPdf(clTable2.id, contractRow.clientId))
           : [null];
-        const rentalsForPdf = await db.select({
-          id: rentalsTable.id, bikeId: rentalsTable.bikeId, startDate: rentalsTable.startDate, endDate: rentalsTable.endDate,
-          totalAmount: rentalsTable.totalAmount, dailyRate: rentalsTable.dailyRate,
-          bikeSizeId: rentalsTable.bikeSizeId, quantity: rentalsTable.quantity,
-        }).from(rentalsTable).where(andPdf(eqPdf(rentalsTable.contractId, input.contractId), isNullPdf(rentalsTable.deletedAt)));
-        const { bikes: bikesT, bikeSizes: bkSizesT } = await import("../drizzle/schema");
-        const rentalsWithBike = await Promise.all(rentalsForPdf.map(async (r) => {
-          const [bike] = r.bikeId ? await db.select({ model: bikesT.model, brand: bikesT.brand, serialNumber: bikesT.serialNumber }).from(bikesT).where(eqPdf(bikesT.id, r.bikeId)) : [null];
-          let tamanho: string | null = null;
-          if (r.bikeSizeId) {
-            const [sz] = await db.select({ tamanho: bkSizesT.tamanho }).from(bkSizesT).where(eqPdf(bkSizesT.id, r.bikeSizeId));
-            tamanho = sz?.tamanho ?? null;
-          }
-          // BU-3B: buscar números reais das unidades ligadas ao rental
-          const { rentalBikeUnits: rbuPdf1, bikeUnits: buPdf1 } = await import("../drizzle/schema");
-          const { eq: eqRbu1, asc: ascRbu1 } = await import("drizzle-orm");
-          const unidades1 = await db.select({ numero: buPdf1.numeroSistema }).from(rbuPdf1).innerJoin(buPdf1, eqRbu1(buPdf1.id, rbuPdf1.bikeUnitId)).where(eqRbu1(rbuPdf1.rentalId, r.id)).orderBy(ascRbu1(buPdf1.numeroSistema));
-          const bikeUnitNumeros1 = unidades1.length ? unidades1.map((u: any) => u.numero).join(", ") : null;
-          return { ...r, bikeModel: bike?.model, bikeBrand: bike?.brand, bikeSerialNumber: bike?.serialNumber, tamanho, bikeUnitNumeros: bikeUnitNumeros1 };
-        }));
-        const caRows3 = await db.select({
-          accessoryId: caTable3.accessoryId, qty: caTable3.qty, unitId: caTable3.unitId,
-          accessoryName: accTable2.name, replacementValue: accTable2.replacementValue,
-        }).from(caTable3).leftJoin(accTable2, eqPdf(caTable3.accessoryId, accTable2.id)).where(eqPdf(caTable3.contractId, input.contractId));
-        const accWithSerial = await Promise.all(caRows3.map(async (ca) => {
-          let serialNumber: string | null = null;
-          if (ca.unitId) {
-            const [unit] = await db.select({ serialNumber: auTable3.serialNumber }).from(auTable3).where(eqPdf(auTable3.id, ca.unitId));
-            serialNumber = unit?.serialNumber ?? null;
-          }
-          return { accessoryName: ca.accessoryName, qty: ca.qty, serialNumber, valorReposicao: ca.replacementValue };
-        }));
-        // Dados da empresa são buscados internamente por generateContractPdf via getSetting("company_*")
-        const pdfBuffer = await generateContractPdf({
-          contractId: input.contractId,
-          clientName: clientRow?.name ?? "—",
-          clientCpf: clientRow?.cpf ?? null,
-          clientRg: clientRow?.rg ?? null,
-          clientPhone: clientRow?.phone ?? null,
-          clientEmail: clientRow?.email ?? null,
-          criadoEm: contractRow?.criadoEm ?? new Date(),
-          valorTotal: contractRow?.valorTotal ?? null,
-          rentals: rentalsWithBike,
-          accessories: accWithSerial,
-        }, "pt");
+        const data = await buildContractPdfData(db, input.contractId);
+        const pdfBuffer = await generateContractPdf(data, "pt");
         const suffix = Date.now().toString(36);
         const { url } = await storagePut(`contracts/contrato-${input.contractId}-${suffix}.pdf`, pdfBuffer, "application/pdf");
         pdfUrl = url;
@@ -2929,7 +2890,6 @@ const contractsRouter = router({
           paymentStatus: "pending",
           status: "pending",
           source: "manual",
-          contractId: contract.id,
           notes: input.notes ?? null,
         } as any);
         rentalIds.push(rentalId);
@@ -2968,50 +2928,8 @@ const contractsRouter = router({
         const { eq: eqPdf, and: andPdf, isNull: isNullPdf } = await import("drizzle-orm");
         const [contractRow] = await db.select().from(cTablePdf).where(eqPdf(cTablePdf.id, contract.id));
         const [clientRow] = await db.select().from(clTablePdf).where(eqPdf(clTablePdf.id, input.clientId));
-        const rentalsForPdf = await db.select({
-          id: rentalsTable.id, bikeId: rentalsTable.bikeId, startDate: rentalsTable.startDate, endDate: rentalsTable.endDate,
-          totalAmount: rentalsTable.totalAmount, dailyRate: rentalsTable.dailyRate,
-          bikeSizeId: rentalsTable.bikeSizeId, quantity: rentalsTable.quantity,
-        }).from(rentalsTable).where(andPdf(eqPdf(rentalsTable.contractId, contract.id), isNullPdf(rentalsTable.deletedAt)));
-        const { bikes: bikesTpdf, bikeSizes: bkSizesTpdf } = await import("../drizzle/schema");
-        const rentalsWithBike = await Promise.all(rentalsForPdf.map(async (r) => {
-          const [bike] = r.bikeId ? await db.select({ model: bikesTpdf.model, brand: bikesTpdf.brand, serialNumber: bikesTpdf.serialNumber }).from(bikesTpdf).where(eqPdf(bikesTpdf.id, r.bikeId)) : [null];
-          let tamanho: string | null = null;
-          if (r.bikeSizeId) {
-            const [sz] = await db.select({ tamanho: bkSizesTpdf.tamanho }).from(bkSizesTpdf).where(eqPdf(bkSizesTpdf.id, r.bikeSizeId));
-            tamanho = sz?.tamanho ?? null;
-          }
-          // BU-3B: buscar números reais das unidades ligadas ao rental
-          const { rentalBikeUnits: rbuPdf3, bikeUnits: buPdf3 } = await import("../drizzle/schema");
-          const { eq: eqRbu3, asc: ascRbu3 } = await import("drizzle-orm");
-          const unidades3 = await db.select({ numero: buPdf3.numeroSistema }).from(rbuPdf3).innerJoin(buPdf3, eqRbu3(buPdf3.id, rbuPdf3.bikeUnitId)).where(eqRbu3(rbuPdf3.rentalId, r.id)).orderBy(ascRbu3(buPdf3.numeroSistema));
-          const bikeUnitNumeros3 = unidades3.length ? unidades3.map((u: any) => u.numero).join(", ") : null;
-          return { ...r, bikeModel: bike?.model, bikeBrand: bike?.brand, bikeSerialNumber: bike?.serialNumber, tamanho, bikeUnitNumeros: bikeUnitNumeros3 };
-        }));
-        const caRowsPdf = await db.select({
-          accessoryId: caTablePdf.accessoryId, qty: caTablePdf.qty, unitId: caTablePdf.unitId,
-          accessoryName: accTablePdf.name, replacementValue: accTablePdf.replacementValue,
-        }).from(caTablePdf).leftJoin(accTablePdf, eqPdf(caTablePdf.accessoryId, accTablePdf.id)).where(eqPdf(caTablePdf.contractId, contract.id));
-        const accWithSerial = await Promise.all(caRowsPdf.map(async (ca) => {
-          let serialNumber: string | null = null;
-          if (ca.unitId) {
-            const [unit] = await db.select({ serialNumber: auTablePdf.serialNumber }).from(auTablePdf).where(eqPdf(auTablePdf.id, ca.unitId));
-            serialNumber = unit?.serialNumber ?? null;
-          }
-          return { accessoryName: ca.accessoryName, qty: ca.qty, serialNumber, valorReposicao: ca.replacementValue };
-        }));
-        const pdfBuffer = await generateContractPdf({
-          contractId: contract.id,
-          clientName: clientRow?.name ?? "—",
-          clientCpf: clientRow?.cpf ?? null,
-          clientRg: clientRow?.rg ?? null,
-          clientPhone: clientRow?.phone ?? null,
-          clientEmail: clientRow?.email ?? null,
-          criadoEm: contractRow?.criadoEm ?? new Date(),
-          valorTotal: contractRow?.valorTotal ?? null,
-          rentals: rentalsWithBike,
-          accessories: accWithSerial,
-        }, "pt");
+        const data = await buildContractPdfData(db, input.id);
+        const pdfBuffer = await generateContractPdf(data, "pt");
         const suffix = Date.now().toString(36);
         const { url: pdfS3Url } = await storagePut(`contracts/contrato-${contract.id}-${suffix}.pdf`, pdfBuffer, "application/pdf");
         pdfUrl = pdfS3Url;
@@ -3277,50 +3195,8 @@ const contractsRouter = router({
         const [clientRow] = contractRow?.clientId
           ? await db.select().from(clTable2).where(eqPdf(clTable2.id, contractRow.clientId))
           : [null];
-        const rentalsForPdf = await db.select({
-          id: rentalsTable.id, bikeId: rentalsTable.bikeId, startDate: rentalsTable.startDate, endDate: rentalsTable.endDate,
-          totalAmount: rentalsTable.totalAmount, dailyRate: rentalsTable.dailyRate,
-          bikeSizeId: rentalsTable.bikeSizeId, quantity: rentalsTable.quantity,
-        }).from(rentalsTable).where(andPdf(eqPdf(rentalsTable.contractId, input.id), isNullPdf(rentalsTable.deletedAt)));
-        const { bikes: bikesT, bikeSizes: bkSizesT3 } = await import("../drizzle/schema");
-        const rentalsWithBike = await Promise.all(rentalsForPdf.map(async (r) => {
-          const [bike] = r.bikeId ? await db.select({ model: bikesT.model, brand: bikesT.brand, serialNumber: bikesT.serialNumber }).from(bikesT).where(eqPdf(bikesT.id, r.bikeId)) : [null];
-          let tamanho: string | null = null;
-          if (r.bikeSizeId) {
-            const [sz] = await db.select({ tamanho: bkSizesT3.tamanho }).from(bkSizesT3).where(eqPdf(bkSizesT3.id, r.bikeSizeId));
-            tamanho = sz?.tamanho ?? null;
-          }
-          // BU-3B: buscar números reais das unidades ligadas ao rental
-          const { rentalBikeUnits: rbuPdf4, bikeUnits: buPdf4 } = await import("../drizzle/schema");
-          const { eq: eqRbu4, asc: ascRbu4 } = await import("drizzle-orm");
-          const unidades4 = await db.select({ numero: buPdf4.numeroSistema }).from(rbuPdf4).innerJoin(buPdf4, eqRbu4(buPdf4.id, rbuPdf4.bikeUnitId)).where(eqRbu4(rbuPdf4.rentalId, r.id)).orderBy(ascRbu4(buPdf4.numeroSistema));
-          const bikeUnitNumeros4 = unidades4.length ? unidades4.map((u: any) => u.numero).join(", ") : null;
-          return { ...r, bikeModel: bike?.model, bikeBrand: bike?.brand, bikeSerialNumber: bike?.serialNumber, tamanho, bikeUnitNumeros: bikeUnitNumeros4 };
-        }));
-        const caRows3 = await db.select({
-          accessoryId: caTable3.accessoryId, qty: caTable3.qty, unitId: caTable3.unitId,
-          accessoryName: accTable2.name, replacementValue: accTable2.replacementValue,
-        }).from(caTable3).leftJoin(accTable2, eqPdf(caTable3.accessoryId, accTable2.id)).where(eqPdf(caTable3.contractId, input.id));
-        const accWithSerial = await Promise.all(caRows3.map(async (ca) => {
-          let serialNumber: string | null = null;
-          if (ca.unitId) {
-            const [unit] = await db.select({ serialNumber: auTable3.serialNumber }).from(auTable3).where(eqPdf(auTable3.id, ca.unitId));
-            serialNumber = unit?.serialNumber ?? null;
-          }
-          return { accessoryName: ca.accessoryName, qty: ca.qty, serialNumber, valorReposicao: ca.replacementValue };
-        }));
-        const pdfBuffer = await generateContractPdf({
-          contractId: input.id,
-          clientName: clientRow?.name ?? "—",
-          clientCpf: clientRow?.cpf ?? null,
-          clientRg: clientRow?.rg ?? null,
-          clientPhone: clientRow?.phone ?? null,
-          clientEmail: clientRow?.email ?? null,
-          criadoEm: contractRow?.criadoEm ?? new Date(),
-          valorTotal: contractRow?.valorTotal ?? null,
-          rentals: rentalsWithBike,
-          accessories: accWithSerial,
-        }, "pt");
+        const data = await buildContractPdfData(db, input.id);
+        const pdfBuffer = await generateContractPdf(data, "pt");
         const suffix = Date.now().toString(36);
         const { url } = await storagePut(`contracts/contrato-${input.id}-${suffix}.pdf`, pdfBuffer, "application/pdf");
         await db.update(cTable2).set({ pdfUrl: url }).where(eqPdf(cTable2.id, input.id));

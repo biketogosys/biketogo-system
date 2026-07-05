@@ -151,6 +151,79 @@ export async function getSizeAvailability(
   return (await getSizeBreakdown(bikeSizeId, startDate, endDate, excludeRentalId, excludeContractId)).disponivel;
 }
 
+// LOTE-4C: batch query para eliminar N+1 de getSizeBreakdown
+export async function getSizeBreakdowns(
+  bikeSizeIds: number[],
+  startDate?: string,
+  endDate?: string,
+  excludeRentalId?: number,
+  excludeContractId?: number,
+): Promise<Map<number, { total: number; alugada: number; manutencao: number; disponivel: number }>> {
+  if (bikeSizeIds.length === 0) return new Map();
+  const db = await getDb();
+  if (!db) return new Map();
+
+  // Fetch all sizes with their bikeId
+  const sizes = await db.select({ id: bikeSizes.id, bikeId: bikeSizes.bikeId }).from(bikeSizes).where(inArray(bikeSizes.id, bikeSizeIds));
+  const sizeMap = new Map(sizes.map(s => [s.id, s]));
+
+  // Batch count of total units (not lost/stolen) per size
+  const totalRows = await db.select({
+    bikeSizeId: bikeUnits.bikeSizeId,
+    value: count(),
+  }).from(bikeUnits).where(
+    and(
+      inArray(bikeUnits.bikeSizeId, bikeSizeIds),
+      notInArray(bikeUnits.status, ["perdido", "roubado"])
+    )
+  ).groupBy(bikeUnits.bikeSizeId);
+  const totalMap = new Map(totalRows.map(r => [r.bikeSizeId, r.value]));
+
+  // Batch count of maintenance units per size
+  const maintRows = await db.select({
+    bikeSizeId: bikeUnits.bikeSizeId,
+    value: count(),
+  }).from(bikeUnits).where(
+    and(
+      inArray(bikeUnits.bikeSizeId, bikeSizeIds),
+      eq(bikeUnits.status, "manutencao")
+    )
+  ).groupBy(bikeUnits.bikeSizeId);
+  const maintMap = new Map(maintRows.map(r => [r.bikeSizeId, r.value]));
+
+  // Batch count of rented units per size
+  const rentalConds: Parameters<typeof and>[0][] = [
+    inArray(rentals.bikeSizeId, bikeSizeIds),
+    inArray(rentals.status, ["pending", "active", "overdue"]),
+    isNull(rentals.deletedAt),
+  ];
+  if (excludeRentalId) rentalConds.push(ne(rentals.id, excludeRentalId));
+  if (excludeContractId) rentalConds.push(or(isNull(rentals.contractId), ne(rentals.contractId, excludeContractId))!);
+  if (startDate && endDate) {
+    rentalConds.push(lte(rentals.startDate, endDate));
+    rentalConds.push(or(isNull(rentals.endDate), gte(rentals.endDate, startDate))!);
+  }
+  const rentedRows = await db.select({
+    bikeSizeId: rentals.bikeSizeId,
+    q: rentals.quantity,
+  }).from(rentals).where(and(...rentalConds));
+  const rentedMap = new Map<number, number>();
+  for (const r of rentedRows) {
+    if (r.bikeSizeId) rentedMap.set(r.bikeSizeId, (rentedMap.get(r.bikeSizeId) ?? 0) + (r.q ?? 1));
+  }
+
+  // Build result map
+  const result = new Map<number, { total: number; alugada: number; manutencao: number; disponivel: number }>();
+  for (const sizeId of bikeSizeIds) {
+    const total = totalMap.get(sizeId) ?? 0;
+    const alugada = rentedMap.get(sizeId) ?? 0;
+    const manutencao = maintMap.get(sizeId) ?? 0;
+    const disponivel = Math.max(0, total - alugada - manutencao);
+    result.set(sizeId, { total, alugada, manutencao, disponivel });
+  }
+  return result;
+}
+
 export async function upsertUser(user: InsertUser): Promise<void> {
   if (!user.openId) throw new Error("User openId is required for upsert");
   const db = await getDb();
