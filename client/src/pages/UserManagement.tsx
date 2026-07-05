@@ -8,6 +8,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { useConfirm } from "@/components/ConfirmDialog";
+import { friendlyError } from "@/lib/utils";
 
 type AdminRole = "admin" | "operator";
 
@@ -36,11 +38,11 @@ function UserFormDialog({
 
   const createMutation = trpc.auth.createUser.useMutation({
     onSuccess: () => { toast.success("Usuário criado!"); onSuccess(); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toast.error(friendlyError(e)),
   });
   const updateMutation = trpc.auth.updateUser.useMutation({
     onSuccess: () => { toast.success("Usuário atualizado!"); onSuccess(); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toast.error(friendlyError(e)),
   });
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -175,6 +177,7 @@ function UserFormDialog({
 }
 
 export default function UserManagement() {
+  const confirmDialog = useConfirm();
   const [showForm, setShowForm] = useState(false);
   const [editUser, setEditUser] = useState<any>(null);
   const utils = trpc.useUtils();
@@ -182,7 +185,7 @@ export default function UserManagement() {
   const { data, isLoading } = trpc.auth.listUsers.useQuery();
   const deleteMutation = trpc.auth.deleteUser.useMutation({
     onSuccess: () => { toast.success("Usuário removido."); utils.auth.listUsers.invalidate(); },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toast.error(friendlyError(e)),
   });
 
   const users = data ?? [];
@@ -268,8 +271,8 @@ export default function UserManagement() {
                         <Pencil className="w-3 h-3" />Editar
                       </button>
                       <button
-                        onClick={() => {
-                          if (confirm(`Remover o usuário "${u.name}"?`))
+                        onClick={async () => {
+                          if (await confirmDialog({ title: `Remover "${u.name}"?`, description: "O usuário perderá acesso ao sistema.", confirmText: "Remover", destructive: true }))
                             deleteMutation.mutate({ id: u.id });
                         }}
                         className="flex items-center gap-1 text-xs text-muted-foreground hover:text-destructive transition-colors"
