@@ -28,7 +28,7 @@ export async function createTestDb() {
       await client.exec(st);
     }
   }
-  return { db, client };
+  return db;
 }
 
 type SeedOpts = { unitStatuses?: string[] };
