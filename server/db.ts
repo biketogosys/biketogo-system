@@ -98,9 +98,10 @@ export async function getSizeBreakdown(
   endDate?: string,
   excludeRentalId?: number,
   excludeContractId?: number,
+  dbOverride?: any,
 ): Promise<{ total: number; alugada: number; manutencao: number; disponivel: number }> {
   const m = await getSizeBreakdowns(
-    [bikeSizeId], startDate, endDate, excludeRentalId, excludeContractId
+    [bikeSizeId], startDate, endDate, excludeRentalId, excludeContractId, dbOverride
   );
   return m.get(bikeSizeId) ?? { total: 0, alugada: 0, manutencao: 0, disponivel: 0 };
 }
@@ -122,14 +123,15 @@ export async function getSizeBreakdowns(
   endDate?: string,
   excludeRentalId?: number,
   excludeContractId?: number,
+  dbOverride?: any,
 ): Promise<Map<number, { total: number; alugada: number; manutencao: number; disponivel: number }>> {
   if (bikeSizeIds.length === 0) return new Map();
-  const db = await getDb();
+  const db = dbOverride ?? await getDb();
   if (!db) return new Map();
 
   // Fetch all sizes with their bikeId
   const sizes = await db.select({ id: bikeSizes.id, bikeId: bikeSizes.bikeId }).from(bikeSizes).where(inArray(bikeSizes.id, bikeSizeIds));
-  const sizeMap = new Map(sizes.map(s => [s.id, s]));
+  const sizeMap = new Map(sizes.map((s: { id: number; bikeId: number }) => [s.id, s]));
 
   // Batch count of total units (not lost/stolen) per size
   const totalRows = await db.select({
@@ -141,7 +143,7 @@ export async function getSizeBreakdowns(
       notInArray(bikeUnits.status, ["perdido", "roubado"])
     )
   ).groupBy(bikeUnits.bikeSizeId);
-  const totalMap = new Map(totalRows.map(r => [r.bikeSizeId, r.value]));
+  const totalMap = new Map(totalRows.map((r: { bikeSizeId: number | null; value: number }) => [r.bikeSizeId, r.value]));
 
   // Batch count of maintenance units per size
   const maintRows = await db.select({
@@ -153,7 +155,7 @@ export async function getSizeBreakdowns(
       eq(bikeUnits.status, "manutencao")
     )
   ).groupBy(bikeUnits.bikeSizeId);
-  const maintMap = new Map(maintRows.map(r => [r.bikeSizeId, r.value]));
+  const maintMap = new Map(maintRows.map((r: { bikeSizeId: number | null; value: number }) => [r.bikeSizeId, r.value]));
 
   // Batch count of rented units per size
   const rentalConds: Parameters<typeof and>[0][] = [
@@ -179,9 +181,9 @@ export async function getSizeBreakdowns(
   // Build result map
   const result = new Map<number, { total: number; alugada: number; manutencao: number; disponivel: number }>();
   for (const sizeId of bikeSizeIds) {
-    const total = totalMap.get(sizeId) ?? 0;
-    const alugada = rentedMap.get(sizeId) ?? 0;
-    const manutencao = maintMap.get(sizeId) ?? 0;
+    const total = Number(totalMap.get(sizeId) ?? 0);
+    const alugada = Number(rentedMap.get(sizeId) ?? 0);
+    const manutencao = Number(maintMap.get(sizeId) ?? 0);
     const disponivel = Math.max(0, total - alugada - manutencao);
     result.set(sizeId, { total, alugada, manutencao, disponivel });
   }

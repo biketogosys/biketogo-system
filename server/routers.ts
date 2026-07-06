@@ -2337,7 +2337,7 @@ async function assertAccessoryAvailabilityForUpdate(db: any, contractId: number,
 // Liga unidades físicas de bikeSizeId ao rental.
 // Se unitIds vier com itens: valida e liga ESSAS (pick manual).
 // Se não vier: auto-pick das disponíveis (comportamento original).
-async function assignBikeUnits(
+export async function assignBikeUnits(
   db: any,
   rentalId: number,
   bikeSizeId: number,
@@ -2430,7 +2430,7 @@ async function assignBikeUnits(
 }
 
 // Remove TODAS as ligações de um rental da tabela rental_bike_units.
-async function releaseBikeUnits(db: any, rentalId: number): Promise<void> {
+export async function releaseBikeUnits(db: any, rentalId: number): Promise<void> {
   const { rentalBikeUnits } = await import("../drizzle/schema");
   const { eq } = await import("drizzle-orm");
   await db.delete(rentalBikeUnits).where(eq(rentalBikeUnits.rentalId, rentalId));
@@ -3348,7 +3348,32 @@ const contractsRouter = router({
 });
 
 // ─── App router ───────────────────────────────────────────────────────────────
-// ─── Bike Units Router ───────────────────────────────────────────────────────
+// ─── findAvailableBikeUnits helper (LOTE-5: testability) ────────────────────
+export async function findAvailableBikeUnits(
+  db: any,
+  opts: { bikeSizeId: number; startDate: string; endDate: string; excludeRentalId?: number },
+): Promise<{ id: number; numeroSistema: string }[]> {
+  const { bikeUnits } = await import("../drizzle/schema");
+  const { eq, and, sql: sqlFn } = await import("drizzle-orm");
+  const excludeId = opts.excludeRentalId ?? -1;
+  const overlapCond = sqlFn`NOT EXISTS (
+    SELECT 1 FROM rental_bike_units rbu
+    JOIN rentals r ON r.id = rbu."rentalId"
+    WHERE rbu."bikeUnitId" = ${bikeUnits.id}
+      AND r.status IN ('pending','active','overdue')
+      AND r."deletedAt" IS NULL
+      AND r.id <> ${excludeId}
+      AND r."startDate" <= ${opts.endDate}
+      AND (r."endDate" IS NULL OR r."endDate" >= ${opts.startDate})
+  )`;
+  return db
+    .select({ id: bikeUnits.id, numeroSistema: bikeUnits.numeroSistema })
+    .from(bikeUnits)
+    .where(and(eq(bikeUnits.bikeSizeId, opts.bikeSizeId), eq(bikeUnits.status, "disponivel"), overlapCond))
+    .orderBy(bikeUnits.numeroSistema);
+}
+
+// ─── Bike Units router ───────────────────────────────────────────────────────
 const bikeUnitsRouter = router({
   list: adminAuthProcedure
     .input(z.object({ bikeSizeId: z.number() }))
@@ -3447,26 +3472,9 @@ const bikeUnitsRouter = router({
       excludeRentalId: z.number().optional(),
     }))
     .query(async ({ input }) => {
-      const { bikeUnits, rentalBikeUnits: rbuT, rentals: rentalsT } = await import("../drizzle/schema");
-      const { eq, and, sql: sqlFn } = await import("drizzle-orm");
       const db = await (await import("./db")).getDb();
       if (!db) return [];
-      const excludeId = input.excludeRentalId ?? -1;
-      const overlapCond = sqlFn`NOT EXISTS (
-        SELECT 1 FROM rental_bike_units rbu
-        JOIN rentals r ON r.id = rbu."rentalId"
-        WHERE rbu."bikeUnitId" = ${bikeUnits.id}
-          AND r.status IN ('pending','active','overdue')
-          AND r."deletedAt" IS NULL
-          AND r.id <> ${excludeId}
-          AND r."startDate" <= ${input.endDate}
-          AND (r."endDate" IS NULL OR r."endDate" >= ${input.startDate})
-      )`;
-      return db
-        .select({ id: bikeUnits.id, numeroSistema: bikeUnits.numeroSistema })
-        .from(bikeUnits)
-        .where(and(eq(bikeUnits.bikeSizeId, input.bikeSizeId), eq(bikeUnits.status, "disponivel"), overlapCond))
-        .orderBy(bikeUnits.numeroSistema);
+      return findAvailableBikeUnits(db, input);
     }),
 
   byBike: adminAuthProcedure
