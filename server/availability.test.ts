@@ -7,14 +7,14 @@
 import { describe, it, expect, beforeAll } from "vitest";
 import { TRPCError } from "@trpc/server";
 import { eq } from "drizzle-orm";
-import { createTestDb, seedBasics, makeRental, type TestDb } from "./test-helpers/pglite-db";
+import { createTestDb, seedBasics, makeRental } from "./test-helpers/pglite-db";
 import { getSizeBreakdowns } from "./db";
 import { assignBikeUnits, releaseBikeUnits, findAvailableBikeUnits } from "./routers";
 import * as schema from "../drizzle/schema";
 
 // ─── C1: getSizeBreakdowns — janela de overlap ────────────────────────────────
 describe("C1: getSizeBreakdowns — overlap window", () => {
-  let db: TestDb;
+  let db: any;
   let bikeSizeId: number;
   let clientId: number;
   let bikeId: number;
@@ -108,29 +108,29 @@ describe("C2: getSizeBreakdowns — unit status breakdown", () => {
   });
 
   it("com 1 aluguel ativo -> disponivel = max(0, 2-1-1) = 0", async () => {
-    const db = await createTestDb();
-    const seed = await seedBasics(db);
-    const { clientId, bikeId, bikeSizeId, unitIds } = seed;
-    await db.update(schema.bikeUnits).set({ status: "perdido" }).where(eq(schema.bikeUnits.id, unitIds[0]));
-    await db.update(schema.bikeUnits).set({ status: "roubado" }).where(eq(schema.bikeUnits.id, unitIds[1]));
-    await db.update(schema.bikeUnits).set({ status: "manutencao" }).where(eq(schema.bikeUnits.id, unitIds[2]));
+    const db2 = await createTestDb();
+    const seed2 = await seedBasics(db2);
+    const { clientId, bikeId, bikeSizeId, unitIds } = seed2;
+    await db2.update(schema.bikeUnits).set({ status: "perdido" }).where(eq(schema.bikeUnits.id, unitIds[0]));
+    await db2.update(schema.bikeUnits).set({ status: "roubado" }).where(eq(schema.bikeUnits.id, unitIds[1]));
+    await db2.update(schema.bikeUnits).set({ status: "manutencao" }).where(eq(schema.bikeUnits.id, unitIds[2]));
     // 1 aluguel ativo
-    await makeRental(db, { clientId, bikeId, bikeSizeId, quantity: 1, startDate: "2026-07-01", endDate: "2026-07-10", status: "active" });
-    const map = await getSizeBreakdowns([bikeSizeId], "2026-07-03", "2026-07-07", undefined, undefined, db);
+    await makeRental(db2, { clientId, bikeId, bikeSizeId, quantity: 1, startDate: "2026-07-01", endDate: "2026-07-10", status: "active" });
+    const map = await getSizeBreakdowns([bikeSizeId], "2026-07-03", "2026-07-07", undefined, undefined, db2);
     expect(map.get(bikeSizeId)?.disponivel).toBe(0);
   });
 
   it("disponivel nunca negativo (2 alugueis + 1 manutencao com total 2 -> 0)", async () => {
-    const db = await createTestDb();
-    const seed = await seedBasics(db);
-    const { clientId, bikeId, bikeSizeId, unitIds } = seed;
-    await db.update(schema.bikeUnits).set({ status: "perdido" }).where(eq(schema.bikeUnits.id, unitIds[0]));
-    await db.update(schema.bikeUnits).set({ status: "roubado" }).where(eq(schema.bikeUnits.id, unitIds[1]));
-    await db.update(schema.bikeUnits).set({ status: "manutencao" }).where(eq(schema.bikeUnits.id, unitIds[2]));
+    const db2 = await createTestDb();
+    const seed2 = await seedBasics(db2);
+    const { clientId, bikeId, bikeSizeId, unitIds } = seed2;
+    await db2.update(schema.bikeUnits).set({ status: "perdido" }).where(eq(schema.bikeUnits.id, unitIds[0]));
+    await db2.update(schema.bikeUnits).set({ status: "roubado" }).where(eq(schema.bikeUnits.id, unitIds[1]));
+    await db2.update(schema.bikeUnits).set({ status: "manutencao" }).where(eq(schema.bikeUnits.id, unitIds[2]));
     // 2 alugueis ativos (total=2, manutencao=1 → disponivel deveria ser -1 mas fica 0)
-    await makeRental(db, { clientId, bikeId, bikeSizeId, quantity: 1, startDate: "2026-07-01", endDate: "2026-07-10", status: "active" });
-    await makeRental(db, { clientId, bikeId, bikeSizeId, quantity: 1, startDate: "2026-07-01", endDate: "2026-07-10", status: "active" });
-    const map = await getSizeBreakdowns([bikeSizeId], "2026-07-03", "2026-07-07", undefined, undefined, db);
+    await makeRental(db2, { clientId, bikeId, bikeSizeId, quantity: 1, startDate: "2026-07-01", endDate: "2026-07-10", status: "active" });
+    await makeRental(db2, { clientId, bikeId, bikeSizeId, quantity: 1, startDate: "2026-07-01", endDate: "2026-07-10", status: "active" });
+    const map = await getSizeBreakdowns([bikeSizeId], "2026-07-03", "2026-07-07", undefined, undefined, db2);
     expect(map.get(bikeSizeId)?.disponivel).toBeGreaterThanOrEqual(0);
   });
 });
@@ -192,8 +192,8 @@ describe("C4: assignBikeUnits AUTO (sem unitIds)", () => {
     const seed = await seedBasics(db);
     const { clientId, bikeId, bikeSizeId, unitIds } = seed;
     // Rental A: pega a primeira unidade
-    const rentalA = await makeRental(db, { clientId, bikeId, bikeSizeId, quantity: 1, startDate: "2026-07-01", endDate: "2026-07-05" });
-    await assignBikeUnits(db, rentalA, bikeSizeId, 1, "2026-07-01", "2026-07-05");
+    const rentalA = await makeRental(db, { clientId, bikeId, bikeSizeId, quantity: 1, startDate: "2026-07-01", endDate: "2026-07-10" });
+    await assignBikeUnits(db, rentalA, bikeSizeId, 1, "2026-07-01", "2026-07-10");
     const rowsA = await db.select().from(schema.rentalBikeUnits).where(eq(schema.rentalBikeUnits.rentalId, rentalA));
     const unitUsedByA = rowsA[0].bikeUnitId;
 
