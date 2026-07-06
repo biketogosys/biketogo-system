@@ -6,6 +6,7 @@ import type { TrpcContext } from "./_core/context";
 vi.mock("./db", () => ({
   getDb: vi.fn().mockResolvedValue(null),
   getSizeBreakdown: vi.fn().mockResolvedValue({ total: 0, alugada: 0, manutencao: 0, disponivel: 0 }),
+  getSizeBreakdowns: vi.fn().mockResolvedValue(new Map()),
   getSizeAvailability: vi.fn().mockResolvedValue(0),
   getClients: vi.fn().mockResolvedValue({ items: [], total: 0 }),
   getClientById: vi.fn().mockResolvedValue(undefined),
@@ -123,14 +124,14 @@ describe("clients.list", () => {
 describe("clients.create", () => {
   it("allows admin to create a client", async () => {
     const caller = appRouter.createCaller(makeAdminCtx());
-    const result = await caller.clients.create({ name: "João Silva", height: "1.75", weight: "75" });
+    const result = await caller.clients.create({ name: "João Silva" });
     expect(result).toHaveProperty("id");
     expect(result.id).toBe(1);
   });
 
   it("rejects non-admin users from creating clients", async () => {
     const caller = appRouter.createCaller(makeUserCtx());
-    await expect(caller.clients.create({ name: "João Silva", height: "1.75", weight: "75" })).rejects.toThrow();
+    await expect(caller.clients.create({ name: "João Silva" })).rejects.toThrow();
   });
 });
 
