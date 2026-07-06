@@ -571,20 +571,38 @@ const bikesRouter = router({
       const offset = (page - 1) * limit;
       const pageBikes = allBikes.slice(offset, offset + limit);
 
-      // Derivar disponibilidade agregada por bike (soma dos tamanhos)
-      const { getDb, getSizeBreakdown } = await import("./db");
+      // Derivar disponibilidade agregada por bike (soma dos tamanhos) — batch para eliminar N+1
+      const { getDb, getSizeBreakdowns } = await import("./db");
       const db = await getDb();
       const { bikeSizes: bsTable } = await import("../drizzle/schema");
-      const { eq } = await import("drizzle-orm");
-      const data = await Promise.all(pageBikes.map(async (bike) => {
-        if (!db) return { ...bike, disponivelTotal: 0, qtdTotal: 0 };
-        const sizes = await db.select({ id: bsTable.id }).from(bsTable).where(eq(bsTable.bikeId, bike.id));
-        if (sizes.length === 0) return { ...bike, disponivelTotal: 0, qtdTotal: 0 };
-        const breakdowns = await Promise.all(sizes.map((s) => getSizeBreakdown(s.id)));
-        const disponivelTotal = breakdowns.reduce((acc, bd) => acc + bd.disponivel, 0);
-        const qtdTotal = breakdowns.reduce((acc, bd) => acc + bd.total, 0);
+      const { inArray } = await import("drizzle-orm");
+
+      const pageBikeIds = pageBikes.map(b => b.id);
+      // todos os tamanhos das bikes da página numa única query
+      const allSizes = (db && pageBikeIds.length)
+        ? await db.select({ id: bsTable.id, bikeId: bsTable.bikeId })
+            .from(bsTable).where(inArray(bsTable.bikeId, pageBikeIds))
+        : [];
+      const sizeIds = allSizes.map(s => s.id);
+      const bdMap = await getSizeBreakdowns(sizeIds);   // UMA chamada batch
+
+      // agrupar os tamanhos por bike
+      const sizesByBike = new Map<number, number[]>();
+      for (const s of allSizes) {
+        const arr = sizesByBike.get(s.bikeId) ?? [];
+        arr.push(s.id);
+        sizesByBike.set(s.bikeId, arr);
+      }
+
+      const data = pageBikes.map(bike => {
+        const ids = sizesByBike.get(bike.id) ?? [];
+        let disponivelTotal = 0, qtdTotal = 0;
+        for (const id of ids) {
+          const bd = bdMap.get(id);
+          if (bd) { disponivelTotal += bd.disponivel; qtdTotal += bd.total; }
+        }
         return { ...bike, disponivelTotal, qtdTotal };
-      }));
+      });
 
       return { data, total, totalPages, page };
     }),
@@ -692,14 +710,12 @@ const bikesRouter = router({
   listSizes: adminAuthProcedure
     .input(z.object({ bikeId: z.number() }))
     .query(async ({ input }) => {
-      const { getDb, getSizeBreakdown } = await import("./db");
+      const { getDb, getSizeBreakdowns } = await import("./db");
       const db = await getDb();
       if (!db) return [];
       const { bikeSizes } = await import("../drizzle/schema");
       const { eq } = await import("drizzle-orm");
       const rows = await db.select().from(bikeSizes).where(eq(bikeSizes.bikeId, input.bikeId));
-      // LOTE-4C: batch query para eliminar N+1
-      const { getSizeBreakdowns } = await import("./db");
       const sizeIds = rows.map(r => r.id);
       const breakdownMap = await getSizeBreakdowns(sizeIds);
       return rows.map((s) => {
@@ -2928,7 +2944,7 @@ const contractsRouter = router({
         const { eq: eqPdf, and: andPdf, isNull: isNullPdf } = await import("drizzle-orm");
         const [contractRow] = await db.select().from(cTablePdf).where(eqPdf(cTablePdf.id, contract.id));
         const [clientRow] = await db.select().from(clTablePdf).where(eqPdf(clTablePdf.id, input.clientId));
-        const data = await buildContractPdfData(db, input.id);
+        const data = await buildContractPdfData(db, contract.id);
         const pdfBuffer = await generateContractPdf(data, "pt");
         const suffix = Date.now().toString(36);
         const { url: pdfS3Url } = await storagePut(`contracts/contrato-${contract.id}-${suffix}.pdf`, pdfBuffer, "application/pdf");

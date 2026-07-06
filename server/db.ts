@@ -99,46 +99,10 @@ export async function getSizeBreakdown(
   excludeRentalId?: number,
   excludeContractId?: number,
 ): Promise<{ total: number; alugada: number; manutencao: number; disponivel: number }> {
-  const db = await getDb();
-  if (!db) return { total: 0, alugada: 0, manutencao: 0, disponivel: 0 };
-
-  const [size] = await db
-    .select({ bikeId: bikeSizes.bikeId })
-    .from(bikeSizes)
-    .where(eq(bikeSizes.id, bikeSizeId));
-  if (!size) return { total: 0, alugada: 0, manutencao: 0, disponivel: 0 };
-  const [totalRow] = await db
-    .select({ value: count() })
-    .from(bikeUnits)
-    .where(and(eq(bikeUnits.bikeSizeId, bikeSizeId), notInArray(bikeUnits.status, ["perdido", "roubado"])));
-
-  // Alugueis ativos, pendentes e atrasados sobrepostos ao periodo
-  // (pending status also reserves stock — created manually on counter)
-  const rentalConds: Parameters<typeof and>[0][] = [
-    eq(rentals.bikeSizeId, bikeSizeId),
-    inArray(rentals.status, ["pending", "active", "overdue"]),
-    isNull(rentals.deletedAt),
-  ];
-  if (excludeRentalId) rentalConds.push(ne(rentals.id, excludeRentalId));
-  if (excludeContractId) rentalConds.push(or(isNull(rentals.contractId), ne(rentals.contractId, excludeContractId))!);
-  if (startDate && endDate) {
-    rentalConds.push(lte(rentals.startDate, endDate));
-    rentalConds.push(or(isNull(rentals.endDate), gte(rentals.endDate, startDate))!);
-  }
-  const rentedRows = await db
-    .select({ q: rentals.quantity })
-    .from(rentals)
-    .where(and(...rentalConds));
-  const alugada = rentedRows.reduce((s, r) => s + (r.q ?? 1), 0);
-
-  // BU-3C-BACK: contar unidades com status 'manutencao' para este tamanho
-  const [maintRow] = await db.select({ value: count() }).from(bikeUnits)
-    .where(and(eq(bikeUnits.bikeSizeId, bikeSizeId), eq(bikeUnits.status, "manutencao")));
-  const manutencao = maintRow?.value ?? 0;
-
-  const total = totalRow?.value ?? 0;
-  const disponivel = Math.max(0, total - alugada - manutencao);
-  return { total, alugada, manutencao, disponivel };
+  const m = await getSizeBreakdowns(
+    [bikeSizeId], startDate, endDate, excludeRentalId, excludeContractId
+  );
+  return m.get(bikeSizeId) ?? { total: 0, alugada: 0, manutencao: 0, disponivel: 0 };
 }
 
 export async function getSizeAvailability(
