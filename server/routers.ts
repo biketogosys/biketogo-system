@@ -2244,7 +2244,7 @@ const auditLogsRouter = router({
 });
 
 // ─── Contracts router ───────────────────────────────────────────────────────────────
-import { and, eq, isNull, inArray, notInArray, sql as drizzleSql } from "drizzle-orm";
+import { and, eq, isNull, isNotNull, inArray, notInArray, desc, sql as drizzleSql } from "drizzle-orm";
 import {
   contracts,
   contractAccessories,
@@ -2809,16 +2809,110 @@ const contractsRouter = router({
       await createAuditLog({ adminId: (ctx as any).adminUser?.id ?? null, acao: "encerrou_contrato", tabela: "contracts", registroId: input.id });
       return { success: true, hasPendencia };
     }),
-  // Soft delete do contrato
-  archive: adminAuthProcedure
+  // Soft delete do contrato (com cascata nos rentals e release de unidades)
+  delete: adminAuthProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      // 1. Buscar rentals vivos do contrato
+      const liveRentals = await db.select({ id: rentalsTable.id })
+        .from(rentalsTable)
+        .where(and(eq(rentalsTable.contractId, input.id), isNull(rentalsTable.deletedAt)));
+      // 2. Liberar unidades de cada rental
+      for (const r of liveRentals) {
+        await releaseBikeUnits(db, r.id);
+      }
+      // 3. Soft-delete dos rentals (preserva status para o restore)
+      if (liveRentals.length > 0) {
+        await db.update(rentalsTable)
+          .set({ deletedAt: new Date() })
+          .where(and(eq(rentalsTable.contractId, input.id), isNull(rentalsTable.deletedAt)));
+      }
+      // 4. Soft-delete do contrato
       await db.update(contracts)
         .set({ deletedAt: new Date() })
         .where(eq(contracts.id, input.id));
-      await createAuditLog({ adminId: (ctx as any).adminUser?.id ?? null, acao: "arquivou_contrato", tabela: "contracts", registroId: input.id });
+      // 5. Audit log
+      await createAuditLog({ adminId: (ctx as any).adminUser?.id ?? null, acao: "excluiu_contrato", tabela: "contracts", registroId: input.id });
+      return { success: true };
+    }),
+
+  // Lista contratos excluídos (deletedAt IS NOT NULL) — shape idêntico ao contracts.list
+  listDeleted: adminAuthProcedure
+    .input(z.object({
+      page: z.number().min(1).default(1),
+      limit: z.number().min(1).max(100).default(20),
+    }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return { items: [], total: 0, page: 1, totalPages: 1 };
+      const offset = (input.page - 1) * input.limit;
+      const where = isNotNull(contracts.deletedAt);
+      const [items, countResult] = await Promise.all([
+        db.select({
+          id: contracts.id,
+          clientId: contracts.clientId,
+          status: contracts.status,
+          valorTotal: contracts.valorTotal,
+          criadoEm: contracts.criadoEm,
+          encerradoEm: contracts.encerradoEm,
+          deletedAt: contracts.deletedAt,
+          clientName: clientsTable.name,
+        })
+          .from(contracts)
+          .leftJoin(clientsTable, eq(contracts.clientId, clientsTable.id))
+          .where(where)
+          .orderBy(desc(contracts.deletedAt))
+          .limit(input.limit)
+          .offset(offset),
+        db.select({ count: drizzleSql<number>`count(*)` })
+          .from(contracts)
+          .where(where),
+      ]);
+      const total = Number(countResult[0]?.count ?? 0);
+      const totalPages = Math.ceil(total / input.limit);
+      return { items, total, page: input.page, totalPages };
+    }),
+
+  // Restaura contrato excluído (e seus rentals) com re-atribuição best-effort de unidades
+  restore: adminAuthProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      // 1. Restaurar o contrato
+      await db.update(contracts)
+        .set({ deletedAt: null })
+        .where(eq(contracts.id, input.id));
+      // 2. Buscar rentals excluídos do contrato
+      const deletedRentals = await db.select({
+        id: rentalsTable.id,
+        bikeSizeId: rentalsTable.bikeSizeId,
+        quantity: rentalsTable.quantity,
+        startDate: rentalsTable.startDate,
+        endDate: rentalsTable.endDate,
+        status: rentalsTable.status,
+      })
+        .from(rentalsTable)
+        .where(and(eq(rentalsTable.contractId, input.id), isNotNull(rentalsTable.deletedAt)));
+      // 3. Restaurar rentals e re-atribuir unidades best-effort
+      for (const r of deletedRentals) {
+        await db.update(rentalsTable)
+          .set({ deletedAt: null })
+          .where(eq(rentalsTable.id, r.id));
+        // Re-atribuir unidades apenas para rentals que seguram estoque
+        const stockStatuses = ["pending", "active", "overdue"];
+        if (r.bikeSizeId && r.status && stockStatuses.includes(r.status)) {
+          try {
+            await assignBikeUnits(db, r.id, r.bikeSizeId, r.quantity ?? 1, r.startDate, r.endDate);
+          } catch {
+            // best-effort: nao bloquear o restore se nao houver unidades disponiveis
+          }
+        }
+      }
+      // 4. Audit log
+      await createAuditLog({ adminId: (ctx as any).adminUser?.id ?? null, acao: "restaurou_contrato", tabela: "contracts", registroId: input.id });
       return { success: true };
     }),
 
