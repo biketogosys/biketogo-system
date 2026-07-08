@@ -993,42 +993,6 @@ const rentalsRouter = router({
     .query(({ input }) => getRentalAccessories(input.rentalId)),
 
   stats: adminAuthProcedure.query(() => getRentalStats()),
-  listArchived: adminAuthProcedure
-    .input(z.object({
-      page: z.number().min(1).default(1),
-      limit: z.number().min(1).max(100).default(20),
-    }))
-    .query(async ({ input }) => {
-      const db = await getDb();
-      if (!db) return { items: [], total: 0, totalPages: 0 };
-      const { rentals: rentalsTable } = await import("../drizzle/schema");
-      const { isNotNull, desc: descOp, sql: sqlOp } = await import("drizzle-orm");
-      const offset = (input.page - 1) * input.limit;
-      const where = isNotNull(rentalsTable.deletedAt);
-      const [items, countResult] = await Promise.all([
-        db.select().from(rentalsTable).where(where).orderBy(descOp(rentalsTable.deletedAt)).limit(input.limit).offset(offset),
-        db.select({ count: sqlOp<number>`count(*)` }).from(rentalsTable).where(where),
-      ]);
-      const total = Number(countResult[0]?.count ?? 0);
-      return { items, total, totalPages: Math.ceil(total / input.limit) };
-    }),
-  restore: adminOnlyProcedure
-    .input(z.object({ id: z.number() }))
-    .mutation(async ({ ctx, input }) => {
-      const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
-      const { rentals: rentalsTable } = await import("../drizzle/schema");
-      const { eq: eqOp } = await import("drizzle-orm");
-      await db.update(rentalsTable).set({ deletedAt: null }).where(eqOp(rentalsTable.id, input.id));
-      await createAuditLog({ adminId: (ctx as any).adminUser?.id ?? null, acao: "restaurou_aluguel", tabela: "rentals", registroId: input.id });
-      const adminName = (ctx as any).adminUser?.name ?? (ctx as any).user?.name ?? "Admin";
-      await notifyOwner({
-        title: `Aluguel #${input.id} restaurado`,
-        content: `O registro do aluguel #${input.id} foi restaurado do arquivo por ${adminName}.`,
-      });
-      return { success: true };
-    }),
-
   // Confirm all pending rentals in a contract
   confirmAll: adminOnlyProcedure
     .input(z.object({ contractId: z.number() }))

@@ -239,7 +239,7 @@ export default function Dashboard() {
           subtitle={`${bikeStats.rented} bikes em uso`}
           icon={Bike}
           color="oklch(0.68 0.12 65)"
-          href="/alugueis"
+          href="/contratos"
         />
         <StatCard
           title="Bikes disponíveis"
@@ -524,9 +524,9 @@ export default function Dashboard() {
             Ações Rápidas
           </h2>
           <div className="space-y-2">
-            <Link href="/alugueis">
+            <Link href="/contratos">
               <button className="w-full text-left px-3 py-2.5 rounded-lg bg-secondary/50 hover:bg-secondary border border-border text-sm text-foreground transition-colors flex items-center gap-2">
-                <FileText className="w-4 h-4 text-primary" /> Novo aluguel
+                <FileText className="w-4 h-4 text-primary" /> Novo contrato
               </button>
             </Link>
             <Link href="/clientes">

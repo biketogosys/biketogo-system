@@ -91,7 +91,7 @@ export default function Home() {
           value={rentalStats.active}
           sub={`Receita do mês: R$ ${monthRevenue.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`}
           color="bg-green-500/10 text-green-400"
-          href="/alugueis"
+          href="/contratos"
         />
         <StatCard
           icon={DollarSign}
@@ -184,9 +184,9 @@ export default function Home() {
             <Wrench className="w-4 h-4 text-muted-foreground" /> Ações rápidas
           </h3>
           <div className="space-y-2">
-            <Link href="/alugueis">
+            <Link href="/contratos">
               <button className="w-full text-left px-3 py-2.5 rounded-lg bg-secondary/50 hover:bg-secondary border border-border text-sm text-foreground transition-colors flex items-center gap-2">
-                <FileText className="w-4 h-4 text-primary" /> Novo aluguel
+                <FileText className="w-4 h-4 text-primary" /> Novo contrato
               </button>
             </Link>
             <Link href="/clientes">
