@@ -45,7 +45,6 @@ const menuItems = [
   { icon: LayoutDashboard, label: "Dashboard", path: "/" },
   { icon: Users, label: "Clientes", path: "/clientes" },
   { icon: Bike, label: "Bicicletas", path: "/bicicletas" },
-  { icon: ClipboardList, label: "Aluguéis", path: "/alugueis" },
   { icon: Package, label: "Acessórios", path: "/acessorios" },
   { icon: DollarSign, label: "Financeiro", path: "/financeiro" },
   { icon: FileText, label: "Contratos", path: "/contratos" },

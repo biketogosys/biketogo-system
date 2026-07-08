@@ -1,7 +1,7 @@
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/NotFound";
-import { Route, Switch } from "wouter";
+import { Route, Switch, Redirect } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider, useTheme } from "./contexts/ThemeContext";
 import Login from "./pages/Login";
@@ -9,7 +9,6 @@ import Dashboard from "./pages/Dashboard";
 import Clients from "./pages/Clients";
 import ClientProfile from "./pages/ClientProfile";
 import Bikes from "./pages/Bikes";
-import Rentals from "./pages/Rentals";
 import Accessories from "./pages/Accessories";
 import Financial from "./pages/Financial";
 import UserManagement from "./pages/UserManagement";
@@ -51,7 +50,7 @@ function Router() {
       <Route path="/clientes" component={() => <ProtectedRoute component={Clients} />} />
       <Route path="/clientes/:id" component={() => <ProtectedRoute component={ClientProfile} />} />
       <Route path="/bicicletas" component={() => <ProtectedRoute component={Bikes} />} />
-      <Route path="/alugueis" component={() => <ProtectedRoute component={Rentals} />} />
+      <Route path="/alugueis">{() => <Redirect to="/contratos" />}</Route>
       <Route path="/acessorios" component={() => <ProtectedRoute component={Accessories} />} />
       <Route path="/financeiro" component={() => <ProtectedRoute component={Financial} />} />
       <Route path="/usuarios" component={() => <ProtectedRoute component={UserManagement} />} />

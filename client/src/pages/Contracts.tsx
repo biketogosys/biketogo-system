@@ -878,7 +878,7 @@ export default function Contracts() {
   const confirmDialog = useConfirm();
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [page, setPage] = useState(1);
-  const [view, setView] = useState<"ativos" | "arquivados">("ativos");
+  const [view, setView] = useState<"ativos" | "arquivados" | "excluidos">("ativos");
   const [newContractOpen, setNewContractOpen] = useState(false);
   const limit = 20;
 
@@ -893,15 +893,48 @@ export default function Contracts() {
     }
   }, []);
 
-  const { data, isLoading, refetch } = trpc.contracts.list.useQuery({
-    limit,
-    page,
-    view,
+  const utils = trpc.useUtils();
+
+  const { data, isLoading, refetch } = trpc.contracts.list.useQuery(
+    { limit, page, view: view as "ativos" | "arquivados" },
+    { enabled: view !== "excluidos" }
+  );
+
+  const { data: deletedData, isLoading: deletedLoading } = trpc.contracts.listDeleted.useQuery(
+    { page, limit },
+    { enabled: view === "excluidos" }
+  );
+
+  const deleteMutation = trpc.contracts.delete.useMutation({
+    onSuccess: () => {
+      toast.success("Contrato excluído");
+      utils.contracts.list.invalidate();
+      utils.contracts.listDeleted.invalidate();
+    },
+    onError: (err) => toast.error(friendlyError(err)),
   });
 
-  const items = data?.items ?? [];
-  const total = data?.total ?? 0;
-  const totalPages = data?.totalPages ?? 1;
+  const restoreMutation = trpc.contracts.restore.useMutation({
+    onSuccess: () => {
+      toast.success("Contrato restaurado");
+      utils.contracts.list.invalidate();
+      utils.contracts.listDeleted.invalidate();
+    },
+    onError: (err) => toast.error(friendlyError(err)),
+  });
+
+  const activeItems = data?.items ?? [];
+  const activeTotal = data?.total ?? 0;
+  const activeTotalPages = data?.totalPages ?? 1;
+
+  const deletedItems = deletedData?.items ?? [];
+  const deletedTotal = deletedData?.total ?? 0;
+  const deletedTotalPages = deletedData?.totalPages ?? 1;
+
+  const items = view === "excluidos" ? deletedItems : activeItems;
+  const total = view === "excluidos" ? deletedTotal : activeTotal;
+  const totalPages = view === "excluidos" ? deletedTotalPages : activeTotalPages;
+  const isLoadingCurrent = view === "excluidos" ? deletedLoading : isLoading;
 
   if (selectedId !== null) {
     return (
@@ -934,9 +967,9 @@ export default function Contracts() {
         </div>
       </div>
 
-      {/* Abas Ativos / Arquivados */}
+      {/* Abas Ativos / Arquivados / Excluídos */}
       <div className="flex gap-1 border-b border-border">
-        {(["ativos", "arquivados"] as const).map((v) => (
+        {(["ativos", "arquivados", "excluidos"] as const).map((v) => (
           <button
             key={v}
             onClick={() => { setView(v); setPage(1); }}
@@ -946,7 +979,7 @@ export default function Contracts() {
                 : "text-muted-foreground hover:text-foreground"
             }`}
           >
-            {v.charAt(0).toUpperCase() + v.slice(1)}
+            {v === "ativos" ? "Ativos" : v === "arquivados" ? "Arquivados" : "Excluídos"}
           </button>
         ))}
       </div>
@@ -961,12 +994,16 @@ export default function Contracts() {
               <TableHead>Status</TableHead>
               <TableHead>Valor Total</TableHead>
               <TableHead>Criado em</TableHead>
-              <TableHead>Encerrado em</TableHead>
-              <TableHead className="w-24"></TableHead>
+              {view === "excluidos" ? (
+                <TableHead>Excluído em</TableHead>
+              ) : (
+                <TableHead>Encerrado em</TableHead>
+              )}
+              <TableHead className="w-32"></TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {isLoading ? (
+            {isLoadingCurrent ? (
               <TableRow>
                 <TableCell colSpan={7} className="text-center py-12">
                   <Loader2 className="h-6 w-6 animate-spin mx-auto text-muted-foreground" />
@@ -977,15 +1014,68 @@ export default function Contracts() {
                 <TableCell colSpan={7} className="text-center py-16">
                   <div className="flex flex-col items-center gap-3 text-muted-foreground">
                     <FileText className="h-10 w-10 opacity-30" />
-                    <p className="text-sm">Nenhum contrato encontrado.</p>
-                    <p className="text-xs">
-                      Contratos são criados ao vincular múltiplos aluguéis a um cliente.
+                    <p className="text-sm">
+                      {view === "excluidos"
+                        ? "Nenhum contrato excluído."
+                        : "Nenhum contrato encontrado."}
                     </p>
+                    {view !== "excluidos" && (
+                      <p className="text-xs">
+                        Contratos são criados ao vincular múltiplos aluguéis a um cliente.
+                      </p>
+                    )}
                   </div>
                 </TableCell>
               </TableRow>
+            ) : view === "excluidos" ? (
+              // Aba Excluídos: lista rasa com botão Restaurar
+              deletedItems.map((c) => (
+                <TableRow key={c.id} className="hover:bg-muted/50 transition-colors">
+                  <TableCell className="font-mono text-muted-foreground text-xs">#{c.id}</TableCell>
+                  <TableCell className="font-medium">
+                    {c.clientName ?? `Cliente #${c.clientId}`}
+                  </TableCell>
+                  <TableCell>
+                    <ContractStatusBadge status={c.status as ContractStatus} />
+                  </TableCell>
+                  <TableCell>
+                    {c.valorTotal ? `R$ ${Number(c.valorTotal).toFixed(2)}` : "—"}
+                  </TableCell>
+                  <TableCell className="text-sm text-muted-foreground">
+                    {c.criadoEm ? new Date(c.criadoEm).toLocaleDateString("pt-BR") : "—"}
+                  </TableCell>
+                  <TableCell className="text-sm text-muted-foreground">
+                    {(c as any).deletedAt
+                      ? new Date((c as any).deletedAt).toLocaleString("pt-BR", {
+                          day: "2-digit", month: "2-digit", year: "numeric",
+                          hour: "2-digit", minute: "2-digit",
+                        })
+                      : "—"}
+                  </TableCell>
+                  <TableCell>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={restoreMutation.isPending}
+                      onClick={async () => {
+                          const ok = await confirmDialog({
+                            title: `Restaurar contrato de ${c.clientName ?? `#${c.clientId}`}?`,
+                            description:
+                              "O contrato e seus aluguéis voltam para as listas ativas; as unidades serão re-atribuídas quando disponíveis.",
+                            confirmText: "Restaurar",
+                            destructive: false,
+                          });
+                          if (ok) restoreMutation.mutate({ id: c.id });
+                        }}
+                    >
+                      <RefreshCw className="h-3.5 w-3.5 mr-1" /> Restaurar
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))
             ) : (
-              items.map((c) => (
+              // Abas Ativos / Arquivados: lista com botão Ver detalhes + Excluir
+              activeItems.map((c) => (
                 <TableRow
                   key={c.id}
                   className="cursor-pointer hover:bg-muted/50 transition-colors"
@@ -1008,16 +1098,33 @@ export default function Contracts() {
                     {c.encerradoEm ? new Date(c.encerradoEm).toLocaleDateString("pt-BR") : "—"}
                   </TableCell>
                   <TableCell>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setSelectedId(c.id);
-                      }}
-                    >
-                      Ver detalhes
-                    </Button>
+                    <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setSelectedId(c.id)}
+                      >
+                        Ver detalhes
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10"
+                        disabled={deleteMutation.isPending}
+                        onClick={async () => {
+                          const ok = await confirmDialog({
+                            title: `Excluir contrato de ${c.clientName ?? `#${c.clientId}`}?`,
+                            description:
+                              "Os aluguéis serão removidos das listas e as bicicletas liberadas para outras reservas. Dá para restaurar depois na aba Excluídos.",
+                            confirmText: "Excluir",
+                            destructive: true,
+                          });
+                          if (ok) deleteMutation.mutate({ id: c.id });
+                        }}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
                   </TableCell>
                 </TableRow>
               ))

@@ -325,7 +325,6 @@ export function NewContractModal({
       toast.success(`Contrato #${res.id} atualizado!`);
       utils.contracts.getById.invalidate({ id: res.id });
       utils.contracts.list.invalidate();
-      utils.rentals.listGroupedByContract.invalidate();
       handleReset();
       onClose();
     },
