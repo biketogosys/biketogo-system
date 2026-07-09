@@ -3,6 +3,7 @@ import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import { Loader2, Bike, Mail, Lock, Eye, EyeOff } from "lucide-react";
 import { toast } from "sonner";
+import { friendlyError } from "@/lib/utils";
 
 const LOGO_URL = "https://d2xsxph8kpxj0f.cloudfront.net/310419663031602743/9oQjN6PX9fNMedgfErUfQE/biketogo-logo_71a6645b.png";
 
@@ -23,7 +24,7 @@ export default function Login() {
       meQuery.refetch();
     },
     onError: (err) => {
-      toast.error(err.message || "E-mail ou senha incorretos.");
+      toast.error(friendlyError(err, "E-mail ou senha incorretos."));
     },
   });
 
@@ -53,8 +54,8 @@ export default function Login() {
     <div className="min-h-screen flex items-center justify-center bg-background relative overflow-hidden">
       {/* Subtle background pattern */}
       <div className="absolute inset-0 opacity-[0.03]" style={{
-        backgroundImage: `radial-gradient(circle at 25% 25%, oklch(0.68 0.12 65) 1px, transparent 1px),
-                          radial-gradient(circle at 75% 75%, oklch(0.68 0.12 65) 1px, transparent 1px)`,
+        backgroundImage: `radial-gradient(circle at 25% 25%, var(--primary) 1px, transparent 1px),
+                          radial-gradient(circle at 75% 75%, var(--primary) 1px, transparent 1px)`,
         backgroundSize: "60px 60px",
       }} />
 
@@ -132,11 +133,7 @@ export default function Login() {
             <button
               type="submit"
               disabled={loginMutation.isPending}
-              className="w-full py-2.5 rounded-lg font-semibold text-sm transition-all disabled:opacity-60 flex items-center justify-center gap-2"
-              style={{
-                background: "oklch(0.68 0.12 65)",
-                color: "oklch(0.10 0.005 240)",
-              }}
+              className="w-full py-2.5 rounded-lg font-semibold text-sm transition-all disabled:opacity-60 flex items-center justify-center gap-2 bg-primary text-primary-foreground hover:bg-primary/90"
             >
               {loginMutation.isPending ? (
                 <>

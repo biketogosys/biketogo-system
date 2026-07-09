@@ -651,8 +651,7 @@ function NewClientModal({ open, onClose, onSuccess }: NewClientModalProps) {
               <Button type="button" variant="outline" onClick={() => { onClose(); resetForm(); }} className="flex-1">
                 Cancelar
               </Button>
-              <Button type="submit" disabled={!canSave} className="flex-1"
-                style={canSave ? { background: "oklch(0.68 0.12 65)", color: "oklch(0.10 0.005 240)" } : {}}>
+              <Button type="submit" disabled={!canSave} className="flex-1">
                 {createMutation.isPending || docUploading ? (
                   <><Loader2 className="w-4 h-4 animate-spin mr-2" />Salvando...</>
                 ) : (
@@ -751,7 +750,6 @@ export default function Clients() {
         <Button
           onClick={() => setShowNew(true)}
           className="gap-2 h-9 text-xs md:text-sm"
-          style={{ background: "oklch(0.68 0.12 65)", color: "oklch(0.10 0.005 240)" }}
         >
           <Plus className="w-4 h-4" />
           <span className="hidden sm:inline">Novo cliente</span>

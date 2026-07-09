@@ -76,7 +76,6 @@ function CategoryManager({
               onClick={() => { if (newName.trim()) createMutation.mutate({ name: newName.trim() }); }}
               disabled={createMutation.isPending || !newName.trim()}
               size="sm"
-              style={{ background: "oklch(0.68 0.12 65)", color: "oklch(0.10 0.005 240)" }}
             >
               <Plus className="w-4 h-4" />
             </Button>
@@ -219,7 +218,7 @@ function TransactionFormDialog({
           </div>
           <div className="flex gap-3 pt-2">
             <Button type="button" variant="outline" onClick={onClose} className="flex-1">Cancelar</Button>
-            <Button type="submit" disabled={isPending} className="flex-1" style={{ background: "oklch(0.68 0.12 65)", color: "oklch(0.10 0.005 240)" }}>
+            <Button type="submit" disabled={isPending} className="flex-1">
               {isPending ? "Salvando..." : item ? "Salvar" : "Registrar"}
             </Button>
           </div>
@@ -417,7 +416,7 @@ function TransactionListTab({ type }: { type: "expense" | "revenue" }) {
           <Button variant="outline" onClick={() => setShowCategories(true)} className="gap-1 text-xs">
             <Tag className="w-3.5 h-3.5" /> Categorias
           </Button>
-          <Button onClick={() => { setEditItem(null); setShowForm(true); }} className="gap-2" style={{ background: "oklch(0.68 0.12 65)", color: "oklch(0.10 0.005 240)" }}>
+          <Button onClick={() => { setEditItem(null); setShowForm(true); }} className="gap-2">
             <Plus className="w-4 h-4" /> {isExpense ? "Nova despesa" : "Nova receita"}
           </Button>
         </div>

@@ -758,7 +758,6 @@ function EditClientModal({ open, onClose, client, clientId, onSuccess }: EditCli
                 type="submit"
                 disabled={updateMutation.isPending || docUploading}
                 className="flex-1"
-                style={!(updateMutation.isPending || docUploading) ? { background: "oklch(0.68 0.12 65)", color: "oklch(0.10 0.005 240)" } : {}}
               >
                 {(updateMutation.isPending || docUploading) ? (
                   <><Loader2 className="w-4 h-4 animate-spin mr-2" />Salvando...</>
@@ -930,7 +929,6 @@ export default function ClientProfile() {
                 onClick={() => validateMutation.mutate({ id: clientId })}
                 disabled={validateMutation.isPending}
                 className="w-full mb-3 text-sm"
-                style={{ background: "oklch(0.68 0.12 65)", color: "oklch(0.10 0.005 240)" }}
               >
                 <CheckCircle className="w-4 h-4 mr-2" />
                 {validateMutation.isPending ? "Validando..." : "Validar cadastro"}
@@ -983,8 +981,7 @@ export default function ClientProfile() {
               <Button
                 variant="outline"
                 onClick={() => setShowNewRental(true)}
-                className="w-full mb-3 text-sm"
-                style={{ borderColor: "oklch(0.68 0.12 65)", color: "oklch(0.68 0.12 65)" }}
+                className="w-full mb-3 text-sm border-primary text-primary"
               >
                 <PlusCircle className="w-4 h-4 mr-2" />
                 Criar aluguel

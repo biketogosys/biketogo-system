@@ -238,7 +238,7 @@ export default function Dashboard() {
           value={rentalStats.active}
           subtitle={`${bikeStats.rented} bikes em uso`}
           icon={Bike}
-          color="oklch(0.68 0.12 65)"
+          color="var(--primary)"
           href="/contratos"
         />
         <StatCard
@@ -258,7 +258,7 @@ export default function Dashboard() {
           value={fmt(fin.receitaAlugueis)}
           subtitle={`${periodLabel} — pagos`}
           icon={DollarSign}
-          color="oklch(0.68 0.12 65)"
+          color="var(--primary)"
           href="/financeiro"
         />
         <StatCard
@@ -337,7 +337,7 @@ export default function Dashboard() {
               <Bar
                 dataKey="receitaAlugueis"
                 name="Rec. Aluguéis"
-                fill="oklch(0.68 0.12 65)"
+                fill="var(--primary)"
                 radius={[3, 3, 0, 0]}
               />
               <Bar

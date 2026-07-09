@@ -18,8 +18,7 @@ import {
   TabsContent,
 } from "@/components/ui/tabs";
 
-const GOLD = "oklch(0.68 0.12 65)";
-const GOLD_FG = "oklch(0.10 0.005 240)";
+
 
 
 
@@ -30,7 +29,6 @@ function SectionSaveBtn({ onClick, saving }: { onClick: () => void; saving: bool
       size="sm"
       onClick={onClick}
       disabled={saving}
-      style={{ background: GOLD, color: GOLD_FG }}
       className="gap-1.5"
     >
       {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}

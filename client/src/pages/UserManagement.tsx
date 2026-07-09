@@ -165,7 +165,6 @@ function UserFormDialog({
               type="submit"
               disabled={isPending}
               className="flex-1"
-              style={{ background: "oklch(0.68 0.12 65)", color: "oklch(0.10 0.005 240)" }}
             >
               {isPending ? "Salvando..." : user ? "Salvar" : "Criar"}
             </Button>
@@ -204,7 +203,6 @@ export default function UserManagement() {
         <Button
           onClick={() => { setEditUser(null); setShowForm(true); }}
           className="gap-2"
-          style={{ background: "oklch(0.68 0.12 65)", color: "oklch(0.10 0.005 240)" }}
         >
           <Plus className="w-4 h-4" />Novo usuário
         </Button>
