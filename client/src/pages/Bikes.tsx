@@ -371,8 +371,8 @@ function BikeSizesTab({ bikeId }: { bikeId: number }) {
                             </span>
                           )}
                           {(s as any).alugada > 0 && (
-                            <span className="text-[11px] flex items-center gap-0.5" style={{ color: '#C8920A' }}>
-                              <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ background: '#C8920A' }} />
+                            <span className="text-[11px] flex items-center gap-0.5" style={{ color: 'var(--primary)' }}>
+                              <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ background: 'var(--primary)' }} />
                               {(s as any).alugada} alugada
                             </span>
                           )}

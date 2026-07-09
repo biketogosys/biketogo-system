@@ -406,7 +406,7 @@ function AccessoryUnitsPanel({ accessoryId, onClose }: { accessoryId: number; on
                               <div className="flex gap-2">
                                 <Button
                                   size="sm"
-                                  className="flex-1 bg-[#C8920A] hover:bg-[#A87608] text-white"
+                                  className="flex-1 bg-primary hover:bg-primary/90 text-white"
                                   onClick={() => updateMut.mutate({
                                     unitId: unit.id,
                                     status: editStatus,
@@ -463,7 +463,7 @@ function AccessoryUnitsPanel({ accessoryId, onClose }: { accessoryId: number; on
               <div className="flex gap-2">
                 <Button
                   size="sm"
-                  className="flex-1 bg-[#C8920A] hover:bg-[#A87608] text-white"
+                  className="flex-1 bg-primary hover:bg-primary/90 text-white"
                   onClick={() => {
                     addUnitsMut.mutate(
                       { accessoryId, variante: newVarianteName.trim() || undefined, quantity: newVarianteQty },
@@ -678,7 +678,7 @@ export default function Accessories() {
               Gerencie capacetes, cadeados e demais equipamentos
             </p>
           </div>
-          <Button onClick={openCreate} className="bg-[#C8920A] hover:bg-[#A87608] text-white gap-1.5 h-9 text-xs md:text-sm">
+          <Button onClick={openCreate} className="bg-primary hover:bg-primary/90 text-white gap-1.5 h-9 text-xs md:text-sm">
             <Plus className="w-4 h-4" />
             <span className="hidden sm:inline">Novo Acessório</span>
             <span className="sm:hidden">Novo</span>
@@ -696,7 +696,7 @@ export default function Accessories() {
               <>
                 <span className="hidden sm:inline text-border">|</span>
                 {(["all", ...uniqueCategories] as string[]).map((cat) => (
-                  <button key={cat} onClick={() => setCategoryFilter(cat)} className={`px-2.5 py-1 rounded text-xs font-medium transition-all border ${categoryFilter === cat ? "bg-[#C8920A]/15 border-[#C8920A]/40 text-[#C8920A]" : "bg-card border-border text-muted-foreground hover:text-foreground"}`}>
+                  <button key={cat} onClick={() => setCategoryFilter(cat)} className={`px-2.5 py-1 rounded text-xs font-medium transition-all border ${categoryFilter === cat ? "bg-primary/15 border-primary/40 text-primary" : "bg-card border-border text-muted-foreground hover:text-foreground"}`}>
                     {cat === "all" ? "Todas" : cat}
                   </button>
                 ))}
@@ -753,7 +753,7 @@ export default function Accessories() {
                           </div>
                         </td>
                         <td className="px-3 py-2.5">
-                          {item.category && <span className="px-1.5 py-0.5 bg-[#C8920A]/10 text-[#C8920A] rounded text-[10px] uppercase font-medium">{item.category}</span>}
+                          {item.category && <span className="px-1.5 py-0.5 bg-primary/10 text-primary rounded text-[10px] uppercase font-medium">{item.category}</span>}
                         </td>
                         <td className="px-3 py-2.5">
                           {showVariantes ? (
@@ -810,8 +810,8 @@ export default function Accessories() {
                 return (
                   <div key={item.id} className="bg-card border border-border rounded-lg p-3 active:bg-accent/40 transition-colors">
                     <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-md bg-[#C8920A]/10 flex items-center justify-center flex-shrink-0 border border-[#C8920A]/20">
-                        <Package className="w-5 h-5 text-[#C8920A]" />
+                      <div className="w-10 h-10 rounded-md bg-primary/10 flex items-center justify-center flex-shrink-0 border border-primary/20">
+                        <Package className="w-5 h-5 text-primary" />
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-medium text-foreground truncate">{item.name}</p>
@@ -962,7 +962,7 @@ export default function Accessories() {
             <Button
               onClick={handleSubmit}
               disabled={createMutation.isPending || updateMutation.isPending}
-              className="bg-[#C8920A] hover:bg-[#A87608] text-white"
+              className="bg-primary hover:bg-primary/90 text-white"
             >
               {editingId ? "Salvar Alterações" : "Cadastrar"}
             </Button>

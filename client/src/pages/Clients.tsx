@@ -480,8 +480,8 @@ function NewClientModal({ open, onClose, onSuccess }: NewClientModalProps) {
                     onChange={(e) => { const f = e.target.files?.[0]; if (f) handleDocPhoto("front", f); e.target.value = ""; }} />
                   {form.docFrontBase64 ? (
                     form.docFrontIsPdf ? (
-                      <div className="flex items-center gap-3 p-3 rounded-xl border border-[#C8920A]/40 bg-[#C8920A]/5">
-                        <FileText className="w-8 h-8 text-[#C8920A] flex-shrink-0" />
+                      <div className="flex items-center gap-3 p-3 rounded-xl border border-primary/40 bg-primary/5">
+                        <FileText className="w-8 h-8 text-primary flex-shrink-0" />
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-medium text-foreground truncate">PDF carregado</p>
                         </div>
@@ -493,7 +493,7 @@ function NewClientModal({ open, onClose, onSuccess }: NewClientModalProps) {
                       </div>
                     ) : (
                       <div className="relative">
-                        <img src={form.docFrontBase64} alt="Frente" className="w-full h-36 object-cover rounded-xl border border-[#C8920A]/30" />
+                        <img src={form.docFrontBase64} alt="Frente" className="w-full h-36 object-cover rounded-xl border border-primary/30" />
                         <button type="button"
                           onClick={() => setForm((f) => ({ ...f, docFrontBase64: null, showVerso: false, docBackBase64: null }))}
                           className="absolute top-2 right-2 w-7 h-7 rounded-full bg-black/60 flex items-center justify-center text-white hover:bg-black/80 transition-all">
@@ -503,14 +503,14 @@ function NewClientModal({ open, onClose, onSuccess }: NewClientModalProps) {
                     )
                   ) : (
                     <div
-                      className="border-2 border-dashed border-border rounded-xl p-6 flex flex-col items-center gap-3 cursor-pointer hover:border-[#C8920A]/50 hover:bg-[#C8920A]/5 transition-all"
+                      className="border-2 border-dashed border-border rounded-xl p-6 flex flex-col items-center gap-3 cursor-pointer hover:border-primary/50 hover:bg-primary/5 transition-all"
                       onClick={() => frontRef.current?.click()}
                       onDragOver={(e) => e.preventDefault()}
                       onDrop={(e) => { e.preventDefault(); const f = e.dataTransfer.files?.[0]; if (f) handleDocPhoto("front", f); }}
                     >
                       <div className="flex gap-3">
-                        <FileText className="w-7 h-7 text-[#C8920A]/60" />
-                        <ImageIcon className="w-7 h-7 text-[#C8920A]/60" />
+                        <FileText className="w-7 h-7 text-primary/60" />
+                        <ImageIcon className="w-7 h-7 text-primary/60" />
                       </div>
                       <p className="text-sm font-medium text-foreground">Arraste aqui ou clique para selecionar</p>
                       <p className="text-xs text-muted-foreground">PDF ou imagem - ate 10 MB</p>
@@ -519,7 +519,7 @@ function NewClientModal({ open, onClose, onSuccess }: NewClientModalProps) {
                 </div>
                 {form.docFrontBase64 && !form.docFrontIsPdf && !form.showVerso && (
                   <button type="button" onClick={() => set("showVerso", true)}
-                    className="text-xs text-[#C8920A] underline underline-offset-2 hover:text-[#d9a020] transition-colors">
+                    className="text-xs text-primary underline underline-offset-2 hover:text-primary transition-colors">
                     + Adicionar verso (opcional)
                   </button>
                 )}
@@ -530,7 +530,7 @@ function NewClientModal({ open, onClose, onSuccess }: NewClientModalProps) {
                       onChange={(e) => { const f = e.target.files?.[0]; if (f) handleDocPhoto("back", f); e.target.value = ""; }} />
                     {form.docBackBase64 ? (
                       <div className="relative">
-                        <img src={form.docBackBase64} alt="Verso" className="w-full h-36 object-cover rounded-xl border border-[#C8920A]/30" />
+                        <img src={form.docBackBase64} alt="Verso" className="w-full h-36 object-cover rounded-xl border border-primary/30" />
                         <button type="button" onClick={() => set("docBackBase64", null)}
                           className="absolute top-2 right-2 w-7 h-7 rounded-full bg-black/60 flex items-center justify-center text-white hover:bg-black/80 transition-all">
                           <X className="w-3.5 h-3.5" />
@@ -538,12 +538,12 @@ function NewClientModal({ open, onClose, onSuccess }: NewClientModalProps) {
                       </div>
                     ) : (
                       <div
-                        className="border-2 border-dashed border-border rounded-xl p-4 flex flex-col items-center gap-2 cursor-pointer hover:border-[#C8920A]/50 hover:bg-[#C8920A]/5 transition-all"
+                        className="border-2 border-dashed border-border rounded-xl p-4 flex flex-col items-center gap-2 cursor-pointer hover:border-primary/50 hover:bg-primary/5 transition-all"
                         onClick={() => backRef.current?.click()}
                         onDragOver={(e) => e.preventDefault()}
                         onDrop={(e) => { e.preventDefault(); const f = e.dataTransfer.files?.[0]; if (f) handleDocPhoto("back", f); }}
                       >
-                        <Upload className="w-6 h-6 text-[#C8920A]/60" />
+                        <Upload className="w-6 h-6 text-primary/60" />
                         <p className="text-xs text-muted-foreground">Clique ou arraste a foto aqui</p>
                       </div>
                     )}
@@ -560,9 +560,9 @@ function NewClientModal({ open, onClose, onSuccess }: NewClientModalProps) {
                       { Icon: Download, text: "Toque em Exportar / Baixar PDF e salve o arquivo" },
                     ].map((item, i) => (
                       <li key={i} className="flex gap-3 text-xs text-muted-foreground leading-relaxed">
-                        <span className="font-bold text-[#C8920A] min-w-fit">{i + 1}.</span>
+                        <span className="font-bold text-primary min-w-fit">{i + 1}.</span>
                         <div className="flex gap-2 items-start">
-                          <item.Icon className="w-4 h-4 text-[#C8920A] mt-0.5 flex-shrink-0" />
+                          <item.Icon className="w-4 h-4 text-primary mt-0.5 flex-shrink-0" />
                           <span>{item.text}</span>
                         </div>
                       </li>
