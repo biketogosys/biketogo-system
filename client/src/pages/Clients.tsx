@@ -1,5 +1,5 @@
-import { useState, useRef, useCallback } from "react";
-import { RotateCcw, Archive, Smartphone, Download, HelpCircle } from "lucide-react";
+import { useState, useRef, useCallback, useMemo } from "react";
+import { RotateCcw, Archive, Smartphone, Download, HelpCircle, RefreshCw } from "lucide-react";
 import { Link } from "wouter";
 import {
   Search, Plus, Loader2, User, MapPin, Calendar, ChevronRight,
@@ -23,6 +23,9 @@ import { trpc } from "@/lib/trpc";
 import { Eye, EyeOff } from "lucide-react";
 import { useConfirm } from "@/components/ConfirmDialog";
 import { friendlyError } from "@/lib/utils";
+import { SegmentedTabs } from "@/components/ui/segmented-tabs";
+import { DataTable } from "@/components/ui/data-table";
+import { type ColumnDef } from "@tanstack/react-table";
 
 // ─── CPF Cell (LGPD — LOTE-3) ─────────────────────────────────────────────────────────────────────────────
 function CpfCell({ cpf, className }: { cpf: string; className?: string }) {
@@ -519,7 +522,7 @@ function NewClientModal({ open, onClose, onSuccess }: NewClientModalProps) {
                 </div>
                 {form.docFrontBase64 && !form.docFrontIsPdf && !form.showVerso && (
                   <button type="button" onClick={() => set("showVerso", true)}
-                    className="text-xs text-primary underline underline-offset-2 hover:text-primary transition-colors">
+                    className="text-xs text-primary underline underline-offset-2 hover:text-primary/80 transition-colors">
                     + Adicionar verso (opcional)
                   </button>
                 )}
@@ -673,40 +676,41 @@ export default function Clients() {
   const [status, setStatus] = useState<Status>(undefined);
   const [showNew, setShowNew] = useState(false);
   const [page, setPage] = useState(1);
-  const [viewMode, setViewMode] = useState<"active" | "archived">("active");
   const [archivedPage, setArchivedPage] = useState(1);
+  const [view, setView] = useState<"ativos" | "arquivados">("ativos");
   const utils = trpc.useUtils();
+  const limit = 20;
 
   const { data: settingsData } = trpc.settings.getAll.useQuery();
-  const retentionDays = (() => {
+  const retentionDays = useMemo(() => {
     if (!settingsData) return 5;
     const map: Record<string, string> = {};
     (settingsData as any[]).forEach((s: any) => { map[s.key] = s.value; });
     return Math.max(3, Math.min(30, parseInt(map["archive_retention_days"] || "5") || 5));
-  })();
+  }, [settingsData]);
 
-  function calcRetentionBadge(deletedAt: string | Date | null | undefined): { label: string; cls: string } | null {
+  const calcRetentionBadge = useCallback((deletedAt: string | Date | null | undefined): { label: string; cls: string } | null => {
     if (!deletedAt) return null;
     const archived = new Date(deletedAt);
     const now = new Date();
     const daysSince = Math.floor((now.getTime() - archived.getTime()) / (1000 * 60 * 60 * 24));
     const daysLeft = retentionDays - daysSince;
-    if (daysLeft < 0) return { label: "Expirado", cls: "bg-red-900/40 text-red-300 border-red-800" };
-    if (daysLeft <= 2) return { label: daysLeft === 0 ? "Expira hoje" : "Expira amanhã", cls: "bg-red-500/20 text-red-400 border-red-500/40" };
-    return { label: `${daysLeft} dias restantes`, cls: "bg-amber-500/15 text-amber-400 border-amber-500/30" };
-  }
+    if (daysLeft < 0) return { label: "Expirado", cls: "bg-destructive/20 text-destructive border-destructive/40" };
+    if (daysLeft <= 2) return { label: daysLeft === 0 ? "Expira hoje" : "Expira amanhã", cls: "bg-destructive/10 text-destructive border-destructive/30" };
+    return { label: `${daysLeft} dias restantes`, cls: "bg-primary/10 text-primary border-primary/30" };
+  }, [retentionDays]);
 
   const { data, isLoading } = trpc.clients.list.useQuery({
     search: search || undefined,
     status,
     page,
-    limit: 20,
-  }, { enabled: viewMode === "active" });
+    limit,
+  }, { enabled: view === "ativos" });
 
   const { data: archivedData, isLoading: archivedLoading } = trpc.clients.listArchived.useQuery({
     page: archivedPage,
-    limit: 20,
-  }, { enabled: viewMode === "archived" });
+    limit,
+  }, { enabled: view === "arquivados" });
 
   const deleteMutation = trpc.clients.delete.useMutation({
     onSuccess: () => { toast.success("Cliente arquivado."); utils.clients.list.invalidate(); },
@@ -724,301 +728,239 @@ export default function Clients() {
 
   const clients = data?.items ?? [];
   const total = data?.total ?? 0;
+  const totalPages = data?.totalPages ?? 1;
   const archivedClients = archivedData?.items ?? [];
   const archivedTotal = archivedData?.total ?? 0;
+  const archivedTotalPages = archivedData?.totalPages ?? 1;
 
-  const statusFilters: { label: string; value: Status; cls: string }[] = [
-    { label: "Todos", value: undefined, cls: "" },
-    { label: "Lead", value: "lead", cls: "badge-lead" },
-    { label: "Verificado", value: "verified", cls: "badge-verified" },
-    { label: "Bloqueado", value: "blocked", cls: "badge-blocked" },
-    { label: "Recusado", value: "recusado" as Status, cls: "badge-blocked" },
-  ];
+  // ─── Column definitions ──────────────────────────────────────────────────────
+  type ClientRow = (typeof clients)[number];
+  type ArchivedRow = (typeof archivedClients)[number];
+
+  const activeColumns = useMemo<ColumnDef<ClientRow, unknown>[]>(() => [
+    {
+      id: "cliente",
+      header: "Cliente",
+      accessorFn: (r) => r.name,
+      cell: ({ row }) => {
+        const c = row.original;
+        return (
+          <div className="flex items-center gap-2.5">
+            <div className="w-7 h-7 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center flex-shrink-0">
+              <span className="text-[10px] font-semibold text-primary">{c.name.charAt(0).toUpperCase()}</span>
+            </div>
+            <div className="min-w-0">
+              <p className="text-[13px] font-medium text-foreground truncate">{c.name}</p>
+              {c.cpf && <CpfCell cpf={c.cpf} className="text-[11px] text-muted-foreground" />}
+            </div>
+          </div>
+        );
+      },
+    },
+    {
+      id: "localidade",
+      header: "Localidade",
+      accessorFn: (r) => [r.city, r.state].filter(Boolean).join("/") || "—",
+      cell: ({ getValue }) => (
+        <span className="text-[12px] text-muted-foreground">{getValue() as string}</span>
+      ),
+    },
+    {
+      id: "status",
+      header: "Status",
+      accessorKey: "status",
+      enableSorting: false,
+      cell: ({ row }) => <StatusBadge status={row.original.status} />,
+    },
+    {
+      id: "atualizacao",
+      header: "Atualização",
+      accessorKey: "updatedAt",
+      cell: ({ row }) => (
+        <span className="text-[12px] text-muted-foreground">
+          {new Date(row.original.updatedAt).toLocaleDateString("pt-BR")}
+        </span>
+      ),
+    },
+    {
+      id: "acoes",
+      header: "",
+      enableSorting: false,
+      enableHiding: false,
+      cell: ({ row }) => {
+        const c = row.original;
+        return (
+          <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+            <Link href={`/clientes/${c.id}`}>
+              <Button variant="ghost" size="sm" className="h-7 text-xs">Ver</Button>
+            </Link>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 text-destructive hover:text-destructive hover:bg-destructive/10"
+              disabled={deleteMutation.isPending}
+              onClick={async () => {
+                const ok = await confirmDialog({
+                  title: `Arquivar ${c.name}?`,
+                  description: "O cliente será movido para a lista de arquivados.",
+                  confirmText: "Arquivar",
+                  destructive: true,
+                });
+                if (ok) deleteMutation.mutate({ id: c.id });
+              }}
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+            </Button>
+          </div>
+        );
+      },
+    },
+  ], [deleteMutation.isPending, confirmDialog]);
+
+  const archivedColumns = useMemo<ColumnDef<ArchivedRow, unknown>[]>(() => [
+    {
+      id: "cliente",
+      header: "Cliente",
+      accessorFn: (r) => r.name,
+      cell: ({ row }) => {
+        const c = row.original;
+        return (
+          <div className="flex items-center gap-2.5">
+            <div className="w-7 h-7 rounded-full bg-secondary border border-border flex items-center justify-center flex-shrink-0">
+              <span className="text-[10px] font-semibold text-muted-foreground">{c.name.charAt(0).toUpperCase()}</span>
+            </div>
+            <div className="min-w-0">
+              <p className="text-[13px] font-medium text-foreground truncate">{c.name}</p>
+              {c.cpf && <CpfCell cpf={c.cpf} className="text-[11px] text-muted-foreground" />}
+            </div>
+          </div>
+        );
+      },
+    },
+    {
+      id: "arquivadoEm",
+      header: "Arquivado em",
+      accessorKey: "deletedAt",
+      cell: ({ row }) => {
+        const c = row.original;
+        const badge = calcRetentionBadge(c.deletedAt);
+        return (
+          <div className="flex flex-col gap-1">
+            <span className="text-xs text-muted-foreground">
+              {c.deletedAt ? new Date(c.deletedAt).toLocaleDateString("pt-BR") : "—"}
+            </span>
+            {badge && (
+              <span className={`inline-flex px-1.5 py-0.5 rounded text-[10px] font-medium border ${badge.cls}`}>
+                {badge.label}
+              </span>
+            )}
+          </div>
+        );
+      },
+    },
+    {
+      id: "acoes",
+      header: "",
+      enableSorting: false,
+      enableHiding: false,
+      cell: ({ row }) => (
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-7 text-xs gap-1"
+          onClick={() => restoreMutation.mutate({ id: row.original.id })}
+          disabled={restoreMutation.isPending}
+        >
+          <RotateCcw className="w-3 h-3" /> Restaurar
+        </Button>
+      ),
+    },
+  ], [restoreMutation.isPending, calcRetentionBadge]);
+
+  // ─── Tab options ─────────────────────────────────────────────────────────────
+  const tabOptions = useMemo(() => [
+    { value: "ativos", label: "Ativos", count: view === "ativos" ? total : undefined },
+    { value: "arquivados", label: "Arquivados", count: view === "arquivados" ? archivedTotal : undefined },
+  ], [view, total, archivedTotal]);
+
+  const isLoadingCurrent = view === "arquivados" ? archivedLoading : isLoading;
+  const currentData = view === "arquivados" ? archivedClients : clients;
+  const currentTotalPages = view === "arquivados" ? archivedTotalPages : totalPages;
+  const currentPage = view === "arquivados" ? archivedPage : page;
+  const setCurrentPage = view === "arquivados" ? setArchivedPage : setPage;
 
   return (
-    <div className="max-w-6xl mx-auto">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-4">
+    <div className="p-6 space-y-6">
+      {/* Page header */}
+      <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl md:text-2xl font-bold text-foreground" style={{ fontFamily: "'Montserrat', sans-serif" }}>
+          <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
+            <User className="h-6 w-6 text-primary" />
             Clientes
           </h1>
-          <p className="text-xs md:text-sm text-muted-foreground mt-0.5">
+          <p className="text-sm text-muted-foreground mt-1">
             {total} cliente{total !== 1 ? "s" : ""} cadastrado{total !== 1 ? "s" : ""}
           </p>
         </div>
-        <Button
-          onClick={() => setShowNew(true)}
-          className="gap-2 h-9 text-xs md:text-sm"
-        >
-          <Plus className="w-4 h-4" />
-          <span className="hidden sm:inline">Novo cliente</span>
-          <span className="sm:hidden">Novo</span>
+        <Button size="sm" onClick={() => setShowNew(true)}>
+          <Plus className="h-4 w-4 mr-1" /> Novo Cliente
         </Button>
       </div>
 
-      {/* View mode tabs + Filters — single compact row */}
-      <div className="flex flex-col gap-3 mb-4">
-        <div className="flex items-center gap-2 flex-wrap">
-          <button
-            onClick={() => setViewMode("active")}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border transition-all ${
-              viewMode === "active"
-                ? "bg-primary/15 border-primary/40 text-primary"
-                : "bg-card border-border text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            <User className="w-3.5 h-3.5" /> Ativos
-          </button>
-          <button
-            onClick={() => setViewMode("archived")}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border transition-all ${
-              viewMode === "archived"
-                ? "bg-amber-500/15 border-amber-500/40 text-amber-400"
-                : "bg-card border-border text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            <Archive className="w-3.5 h-3.5" /> Arquivados {archivedTotal > 0 && `(${archivedTotal})`}
-          </button>
-        </div>
-
-        {/* Filters — horizontal compact */}
-        {viewMode === "active" && (
-          <div className="flex flex-col sm:flex-row gap-2 items-stretch sm:items-center">
-            <div className="relative flex-1 max-w-sm">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-              <Input
-                placeholder="Buscar por nome, CPF ou RG..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="pl-9 bg-card border-border h-9 text-sm"
-              />
-            </div>
-            <div className="flex gap-1.5 flex-wrap">
-              {statusFilters.map((f) => (
-                <button
-                  key={String(f.value)}
-                  onClick={() => setStatus(f.value)}
-                  className={`px-2.5 py-1 rounded text-xs font-medium transition-all border ${
-                    status === f.value
-                      ? "bg-primary/15 border-primary/40 text-primary"
-                      : "bg-card border-border text-muted-foreground hover:text-foreground"
-                  }`}
-                >
-                  {f.label}
-                </button>
-              ))}
-              {(search || status) && (
-                <button
-                  onClick={() => { setSearch(""); setStatus(undefined); }}
-                  className="px-2.5 py-1 rounded text-xs font-medium text-muted-foreground hover:text-foreground border border-border bg-card"
-                >
-                  Limpar
-                </button>
-              )}
-            </div>
+      {/* Filtros — visíveis apenas na aba Ativos */}
+      {view === "ativos" && (
+        <div className="flex flex-col sm:flex-row gap-2 items-stretch sm:items-center">
+          <div className="relative flex-1 max-w-sm">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+            <Input
+              placeholder="Buscar por nome, CPF ou RG..."
+              value={search}
+              onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+              className="pl-9 h-9 text-sm"
+            />
           </div>
-        )}
-      </div>
-
-      {/* Archived table */}
-      {viewMode === "archived" && (
-        <>
-          {archivedLoading ? (
-            <div className="flex items-center justify-center h-48">
-              <Loader2 className="w-6 h-6 animate-spin text-primary" />
-            </div>
-          ) : archivedClients.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-48 text-muted-foreground">
-              <Archive className="w-10 h-10 mb-3 opacity-30" />
-              <p className="text-sm">Nenhum cliente arquivado</p>
-            </div>
-          ) : (
-            <div className="bg-card border border-border rounded-xl overflow-hidden">
-              <table className="w-full hidden md:table">
-                <thead>
-                  <tr className="border-b border-border">
-                    <th className="text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider px-4 py-3">ID</th>
-                    <th className="text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider px-4 py-3">Cliente</th>
-                    <th className="text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider px-4 py-3">Arquivado em</th>
-                    <th className="px-4 py-3" />
-                  </tr>
-                </thead>
-                <tbody>
-                  {archivedClients.map((client, idx) => (
-                    <tr key={client.id} className={`border-b border-border/50 hover:bg-accent/30 transition-colors ${idx === archivedClients.length - 1 ? "border-b-0" : ""}` }>
-                      <td className="px-4 py-3 text-xs text-muted-foreground font-mono">#{client.id}</td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 rounded-full bg-secondary border border-border flex items-center justify-center flex-shrink-0">
-                            <span className="text-xs font-semibold text-muted-foreground">{client.name.charAt(0).toUpperCase()}</span>
-                          </div>
-                          <div>
-                            <p className="text-sm font-medium text-foreground">{client.name}</p>
-                            {client.cpf && <CpfCell cpf={client.cpf} className="text-xs text-muted-foreground" />}
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-4 py-3 text-xs text-muted-foreground">
-                        <div className="flex flex-col gap-1">
-                          <span>{client.deletedAt ? new Date(client.deletedAt).toLocaleDateString("pt-BR") : "—"}</span>
-                          {(() => { const b = calcRetentionBadge(client.deletedAt); return b ? <span className={`inline-flex px-1.5 py-0.5 rounded text-[10px] font-medium border ${b.cls}`}>{b.label}</span> : null; })()}
-                        </div>
-                      </td>
-                      <td className="px-4 py-3">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="h-7 text-xs gap-1"
-                          onClick={() => restoreMutation.mutate({ id: client.id })}
-                          disabled={restoreMutation.isPending}
-                        >
-                          <RotateCcw className="w-3 h-3" /> Restaurar
-                        </Button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              {/* Mobile */}
-              <div className="md:hidden divide-y divide-border">
-                {archivedClients.map((client) => (
-                  <div key={client.id} className="p-4 flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-full bg-secondary border border-border flex items-center justify-center flex-shrink-0">
-                      <span className="text-sm font-semibold text-muted-foreground">{client.name.charAt(0).toUpperCase()}</span>
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-foreground truncate">{client.name}</p>
-                      <p className="text-xs text-muted-foreground">Arquivado em {client.deletedAt ? new Date(client.deletedAt).toLocaleDateString("pt-BR") : "—"}</p>
-                      {(() => { const b = calcRetentionBadge(client.deletedAt); return b ? <span className={`inline-flex px-1.5 py-0.5 rounded text-[10px] font-medium border ${b.cls} mt-0.5`}>{b.label}</span> : null; })()}
-                    </div>
-                    <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={() => restoreMutation.mutate({ id: client.id })} disabled={restoreMutation.isPending}>
-                      <RotateCcw className="w-3 h-3" /> Restaurar
-                    </Button>
-                  </div>
-                ))}
-              </div>
-            </div>
+          <Select value={status ?? "todos"} onValueChange={(v) => { setStatus(v === "todos" ? undefined : v as Status); setPage(1); }}>
+            <SelectTrigger className="w-36 h-9 text-sm">
+              <SelectValue placeholder="Status" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="todos">Todos</SelectItem>
+              <SelectItem value="lead">Lead</SelectItem>
+              <SelectItem value="verified">Verificado</SelectItem>
+              <SelectItem value="blocked">Bloqueado</SelectItem>
+              <SelectItem value="recusado">Recusado</SelectItem>
+            </SelectContent>
+          </Select>
+          {(search || status) && (
+            <Button variant="ghost" size="sm" className="h-9 text-xs" onClick={() => { setSearch(""); setStatus(undefined); }}>
+              Limpar
+            </Button>
           )}
-          {(archivedData?.totalPages ?? 1) > 1 && (
-            <div className="flex items-center justify-between mt-4">
-              <Button variant="outline" size="sm" onClick={() => setArchivedPage((p) => Math.max(1, p - 1))} disabled={archivedPage <= 1}>← Anterior</Button>
-              <span className="text-sm text-muted-foreground">Página {archivedPage} de {archivedData?.totalPages ?? 1}</span>
-              <Button variant="outline" size="sm" onClick={() => setArchivedPage((p) => p + 1)} disabled={archivedPage >= (archivedData?.totalPages ?? 1)}>Próxima →</Button>
-            </div>
-          )}
-        </>
+        </div>
       )}
 
-      {/* Active table */}
-      {viewMode === "active" && isLoading ? (
-        <div className="flex items-center justify-center h-48">
-          <Loader2 className="w-6 h-6 animate-spin text-primary" />
-        </div>
-      ) : viewMode === "active" && clients.length === 0 ? (
-        <div className="flex flex-col items-center justify-center h-48 text-muted-foreground">
-          <User className="w-10 h-10 mb-3 opacity-30" />
-          <p className="text-sm">Nenhum cliente encontrado</p>
-        </div>
-      ) : viewMode === "active" && (
-        <>
-          {/* Desktop table */}
-          <div className="hidden md:block bg-card border border-border rounded-lg overflow-hidden">
-            <table className="w-full table-compact">
-              <thead>
-                <tr className="border-b border-border bg-muted/30">
-                  <th className="text-left text-[11px] font-semibold text-muted-foreground uppercase tracking-wider px-3 py-2.5">Cliente</th>
-                  <th className="text-left text-[11px] font-semibold text-muted-foreground uppercase tracking-wider px-3 py-2.5">Localidade</th>
-                  <th className="text-left text-[11px] font-semibold text-muted-foreground uppercase tracking-wider px-3 py-2.5">Status</th>
-                  <th className="text-left text-[11px] font-semibold text-muted-foreground uppercase tracking-wider px-3 py-2.5">Atualização</th>
-                  <th className="w-24 px-3 py-2.5" />
-                </tr>
-              </thead>
-              <tbody>
-                {clients.map((client) => (
-                  <tr key={client.id} className="group border-b border-border/40 last:border-b-0">
-                    <td className="px-3 py-2.5">
-                      <div className="flex items-center gap-2.5">
-                        <div className="w-7 h-7 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center flex-shrink-0">
-                          <span className="text-[10px] font-semibold text-primary">{client.name.charAt(0).toUpperCase()}</span>
-                        </div>
-                        <div className="min-w-0">
-                          <p className="text-[13px] font-medium text-foreground truncate">{client.name}</p>
-                          {client.cpf && <CpfCell cpf={client.cpf} className="text-[11px] text-muted-foreground" />}
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-3 py-2.5">
-                      {(client.city || client.state) ? (
-                        <span className="text-[12px] text-muted-foreground">
-                          {[client.city, client.state].filter(Boolean).join("/")}
-                        </span>
-                      ) : (
-                        <span className="text-[12px] text-muted-foreground/40">—</span>
-                      )}
-                    </td>
-                    <td className="px-3 py-2.5"><StatusBadge status={client.status} /></td>
-                    <td className="px-3 py-2.5 text-[12px] text-muted-foreground">
-                      {new Date(client.updatedAt).toLocaleDateString("pt-BR")}
-                    </td>
-                    <td className="px-3 py-2.5">
-                      <div className="flex items-center gap-2 row-actions">
-                        <Link href={`/clientes/${client.id}`}>
-                          <button className="text-[12px] text-primary hover:underline font-medium">Ver</button>
-                        </Link>
-                        <button
-                          onClick={async () => { if (await confirmDialog({ title: `Arquivar ${client.name}?`, description: "O cliente será movido para a lista de arquivados.", confirmText: "Arquivar", destructive: true })) deleteMutation.mutate({ id: client.id }); }}
-                          className="text-muted-foreground hover:text-destructive"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+      {/* SegmentedTabs */}
+      <SegmentedTabs
+        value={view}
+        onValueChange={(v) => { setView(v as typeof view); setPage(1); setArchivedPage(1); }}
+        options={tabOptions}
+      />
 
-          {/* Mobile cards */}
-          <div className="md:hidden space-y-2">
-            {clients.map((client) => (
-              <Link key={client.id} href={`/clientes/${client.id}`}>
-                <div className="bg-card border border-border rounded-lg p-3 flex items-center gap-3 active:bg-accent/40 transition-colors">
-                  <div className="w-10 h-10 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center flex-shrink-0">
-                    <span className="text-sm font-semibold text-primary">{client.name.charAt(0).toUpperCase()}</span>
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-foreground truncate">{client.name}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {[client.city, client.state].filter(Boolean).join("/") || "—"}
-                    </p>
-                  </div>
-                  <div className="flex flex-col items-end gap-1">
-                    <StatusBadge status={client.status} />
-                    <ChevronRight className="w-4 h-4 text-muted-foreground" />
-                  </div>
-                </div>
-              </Link>
-            ))}
+      {/* DataTable */}
+      <DataTable
+        columns={view === "arquivados" ? (archivedColumns as ColumnDef<unknown, unknown>[]) : (activeColumns as ColumnDef<unknown, unknown>[])}
+        data={currentData as unknown[]}
+        loading={isLoadingCurrent}
+        pagination={{ page: currentPage, totalPages: currentTotalPages, onPageChange: setCurrentPage }}
+        empty={
+          <div className="flex flex-col items-center gap-3 text-muted-foreground">
+            <User className="h-10 w-10 opacity-30" />
+            <p className="text-sm">
+              {view === "arquivados" ? "Nenhum cliente arquivado." : "Nenhum cliente encontrado."}
+            </p>
           </div>
-
-          {/* Pagination */}
-          {(data?.totalPages ?? 1) > 1 && (
-            <div className="flex items-center justify-between mt-4">
-              <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page <= 1}>
-                ← Anterior
-              </Button>
-              <span className="text-xs text-muted-foreground">
-                {page} / {data?.totalPages ?? 1}
-              </span>
-              <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => setPage((p) => p + 1)} disabled={page >= (data?.totalPages ?? 1)}>
-                Próxima →
-              </Button>
-            </div>
-          )}
-        </>
-      )}
+        }
+      />
 
       <NewClientModal
         open={showNew}
