@@ -398,8 +398,7 @@ export default function Settings() {
                     {clauses[lang].map((clause, i) => (
                       <div key={i} className="flex items-start gap-2">
                         <span
-                          className="mt-2 flex-shrink-0 text-xs font-bold px-1.5 py-0.5 rounded"
-                          style={{ background: GOLD, color: GOLD_FG }}
+                          className="mt-2 flex-shrink-0 text-xs font-bold px-1.5 py-0.5 rounded bg-primary text-primary-foreground"
                         >
                           {i + 1}.
                         </span>

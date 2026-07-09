@@ -2,15 +2,17 @@ import { useState, useMemo } from "react";
 import { trpc } from "@/lib/trpc";
 import { Link } from "wouter";
 import {
-  Users, Bike, FileText, DollarSign, Loader2,
-  TrendingUp, AlertCircle, ArrowRight, Wrench,
+  Users, Bike, FileText, DollarSign,
+  AlertCircle, ArrowRight, Wrench,
   TrendingDown, Minus, ChevronDown,
 } from "lucide-react";
 import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, Legend,
-  PieChart, Pie, Cell,
+  PieChart, Pie, Cell, Tooltip, ResponsiveContainer,
 } from "recharts";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
+import { SectionCards } from "@/components/dashboard/SectionCards";
+import { RevenueChart } from "@/components/dashboard/RevenueChart";
 
 // ─── Tipos de período ─────────────────────────────────────────────────────────
 type PeriodKey = "mes_atual" | "mes_anterior" | "ultimos_3_meses" | "este_ano";
@@ -55,102 +57,56 @@ function getPeriodDates(key: PeriodKey): { startDate: string; endDate: string } 
   }
 }
 
-// ─── Stat Card ────────────────────────────────────────────────────────────────
-function StatCard({
-  title,
-  value,
-  subtitle,
-  icon: Icon,
-  color,
-  href,
-  negative,
-}: {
-  title: string;
-  value: string | number;
-  subtitle?: string;
-  icon: React.ElementType;
-  color: string;
-  href?: string;
-  negative?: boolean;
-}) {
-  const content = (
-    <div className="bg-card border border-border rounded-xl p-3 md:p-5 hover:border-primary/30 transition-colors group">
-      <div className="flex items-start justify-between mb-2 md:mb-4">
-        <div
-          className="w-8 h-8 md:w-10 md:h-10 rounded-lg flex items-center justify-center"
-          style={{ backgroundColor: `${color}20`, border: `1px solid ${color}35` }}
-        >
-          <Icon className="w-4 h-4 md:w-5 md:h-5" style={{ color }} />
-        </div>
-        {href && (
-          <ArrowRight className="w-3.5 h-3.5 md:w-4 md:h-4 text-muted-foreground group-hover:text-primary transition-colors" />
-        )}
-      </div>
-      <p
-        className="text-lg md:text-2xl font-bold"
-        style={{
-          fontFamily: "'Montserrat', sans-serif",
-          color: negative ? "oklch(0.55 0.20 25)" : "inherit",
-        }}
-      >
-        {value}
-      </p>
-      <p className="text-xs md:text-sm text-muted-foreground mt-0.5 md:mt-1">{title}</p>
-      {subtitle && <p className="text-[10px] md:text-xs text-muted-foreground/70 mt-0.5 hidden sm:block">{subtitle}</p>}
-    </div>
-  );
-
-  if (href) return <Link href={href}>{content}</Link>;
-  return content;
-}
-
-// ─── Custom Tooltip ───────────────────────────────────────────────────────────
-function GroupedTooltip({ active, payload, label }: any) {
-  if (!active || !payload?.length) return null;
-  const fmt = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-  return (
-    <div className="bg-card border border-border rounded-lg px-3 py-2 shadow-lg text-xs space-y-1">
-      <p className="text-muted-foreground font-medium mb-1">Semana de {label}</p>
-      {payload.map((p: any) => (
-        <div key={p.dataKey} className="flex items-center gap-2">
-          <span className="w-2 h-2 rounded-full inline-block" style={{ backgroundColor: p.color }} />
-          <span className="text-muted-foreground">{p.name}:</span>
-          <span className="font-semibold text-foreground">{fmt(p.value ?? 0)}</span>
-        </div>
-      ))}
-    </div>
-  );
-}
+// Paleta âmbar para o gráfico de pizza (usa tokens CSS)
+const PIE_COLORS = [
+  "var(--chart-1)",
+  "var(--chart-2)",
+  "var(--chart-3)",
+  "var(--chart-4)",
+  "var(--chart-5)",
+];
 
 // ─── Dashboard ────────────────────────────────────────────────────────────────
 export default function Dashboard() {
   const [period, setPeriod] = useState<PeriodKey>("mes_atual");
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [chartTimeRange, setChartTimeRange] = useState("90d");
 
   const periodDates = useMemo(() => getPeriodDates(period), [period]);
   const periodLabel = PERIOD_OPTIONS.find((o) => o.key === period)?.label ?? "Mês atual";
 
-  const { data, isLoading, error: summaryError, refetch: refetchSummary } = trpc.dashboard.summary.useQuery(periodDates);
-  const { data: weeklyData, isLoading: weeklyLoading, error: weeklyError, refetch: refetchWeekly } = trpc.dashboard.weeklyRevenue.useQuery(periodDates);
-  const { data: bikeRevenueData = [], isLoading: bikeRevenueLoading, error: bikeRevenueError, refetch: refetchBikeRevenue } = trpc.dashboard.revenueByBike.useQuery(periodDates);
+  const {
+    data,
+    isLoading,
+    error: summaryError,
+    refetch: refetchSummary,
+  } = trpc.dashboard.summary.useQuery(periodDates);
+
+  const {
+    data: weeklyData,
+    isLoading: weeklyLoading,
+    error: weeklyError,
+    refetch: refetchWeekly,
+  } = trpc.dashboard.weeklyRevenue.useQuery(periodDates);
+
+  const {
+    data: bikeRevenueData = [],
+    isLoading: bikeRevenueLoading,
+    error: bikeRevenueError,
+    refetch: refetchBikeRevenue,
+  } = trpc.dashboard.revenueByBike.useQuery(periodDates);
 
   const anyError = summaryError || weeklyError || bikeRevenueError;
-  const anyLoading = isLoading || weeklyLoading || bikeRevenueLoading;
 
-  if (anyLoading && !anyError) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <Loader2 className="w-6 h-6 animate-spin text-primary" />
-      </div>
-    );
-  }
-
+  // ─── Error state ──────────────────────────────────────────────────────────
   if (anyError) {
     return (
       <div className="flex flex-col items-center justify-center h-64 gap-4">
         <div className="text-center">
           <p className="text-sm font-medium text-destructive">Erro ao carregar o dashboard</p>
-          <p className="text-xs text-muted-foreground mt-1">{(summaryError || weeklyError || bikeRevenueError)?.message}</p>
+          <p className="text-xs text-muted-foreground mt-1">
+            {(summaryError || weeklyError || bikeRevenueError)?.message}
+          </p>
         </div>
         <button
           onClick={() => { refetchSummary(); refetchWeekly(); refetchBikeRevenue(); }}
@@ -162,411 +118,308 @@ export default function Dashboard() {
     );
   }
 
-  const { clientStats, bikeStats, rentalStats, financial } = data ?? {
-    clientStats: { total: 0, leads: 0, verified: 0, blocked: 0 },
-    bikeStats: { total: 0, available: 0, rented: 0, maintenance: 0 },
-    rentalStats: { active: 0, monthRevenue: "0" },
-    financial: { receitaAlugueis: 0, receitasExtras: 0, despesas: 0, lucroLiquido: 0 },
-  };
+  const summaryData = data ?? undefined;
+  const bikeStats = data?.bikeStats ?? { total: 0, available: 0, rented: 0, maintenance: 0 };
+  const clientStats = data?.clientStats ?? { total: 0, leads: 0, verified: 0, blocked: 0 };
 
-  const fin = financial ?? { receitaAlugueis: 0, receitasExtras: 0, despesas: 0, lucroLiquido: 0 };
-  const fmt = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-
-  const chartData = weeklyData ?? [];
-  const hasChartData = chartData.some(
-    (d) => d.receitaAlugueis > 0 || d.receitasExtras > 0 || d.despesas > 0
-  );
+  const totalBikeReceita = bikeRevenueData.reduce((acc: number, d: any) => acc + d.receita, 0);
 
   return (
-    <div className="p-4 md:p-6 max-w-6xl mx-auto">
-      {/* Header */}
-      <div className="mb-5 md:mb-8 flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-xl md:text-2xl font-bold text-foreground" style={{ fontFamily: "'Montserrat', sans-serif" }}>
-            Dashboard
-          </h1>
-          <p className="text-xs md:text-sm text-muted-foreground mt-1">
-            Visão geral do sistema — Bike To Go Floripa
-          </p>
-        </div>
+    <div className="flex flex-1 flex-col">
+      <div className="@container/main flex flex-1 flex-col gap-2">
+        <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
 
-        {/* Period dropdown */}
-        <div className="relative">
-          <button
-            onClick={() => setDropdownOpen((v) => !v)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border bg-card text-xs font-medium text-foreground hover:border-primary/40 transition-colors"
-          >
-            {periodLabel}
-            <ChevronDown className={`w-3.5 h-3.5 text-muted-foreground transition-transform ${dropdownOpen ? "rotate-180" : ""}`} />
-          </button>
-          {dropdownOpen && (
-            <div className="absolute right-0 top-full mt-1 z-20 bg-card border border-border rounded-lg shadow-lg py-1 min-w-[160px]">
-              {PERIOD_OPTIONS.map((opt) => (
-                <button
-                  key={opt.key}
-                  onClick={() => { setPeriod(opt.key); setDropdownOpen(false); }}
-                  className={`w-full text-left px-3 py-1.5 text-xs transition-colors hover:bg-accent/50 ${period === opt.key ? "text-primary font-semibold" : "text-foreground"}`}
-                >
-                  {opt.label}
-                </button>
-              ))}
+          {/* ─── Period selector ─────────────────────────────────────────── */}
+          <div className="px-4 lg:px-6 flex items-center justify-between">
+            <p className="text-xs text-muted-foreground">
+              Visão geral — Bike To Go Floripa
+            </p>
+            <div className="relative">
+              <button
+                onClick={() => setDropdownOpen((v) => !v)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border bg-card text-xs font-medium text-foreground hover:border-primary/40 transition-colors"
+              >
+                {periodLabel}
+                <ChevronDown
+                  className={`w-3.5 h-3.5 text-muted-foreground transition-transform ${dropdownOpen ? "rotate-180" : ""}`}
+                />
+              </button>
+              {dropdownOpen && (
+                <div className="absolute right-0 top-full mt-1 z-20 bg-card border border-border rounded-lg shadow-lg py-1 min-w-[160px]">
+                  {PERIOD_OPTIONS.map((opt) => (
+                    <button
+                      key={opt.key}
+                      onClick={() => { setPeriod(opt.key); setDropdownOpen(false); }}
+                      className={`w-full text-left px-3 py-1.5 text-xs transition-colors hover:bg-accent/50 ${
+                        period === opt.key ? "text-primary font-semibold" : "text-foreground"
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* ─── Section Cards (4 KPI) ───────────────────────────────────── */}
+          <SectionCards data={summaryData} loading={isLoading} />
+
+          {/* ─── Revenue Area Chart ──────────────────────────────────────── */}
+          <div className="px-4 lg:px-6">
+            <RevenueChart
+              data={weeklyData ?? []}
+              loading={weeklyLoading}
+              timeRange={chartTimeRange}
+              onTimeRangeChange={setChartTimeRange}
+            />
+          </div>
+
+          {/* ─── Revenue by bike model (Pie) ─────────────────────────────── */}
+          <div className="px-4 lg:px-6">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-sm font-semibold uppercase tracking-wider">
+                  Receita por modelo de bicicleta
+                </CardTitle>
+                <p className="text-xs text-muted-foreground">
+                  Aluguéis pagos no período — {periodLabel}
+                </p>
+              </CardHeader>
+              <CardContent>
+                {bikeRevenueLoading ? (
+                  <Skeleton className="h-48 w-full" />
+                ) : bikeRevenueData.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center h-48 text-muted-foreground">
+                    <Bike className="w-8 h-8 mb-2 opacity-20" />
+                    <p className="text-sm">Nenhum aluguel pago no período selecionado</p>
+                  </div>
+                ) : (
+                  <div className="flex flex-col md:flex-row items-center gap-6">
+                    <ResponsiveContainer
+                      width="100%"
+                      height={220}
+                      className="md:!w-[280px] md:!min-w-[280px] md:!flex-shrink-0"
+                    >
+                      <PieChart>
+                        <Pie
+                          data={bikeRevenueData}
+                          dataKey="receita"
+                          nameKey="modelo"
+                          cx="50%"
+                          cy="50%"
+                          outerRadius={90}
+                          innerRadius={48}
+                          paddingAngle={2}
+                        >
+                          {bikeRevenueData.map((_: any, index: number) => (
+                            <Cell
+                              key={`cell-${index}`}
+                              fill={PIE_COLORS[index % PIE_COLORS.length]}
+                              stroke="transparent"
+                            />
+                          ))}
+                        </Pie>
+                        <Tooltip
+                          formatter={(value: number) => [
+                            value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }),
+                            "Receita",
+                          ]}
+                          contentStyle={{
+                            backgroundColor: "var(--card)",
+                            border: "1px solid var(--border)",
+                            borderRadius: "8px",
+                            fontSize: 12,
+                          }}
+                        />
+                      </PieChart>
+                    </ResponsiveContainer>
+                    <div className="flex-1 space-y-2 w-full">
+                      {bikeRevenueData.map((item: any, index: number) => {
+                        const pct = totalBikeReceita > 0
+                          ? Math.round((item.receita / totalBikeReceita) * 100)
+                          : 0;
+                        return (
+                          <div key={item.modelo} className="flex items-center gap-3">
+                            <span
+                              className="w-2.5 h-2.5 rounded-full shrink-0"
+                              style={{ backgroundColor: PIE_COLORS[index % PIE_COLORS.length] }}
+                            />
+                            <span
+                              className="text-sm text-foreground flex-1 truncate"
+                              title={item.modelo}
+                            >
+                              {item.modelo}
+                            </span>
+                            <span className="text-xs text-muted-foreground shrink-0">{pct}%</span>
+                            <span className="text-sm font-semibold text-foreground shrink-0 tabular-nums">
+                              {item.receita.toLocaleString("pt-BR", {
+                                style: "currency",
+                                currency: "BRL",
+                              })}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* ─── Status panels ───────────────────────────────────────────── */}
+          <div className="px-4 lg:px-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 md:gap-4">
+            {/* Bikes status */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-sm font-semibold uppercase tracking-wider">
+                  Status das Bicicletas
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {isLoading ? (
+                  <Skeleton className="h-24 w-full" />
+                ) : (
+                  <>
+                    {[
+                      { label: "Disponíveis", value: bikeStats.available, cls: "badge-available" },
+                      { label: "Alugadas", value: bikeStats.rented, cls: "badge-rented" },
+                      { label: "Manutenção", value: bikeStats.maintenance, cls: "badge-maintenance" },
+                    ].map((item) => (
+                      <div key={item.label} className="flex items-center justify-between">
+                        <span className={item.cls}>{item.label}</span>
+                        <div className="flex items-center gap-3">
+                          <div className="w-24 h-1.5 bg-secondary rounded-full overflow-hidden">
+                            <div
+                              className="h-full rounded-full bg-primary transition-all"
+                              style={{
+                                width: bikeStats.total > 0
+                                  ? `${(item.value / bikeStats.total) * 100}%`
+                                  : "0%",
+                              }}
+                            />
+                          </div>
+                          <span className="text-sm font-medium text-foreground w-6 text-right">
+                            {item.value}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                    <Link
+                      href="/bicicletas"
+                      className="mt-4 flex items-center gap-1 text-xs text-primary hover:underline"
+                    >
+                      Ver todas as bicicletas <ArrowRight className="w-3 h-3" />
+                    </Link>
+                  </>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Clients status */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-sm font-semibold uppercase tracking-wider">
+                  Status dos Clientes
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {isLoading ? (
+                  <Skeleton className="h-24 w-full" />
+                ) : (
+                  <>
+                    {[
+                      { label: "Lead", value: clientStats.leads, cls: "badge-lead" },
+                      { label: "Verificado", value: clientStats.verified, cls: "badge-verified" },
+                      { label: "Bloqueado", value: clientStats.blocked, cls: "badge-blocked" },
+                    ].map((item) => (
+                      <div key={item.label} className="flex items-center justify-between">
+                        <span className={item.cls}>{item.label}</span>
+                        <div className="flex items-center gap-3">
+                          <div className="w-24 h-1.5 bg-secondary rounded-full overflow-hidden">
+                            <div
+                              className="h-full rounded-full bg-primary transition-all"
+                              style={{
+                                width: clientStats.total > 0
+                                  ? `${(item.value / clientStats.total) * 100}%`
+                                  : "0%",
+                              }}
+                            />
+                          </div>
+                          <span className="text-sm font-medium text-foreground w-6 text-right">
+                            {item.value}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                    <Link
+                      href="/clientes"
+                      className="mt-4 flex items-center gap-1 text-xs text-primary hover:underline"
+                    >
+                      Ver todos os clientes <ArrowRight className="w-3 h-3" />
+                    </Link>
+                  </>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Quick actions */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-sm font-semibold uppercase tracking-wider">
+                  Ações Rápidas
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                <Link href="/contratos">
+                  <button className="w-full text-left px-3 py-2.5 rounded-lg bg-secondary/50 hover:bg-secondary border border-border text-sm text-foreground transition-colors flex items-center gap-2">
+                    <FileText className="w-4 h-4 text-primary" /> Novo contrato
+                  </button>
+                </Link>
+                <Link href="/clientes">
+                  <button className="w-full text-left px-3 py-2.5 rounded-lg bg-secondary/50 hover:bg-secondary border border-border text-sm text-foreground transition-colors flex items-center gap-2">
+                    <Users className="w-4 h-4 text-primary" /> Cadastrar cliente
+                  </button>
+                </Link>
+                <Link href="/bicicletas">
+                  <button className="w-full text-left px-3 py-2.5 rounded-lg bg-secondary/50 hover:bg-secondary border border-border text-sm text-foreground transition-colors flex items-center gap-2">
+                    <Bike className="w-4 h-4 text-primary" /> Adicionar bicicleta
+                  </button>
+                </Link>
+                <Link href="/financeiro">
+                  <button className="w-full text-left px-3 py-2.5 rounded-lg bg-secondary/50 hover:bg-secondary border border-border text-sm text-foreground transition-colors flex items-center gap-2">
+                    <DollarSign className="w-4 h-4 text-primary" /> Lançar despesa
+                  </button>
+                </Link>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* ─── Maintenance alert ───────────────────────────────────────── */}
+          {!isLoading && bikeStats.maintenance > 0 && (
+            <div className="px-4 lg:px-6">
+              <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-4 flex items-center gap-3">
+                <Wrench className="w-5 h-5 text-amber-400 shrink-0" />
+                <div>
+                  <p className="text-sm font-medium text-amber-400">
+                    {bikeStats.maintenance} bicicleta(s) em manutenção
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Acompanhe o status na página de bicicletas.
+                  </p>
+                </div>
+                <Link href="/bicicletas" className="ml-auto">
+                  <button className="text-xs text-amber-400 hover:underline whitespace-nowrap">
+                    Ver bicicletas
+                  </button>
+                </Link>
+              </div>
             </div>
           )}
+
         </div>
       </div>
-
-      {/* Operational stats */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4 mb-4 md:mb-6">
-        <StatCard
-          title="Total de clientes"
-          value={clientStats.total}
-          subtitle={`${clientStats.verified} verificados`}
-          icon={Users}
-          color="oklch(0.60 0.15 200)"
-          href="/clientes"
-        />
-        <StatCard
-          title="Novos leads"
-          value={clientStats.leads}
-          subtitle="Aguardando validação"
-          icon={AlertCircle}
-          color="oklch(0.65 0.18 50)"
-          href="/clientes"
-        />
-        <StatCard
-          title="Aluguéis ativos"
-          value={rentalStats.active}
-          subtitle={`${bikeStats.rented} bikes em uso`}
-          icon={Bike}
-          color="var(--primary)"
-          href="/contratos"
-        />
-        <StatCard
-          title="Bikes disponíveis"
-          value={bikeStats.available}
-          subtitle={`de ${bikeStats.total} no total`}
-          icon={TrendingUp}
-          color="oklch(0.60 0.18 145)"
-          href="/bicicletas"
-        />
-      </div>
-
-      {/* Financial cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4 mb-5 md:mb-8">
-        <StatCard
-          title="Receita Aluguéis"
-          value={fmt(fin.receitaAlugueis)}
-          subtitle={`${periodLabel} — pagos`}
-          icon={DollarSign}
-          color="var(--primary)"
-          href="/financeiro"
-        />
-        <StatCard
-          title="Receitas Extras"
-          value={fmt(fin.receitasExtras)}
-          subtitle={periodLabel}
-          icon={TrendingUp}
-          color="oklch(0.60 0.18 145)"
-          href="/financeiro"
-        />
-        <StatCard
-          title="Despesas"
-          value={fmt(fin.despesas)}
-          subtitle={periodLabel}
-          icon={TrendingDown}
-          color="oklch(0.55 0.20 25)"
-          href="/financeiro"
-          negative
-        />
-        <StatCard
-          title="Lucro Líquido"
-          value={fmt(fin.lucroLiquido)}
-          subtitle="Receitas − Despesas"
-          icon={fin.lucroLiquido >= 0 ? TrendingUp : Minus}
-          color={fin.lucroLiquido >= 0 ? "oklch(0.60 0.18 145)" : "oklch(0.55 0.20 25)"}
-          href="/financeiro"
-          negative={fin.lucroLiquido < 0}
-        />
-      </div>
-
-      {/* Grouped Bar Chart */}
-      <div className="bg-card border border-border rounded-xl p-5 mb-8">
-        <div className="flex items-center justify-between mb-5">
-          <div>
-            <h2 className="text-sm font-semibold text-foreground uppercase tracking-wider">
-              Receitas &amp; Despesas — {periodLabel}
-            </h2>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              Aluguéis confirmados, receitas extras e despesas por semana
-            </p>
-          </div>
-        </div>
-
-        {weeklyLoading ? (
-          <div className="flex items-center justify-center h-48">
-            <Loader2 className="w-5 h-5 animate-spin text-primary" />
-          </div>
-        ) : !hasChartData ? (
-          <div className="flex flex-col items-center justify-center h-48 text-muted-foreground">
-            <TrendingUp className="w-8 h-8 mb-2 opacity-20" />
-            <p className="text-sm">Nenhum dado financeiro para o período selecionado</p>
-          </div>
-        ) : (
-          <ResponsiveContainer width="100%" height={180} className="md:!h-[220px]">
-            <BarChart data={chartData} margin={{ top: 4, right: 4, left: 0, bottom: 0 }} barCategoryGap="30%">
-              <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.3 0 0 / 0.12)" vertical={false} />
-              <XAxis
-                dataKey="week"
-                tick={{ fontSize: 11, fill: "oklch(0.6 0 0)" }}
-                axisLine={false}
-                tickLine={false}
-              />
-              <YAxis
-                tick={{ fontSize: 11, fill: "oklch(0.6 0 0)" }}
-                axisLine={false}
-                tickLine={false}
-                width={62}
-                tickFormatter={(v) => v >= 1000 ? `R$${(v / 1000).toFixed(1)}k` : `R$${v}`}
-              />
-              <Tooltip content={<GroupedTooltip />} />
-              <Legend
-                iconType="circle"
-                iconSize={8}
-                wrapperStyle={{ fontSize: 11, paddingTop: 8 }}
-              />
-              <Bar
-                dataKey="receitaAlugueis"
-                name="Rec. Aluguéis"
-                fill="var(--primary)"
-                radius={[3, 3, 0, 0]}
-              />
-              <Bar
-                dataKey="receitasExtras"
-                name="Rec. Extras"
-                fill="oklch(0.60 0.18 145)"
-                radius={[3, 3, 0, 0]}
-              />
-              <Bar
-                dataKey="despesas"
-                name="Despesas"
-                fill="oklch(0.55 0.20 25)"
-                radius={[3, 3, 0, 0]}
-              />
-            </BarChart>
-          </ResponsiveContainer>
-        )}
-      </div>
-
-      {/* Revenue by bike model chart */}
-      <div className="bg-card border border-border rounded-xl p-5 mb-8">
-        <div className="flex items-center justify-between mb-5">
-          <div>
-            <h2 className="text-sm font-semibold text-foreground uppercase tracking-wider">
-              Receita por modelo de bicicleta
-            </h2>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              Aluguéis pagos no período — {periodLabel}
-            </p>
-          </div>
-        </div>
-        {bikeRevenueLoading ? (
-          <div className="flex items-center justify-center h-48">
-            <Loader2 className="w-5 h-5 animate-spin text-primary" />
-          </div>
-        ) : bikeRevenueData.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-48 text-muted-foreground">
-            <Bike className="w-8 h-8 mb-2 opacity-20" />
-            <p className="text-sm">Nenhum aluguel pago no período selecionado</p>
-          </div>
-        ) : (
-          <div className="flex flex-col md:flex-row items-center gap-6">
-            <ResponsiveContainer width="100%" height={220} className="md:!w-[280px] md:!min-w-[280px] md:!flex-shrink-0">
-              <PieChart>
-                <Pie
-                  data={bikeRevenueData}
-                  dataKey="receita"
-                  nameKey="modelo"
-                  cx="50%"
-                  cy="50%"
-                  outerRadius={90}
-                  innerRadius={48}
-                  paddingAngle={2}
-                >
-                  {bikeRevenueData.map((_: any, index: number) => (
-                    <Cell
-                      key={`cell-${index}`}
-                      fill={
-                        index === 0
-                          ? "#C8920A"
-                          : index === 1
-                          ? "#D4A843"
-                          : index === 2
-                          ? "#8A7A5A"
-                          : `oklch(${Math.max(0.35, 0.60 - index * 0.06)} 0.02 60)`
-                      }
-                      stroke="transparent"
-                    />
-                  ))}
-                </Pie>
-                <Tooltip
-                  formatter={(value: number) => [
-                    value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }),
-                    "Receita",
-                  ]}
-                  contentStyle={{
-                    backgroundColor: "var(--card)",
-                    border: "1px solid var(--border)",
-                    borderRadius: "8px",
-                    fontSize: 12,
-                  }}
-                />
-              </PieChart>
-            </ResponsiveContainer>
-            {/* Legend */}
-            <div className="flex-1 space-y-2 w-full">
-              {bikeRevenueData.map((item: any, index: number) => {
-                const totalReceita = bikeRevenueData.reduce((acc: number, d: any) => acc + d.receita, 0);
-                const pct = totalReceita > 0 ? Math.round((item.receita / totalReceita) * 100) : 0;
-                const color =
-                  index === 0
-                    ? "#C8920A"
-                    : index === 1
-                    ? "#D4A843"
-                    : index === 2
-                    ? "#8A7A5A"
-                    : `oklch(${Math.max(0.35, 0.60 - index * 0.06)} 0.02 60)`;
-                return (
-                  <div key={item.modelo} className="flex items-center gap-3">
-                    <span
-                      className="w-2.5 h-2.5 rounded-full shrink-0"
-                      style={{ backgroundColor: color }}
-                    />
-                    <span className="text-sm text-foreground flex-1 truncate" title={item.modelo}>
-                      {item.modelo}
-                    </span>
-                    <span className="text-xs text-muted-foreground shrink-0">{pct}%</span>
-                    <span className="text-sm font-semibold text-foreground shrink-0 tabular-nums">
-                      {item.receita.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Status panels */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 md:gap-4 mb-5 md:mb-8">
-        {/* Bikes status */}
-        <div className="bg-card border border-border rounded-xl p-5">
-          <h2 className="text-sm font-semibold text-foreground mb-4 uppercase tracking-wider">
-            Status das Bicicletas
-          </h2>
-          <div className="space-y-3">
-            {[
-              { label: "Disponíveis", value: bikeStats.available, total: bikeStats.total, cls: "badge-available" },
-              { label: "Alugadas", value: bikeStats.rented, total: bikeStats.total, cls: "badge-rented" },
-              { label: "Manutenção", value: bikeStats.maintenance, total: bikeStats.total, cls: "badge-maintenance" },
-            ].map((item) => (
-              <div key={item.label} className="flex items-center justify-between">
-                <span className={item.cls}>{item.label}</span>
-                <div className="flex items-center gap-3">
-                  <div className="w-24 h-1.5 bg-secondary rounded-full overflow-hidden">
-                    <div
-                      className="h-full rounded-full bg-primary transition-all"
-                      style={{ width: item.total > 0 ? `${(item.value / item.total) * 100}%` : "0%" }}
-                    />
-                  </div>
-                  <span className="text-sm font-medium text-foreground w-6 text-right">{item.value}</span>
-                </div>
-              </div>
-            ))}
-          </div>
-          <Link href="/bicicletas" className="mt-4 flex items-center gap-1 text-xs text-primary hover:underline">
-            Ver todas as bicicletas <ArrowRight className="w-3 h-3" />
-          </Link>
-        </div>
-
-        {/* Clients status */}
-        <div className="bg-card border border-border rounded-xl p-5">
-          <h2 className="text-sm font-semibold text-foreground mb-4 uppercase tracking-wider">
-            Status dos Clientes
-          </h2>
-          <div className="space-y-3">
-            {[
-              { label: "Lead", value: clientStats.leads, total: clientStats.total, cls: "badge-lead" },
-              { label: "Verificado", value: clientStats.verified, total: clientStats.total, cls: "badge-verified" },
-              { label: "Bloqueado", value: clientStats.blocked, total: clientStats.total, cls: "badge-blocked" },
-            ].map((item) => (
-              <div key={item.label} className="flex items-center justify-between">
-                <span className={item.cls}>{item.label}</span>
-                <div className="flex items-center gap-3">
-                  <div className="w-24 h-1.5 bg-secondary rounded-full overflow-hidden">
-                    <div
-                      className="h-full rounded-full bg-primary transition-all"
-                      style={{ width: item.total > 0 ? `${(item.value / item.total) * 100}%` : "0%" }}
-                    />
-                  </div>
-                  <span className="text-sm font-medium text-foreground w-6 text-right">{item.value}</span>
-                </div>
-              </div>
-            ))}
-          </div>
-          <Link href="/clientes" className="mt-4 flex items-center gap-1 text-xs text-primary hover:underline">
-            Ver todos os clientes <ArrowRight className="w-3 h-3" />
-          </Link>
-        </div>
-
-        {/* Quick actions */}
-        <div className="bg-card border border-border rounded-xl p-5">
-          <h2 className="text-sm font-semibold text-foreground mb-4 uppercase tracking-wider">
-            Ações Rápidas
-          </h2>
-          <div className="space-y-2">
-            <Link href="/contratos">
-              <button className="w-full text-left px-3 py-2.5 rounded-lg bg-secondary/50 hover:bg-secondary border border-border text-sm text-foreground transition-colors flex items-center gap-2">
-                <FileText className="w-4 h-4 text-primary" /> Novo contrato
-              </button>
-            </Link>
-            <Link href="/clientes">
-              <button className="w-full text-left px-3 py-2.5 rounded-lg bg-secondary/50 hover:bg-secondary border border-border text-sm text-foreground transition-colors flex items-center gap-2">
-                <Users className="w-4 h-4 text-blue-400" /> Cadastrar cliente
-              </button>
-            </Link>
-            <Link href="/bicicletas">
-              <button className="w-full text-left px-3 py-2.5 rounded-lg bg-secondary/50 hover:bg-secondary border border-border text-sm text-foreground transition-colors flex items-center gap-2">
-                <Bike className="w-4 h-4 text-green-400" /> Adicionar bicicleta
-              </button>
-            </Link>
-            <Link href="/financeiro">
-              <button className="w-full text-left px-3 py-2.5 rounded-lg bg-secondary/50 hover:bg-secondary border border-border text-sm text-foreground transition-colors flex items-center gap-2">
-                <DollarSign className="w-4 h-4 text-purple-400" /> Lançar despesa
-              </button>
-            </Link>
-          </div>
-        </div>
-      </div>
-
-      {/* Alerts */}
-      {bikeStats.maintenance > 0 && (
-        <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-4 flex items-center gap-3">
-          <Wrench className="w-5 h-5 text-amber-400 shrink-0" />
-          <div>
-            <p className="text-sm font-medium text-amber-400">
-              {bikeStats.maintenance} bicicleta(s) em manutenção
-            </p>
-            <p className="text-xs text-muted-foreground">
-              Acompanhe o status na página de bicicletas.
-            </p>
-          </div>
-          <Link href="/bicicletas" className="ml-auto">
-            <button className="text-xs text-amber-400 hover:underline whitespace-nowrap">
-              Ver bicicletas
-            </button>
-          </Link>
-        </div>
-      )}
     </div>
   );
 }
