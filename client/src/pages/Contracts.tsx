@@ -22,6 +22,9 @@ import {
   Check,
   Trash2,
 } from "lucide-react";
+import { SegmentedTabs } from "@/components/ui/segmented-tabs";
+import { DataTable } from "@/components/ui/data-table";
+import type { ColumnDef } from "@tanstack/react-table";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
@@ -888,7 +891,6 @@ export default function Contracts() {
     const cid = params.get("contractId");
     if (cid) {
       setSelectedId(Number(cid));
-      // Clean URL without reload
       window.history.replaceState({}, "", window.location.pathname);
     }
   }, []);
@@ -936,6 +938,203 @@ export default function Contracts() {
   const totalPages = view === "excluidos" ? deletedTotalPages : activeTotalPages;
   const isLoadingCurrent = view === "excluidos" ? deletedLoading : isLoading;
 
+  // ─── Column definitions ──────────────────────────────────────────────────────
+  type ContractRow = (typeof items)[number];
+
+  const activeColumns = useMemo<ColumnDef<ContractRow, unknown>[]>(() => [
+    {
+      id: "id",
+      header: "#",
+      accessorKey: "id",
+      enableSorting: false,
+      cell: ({ row }) => (
+        <span className="font-mono text-muted-foreground text-xs">#{row.original.id}</span>
+      ),
+    },
+    {
+      id: "cliente",
+      header: "Cliente",
+      accessorFn: (r) => r.clientName ?? `Cliente #${r.clientId}`,
+      cell: ({ getValue }) => (
+        <span className="font-medium">{getValue() as string}</span>
+      ),
+    },
+    {
+      id: "status",
+      header: "Status",
+      accessorKey: "status",
+      enableSorting: false,
+      cell: ({ row }) => (
+        <ContractStatusBadge status={row.original.status as ContractStatus} />
+      ),
+    },
+    {
+      id: "valorTotal",
+      header: "Valor Total",
+      accessorKey: "valorTotal",
+      cell: ({ row }) => (
+        <span className="tabular-nums">
+          {row.original.valorTotal ? `R$ ${Number(row.original.valorTotal).toFixed(2)}` : "—"}
+        </span>
+      ),
+    },
+    {
+      id: "criadoEm",
+      header: "Criado em",
+      accessorKey: "criadoEm",
+      cell: ({ row }) => (
+        <span className="text-sm text-muted-foreground">
+          {row.original.criadoEm ? new Date(row.original.criadoEm).toLocaleDateString("pt-BR") : "—"}
+        </span>
+      ),
+    },
+    {
+      id: "encerradoEm",
+      header: "Encerrado em",
+      accessorKey: "encerradoEm",
+      cell: ({ row }) => (
+        <span className="text-sm text-muted-foreground">
+          {(row.original as any).encerradoEm
+            ? new Date((row.original as any).encerradoEm).toLocaleDateString("pt-BR")
+            : "—"}
+        </span>
+      ),
+    },
+    {
+      id: "acoes",
+      header: "",
+      enableSorting: false,
+      enableHiding: false,
+      cell: ({ row }) => {
+        const c = row.original;
+        return (
+          <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+            <Button variant="ghost" size="sm" onClick={() => setSelectedId(c.id)}>
+              Ver detalhes
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10"
+              disabled={deleteMutation.isPending}
+              onClick={async () => {
+                const ok = await confirmDialog({
+                  title: `Excluir contrato de ${c.clientName ?? `#${c.clientId}`}?`,
+                  description:
+                    "Os aluguéis serão removidos das listas e as bicicletas liberadas para outras reservas. Dá para restaurar depois na aba Excluídos.",
+                  confirmText: "Excluir",
+                  destructive: true,
+                });
+                if (ok) deleteMutation.mutate({ id: c.id });
+              }}
+            >
+              <Trash2 className="h-4 w-4" />
+            </Button>
+          </div>
+        );
+      },
+    },
+  ], [deleteMutation.isPending, confirmDialog]);
+
+  const deletedColumns = useMemo<ColumnDef<ContractRow, unknown>[]>(() => [
+    {
+      id: "id",
+      header: "#",
+      accessorKey: "id",
+      enableSorting: false,
+      cell: ({ row }) => (
+        <span className="font-mono text-muted-foreground text-xs">#{row.original.id}</span>
+      ),
+    },
+    {
+      id: "cliente",
+      header: "Cliente",
+      accessorFn: (r) => r.clientName ?? `Cliente #${r.clientId}`,
+      cell: ({ getValue }) => (
+        <span className="font-medium">{getValue() as string}</span>
+      ),
+    },
+    {
+      id: "status",
+      header: "Status",
+      accessorKey: "status",
+      enableSorting: false,
+      cell: ({ row }) => (
+        <ContractStatusBadge status={row.original.status as ContractStatus} />
+      ),
+    },
+    {
+      id: "valorTotal",
+      header: "Valor Total",
+      accessorKey: "valorTotal",
+      cell: ({ row }) => (
+        <span className="tabular-nums">
+          {row.original.valorTotal ? `R$ ${Number(row.original.valorTotal).toFixed(2)}` : "—"}
+        </span>
+      ),
+    },
+    {
+      id: "criadoEm",
+      header: "Criado em",
+      accessorKey: "criadoEm",
+      cell: ({ row }) => (
+        <span className="text-sm text-muted-foreground">
+          {row.original.criadoEm ? new Date(row.original.criadoEm).toLocaleDateString("pt-BR") : "—"}
+        </span>
+      ),
+    },
+    {
+      id: "deletedAt",
+      header: "Excluído em",
+      accessorKey: "deletedAt",
+      cell: ({ row }) => (
+        <span className="text-sm text-muted-foreground">
+          {(row.original as any).deletedAt
+            ? new Date((row.original as any).deletedAt).toLocaleString("pt-BR", {
+                day: "2-digit", month: "2-digit", year: "numeric",
+                hour: "2-digit", minute: "2-digit",
+              })
+            : "—"}
+        </span>
+      ),
+    },
+    {
+      id: "acoes",
+      header: "",
+      enableSorting: false,
+      enableHiding: false,
+      cell: ({ row }) => {
+        const c = row.original;
+        return (
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={restoreMutation.isPending}
+            onClick={async () => {
+              const ok = await confirmDialog({
+                title: `Restaurar contrato de ${c.clientName ?? `#${c.clientId}`}?`,
+                description:
+                  "O contrato e seus aluguéis voltam para as listas ativas; as unidades serão re-atribuídas quando disponíveis.",
+                confirmText: "Restaurar",
+                destructive: false,
+              });
+              if (ok) restoreMutation.mutate({ id: c.id });
+            }}
+          >
+            <RefreshCw className="h-3.5 w-3.5 mr-1" /> Restaurar
+          </Button>
+        );
+      },
+    },
+  ], [restoreMutation.isPending, confirmDialog]);
+
+  // ─── Tab options ─────────────────────────────────────────────────────────────
+  const tabOptions = useMemo(() => [
+    { value: "ativos", label: "Ativos", count: view === "ativos" ? activeTotal : undefined },
+    { value: "arquivados", label: "Arquivados", count: view === "arquivados" ? activeTotal : undefined },
+    { value: "excluidos", label: "Excluídos", count: view === "excluidos" ? deletedTotal : undefined },
+  ], [view, activeTotal, deletedTotal]);
+
   if (selectedId !== null) {
     return (
       <div className="p-6">
@@ -949,7 +1148,7 @@ export default function Contracts() {
       {/* Page header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2">
+          <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
             <FileText className="h-6 w-6 text-primary" />
             Contratos
           </h1>
@@ -962,205 +1161,39 @@ export default function Contracts() {
             <Plus className="h-4 w-4 mr-1" /> Novo Contrato
           </Button>
           <Button variant="outline" size="sm" onClick={() => refetch()}>
-            <RefreshCw className="h-4 w-4 mr-1" /> Atualizar
+            <RefreshCw className="h-4 w-4" />
+            <span className="sr-only">Atualizar</span>
           </Button>
         </div>
       </div>
 
-      {/* Abas Ativos / Arquivados / Excluídos */}
-      <div className="flex gap-1 border-b border-border">
-        {(["ativos", "arquivados", "excluidos"] as const).map((v) => (
-          <button
-            key={v}
-            onClick={() => { setView(v); setPage(1); }}
-            className={`px-4 py-2 text-sm font-medium capitalize transition-colors ${
-              view === v
-                ? "border-b-2 border-primary text-primary"
-                : "text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            {v === "ativos" ? "Ativos" : v === "arquivados" ? "Arquivados" : "Excluídos"}
-          </button>
-        ))}
-      </div>
+      {/* Abas Ativos / Arquivados / Excluídos — SegmentedTabs */}
+      <SegmentedTabs
+        value={view}
+        onValueChange={(v) => { setView(v as typeof view); setPage(1); }}
+        options={tabOptions}
+      />
 
-      {/* Table */}
-      <div className="rounded-md border overflow-hidden">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead className="w-16">#</TableHead>
-              <TableHead>Cliente</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Valor Total</TableHead>
-              <TableHead>Criado em</TableHead>
-              {view === "excluidos" ? (
-                <TableHead>Excluído em</TableHead>
-              ) : (
-                <TableHead>Encerrado em</TableHead>
-              )}
-              <TableHead className="w-32"></TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {isLoadingCurrent ? (
-              <TableRow>
-                <TableCell colSpan={7} className="text-center py-12">
-                  <Loader2 className="h-6 w-6 animate-spin mx-auto text-muted-foreground" />
-                </TableCell>
-              </TableRow>
-            ) : items.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={7} className="text-center py-16">
-                  <div className="flex flex-col items-center gap-3 text-muted-foreground">
-                    <FileText className="h-10 w-10 opacity-30" />
-                    <p className="text-sm">
-                      {view === "excluidos"
-                        ? "Nenhum contrato excluído."
-                        : "Nenhum contrato encontrado."}
-                    </p>
-                    {view !== "excluidos" && (
-                      <p className="text-xs">
-                        Contratos são criados ao vincular múltiplos aluguéis a um cliente.
-                      </p>
-                    )}
-                  </div>
-                </TableCell>
-              </TableRow>
-            ) : view === "excluidos" ? (
-              // Aba Excluídos: lista rasa com botão Restaurar
-              deletedItems.map((c) => (
-                <TableRow key={c.id} className="hover:bg-muted/50 transition-colors">
-                  <TableCell className="font-mono text-muted-foreground text-xs">#{c.id}</TableCell>
-                  <TableCell className="font-medium">
-                    {c.clientName ?? `Cliente #${c.clientId}`}
-                  </TableCell>
-                  <TableCell>
-                    <ContractStatusBadge status={c.status as ContractStatus} />
-                  </TableCell>
-                  <TableCell>
-                    {c.valorTotal ? `R$ ${Number(c.valorTotal).toFixed(2)}` : "—"}
-                  </TableCell>
-                  <TableCell className="text-sm text-muted-foreground">
-                    {c.criadoEm ? new Date(c.criadoEm).toLocaleDateString("pt-BR") : "—"}
-                  </TableCell>
-                  <TableCell className="text-sm text-muted-foreground">
-                    {(c as any).deletedAt
-                      ? new Date((c as any).deletedAt).toLocaleString("pt-BR", {
-                          day: "2-digit", month: "2-digit", year: "numeric",
-                          hour: "2-digit", minute: "2-digit",
-                        })
-                      : "—"}
-                  </TableCell>
-                  <TableCell>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={restoreMutation.isPending}
-                      onClick={async () => {
-                          const ok = await confirmDialog({
-                            title: `Restaurar contrato de ${c.clientName ?? `#${c.clientId}`}?`,
-                            description:
-                              "O contrato e seus aluguéis voltam para as listas ativas; as unidades serão re-atribuídas quando disponíveis.",
-                            confirmText: "Restaurar",
-                            destructive: false,
-                          });
-                          if (ok) restoreMutation.mutate({ id: c.id });
-                        }}
-                    >
-                      <RefreshCw className="h-3.5 w-3.5 mr-1" /> Restaurar
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              ))
-            ) : (
-              // Abas Ativos / Arquivados: lista com botão Ver detalhes + Excluir
-              activeItems.map((c) => (
-                <TableRow
-                  key={c.id}
-                  className="cursor-pointer hover:bg-muted/50 transition-colors"
-                  onClick={() => setSelectedId(c.id)}
-                >
-                  <TableCell className="font-mono text-muted-foreground text-xs">#{c.id}</TableCell>
-                  <TableCell className="font-medium">
-                    {c.clientName ?? `Cliente #${c.clientId}`}
-                  </TableCell>
-                  <TableCell>
-                    <ContractStatusBadge status={c.status as ContractStatus} />
-                  </TableCell>
-                  <TableCell>
-                    {c.valorTotal ? `R$ ${Number(c.valorTotal).toFixed(2)}` : "—"}
-                  </TableCell>
-                  <TableCell className="text-sm text-muted-foreground">
-                    {c.criadoEm ? new Date(c.criadoEm).toLocaleDateString("pt-BR") : "—"}
-                  </TableCell>
-                  <TableCell className="text-sm text-muted-foreground">
-                    {c.encerradoEm ? new Date(c.encerradoEm).toLocaleDateString("pt-BR") : "—"}
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => setSelectedId(c.id)}
-                      >
-                        Ver detalhes
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10"
-                        disabled={deleteMutation.isPending}
-                        onClick={async () => {
-                          const ok = await confirmDialog({
-                            title: `Excluir contrato de ${c.clientName ?? `#${c.clientId}`}?`,
-                            description:
-                              "Os aluguéis serão removidos das listas e as bicicletas liberadas para outras reservas. Dá para restaurar depois na aba Excluídos.",
-                            confirmText: "Excluir",
-                            destructive: true,
-                          });
-                          if (ok) deleteMutation.mutate({ id: c.id });
-                        }}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))
+      {/* DataTable */}
+      <DataTable
+        columns={view === "excluidos" ? deletedColumns : activeColumns}
+        data={items as ContractRow[]}
+        loading={isLoadingCurrent}
+        pagination={{ page, totalPages, onPageChange: setPage }}
+        empty={
+          <div className="flex flex-col items-center gap-3 text-muted-foreground">
+            <FileText className="h-10 w-10 opacity-30" />
+            <p className="text-sm">
+              {view === "excluidos" ? "Nenhum contrato excluído." : "Nenhum contrato encontrado."}
+            </p>
+            {view !== "excluidos" && (
+              <p className="text-xs">Contratos são criados ao vincular múltiplos aluguéis a um cliente.</p>
             )}
-          </TableBody>
-        </Table>
-      </div>
+          </div>
+        }
+      />
 
       <NewContractModal open={newContractOpen} onClose={() => setNewContractOpen(false)} />
-
-      {/* Pagination */}
-      {totalPages > 1 && (
-        <div className="flex items-center justify-between text-sm text-muted-foreground">
-          <span>
-            Página {page} de {totalPages} — {total} contrato{total !== 1 ? "s" : ""}
-          </span>
-          <div className="flex gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={page <= 1}
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
-            >
-              ← Anterior
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={page >= totalPages}
-              onClick={() => setPage((p) => p + 1)}
-            >
-              Próxima →
-            </Button>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
