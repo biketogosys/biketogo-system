@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "biketogo-dev",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev:local:once"],
+      "port": 3000
+    }
+  ]
+}

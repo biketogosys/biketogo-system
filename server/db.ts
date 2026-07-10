@@ -62,6 +62,12 @@ function cleanDatabaseUrl(raw: string): string {
 }
 
 export async function getDb() {
+  // Modo dev local: PGlite em vez do Supabase (ver server/dev-db.ts)
+  if (!_db && process.env.DEV_PGLITE && process.env.NODE_ENV !== "production") {
+    const { getDevDb } = await import("./dev-db");
+    _db = (await getDevDb()) as unknown as NonNullable<typeof _db>;
+    return _db;
+  }
   if (!_db && process.env.DATABASE_URL) {
     try {
       const url = cleanDatabaseUrl(process.env.DATABASE_URL);

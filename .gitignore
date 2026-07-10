@@ -106,6 +106,9 @@ temp/
 *.sqlite
 *.sqlite3
 
+# Banco PGlite do modo dev local (npm run dev:local)
+.dev-db/
+
 # Webdev artifacts (checkpoint zips, migrations, etc.)
 .webdev/
 
@@ -116,3 +119,12 @@ client/public/__manus__/version.json
 .manus/
 __manus__/
 .project-config.json
+
+# Documentos internos de operação (não sobem — contêm contexto de negócio)
+CLAUDE.md
+HANDOFF.md
+
+# Claude Code — config pessoal e worktrees de sessões em background
+# (mantém só o launch.json, que é config de projeto inofensiva)
+.claude/*
+!.claude/launch.json
