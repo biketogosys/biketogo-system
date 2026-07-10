@@ -104,7 +104,7 @@ function VerifiedClientAutocomplete({
           value={displayValue}
           onChange={(e) => { setInputValue(e.target.value); setSelectedName(""); onChange("", "", ""); setOpen(true); }}
           onFocus={() => setOpen(true)}
-          className="w-full pl-9 pr-8 py-2 rounded-md bg-secondary border border-border text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary"
+          className="w-full pl-9 pr-8 py-2 rounded-md bg-secondary border border-border text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-[#C8920A] focus:border-[#C8920A]"
         />
         {displayValue && (
           <button type="button" onClick={handleClear} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
@@ -138,7 +138,7 @@ function VerifiedClientAutocomplete({
                     {c.cpf && `CPF: ${c.cpf}`}{c.cpf && c.phone && " · "}{c.phone && c.phone}
                   </div>
                 </div>
-                {value === String(c.id) && <Check className="w-4 h-4 text-primary shrink-0" />}
+                {value === String(c.id) && <Check className="w-4 h-4 text-[#C8920A] shrink-0" />}
               </button>
             ))
           )}

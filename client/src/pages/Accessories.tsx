@@ -43,24 +43,62 @@ import {
   Wrench,
   Check,
 } from "lucide-react";
+import { UnitStatusBadge, UNIT_STATUS_LABELS, type BikeUnitStatus } from "@/components/UnitStatusBadge";
 
 type AccessoryStatus = "available" | "rented" | "maintenance" | "lost";
-type UnitStatus = "disponivel" | "alugado" | "perdido" | "manutencao" | "roubado";
+type UnitStatus = BikeUnitStatus;
 
-const UNIT_STATUS_LABELS: Record<UnitStatus, string> = {
-  disponivel: "Disponível",
-  alugado: "Alugado",
-  perdido: "Perdido",
-  manutencao: "Manutenção",
-  roubado: "Roubado",
+const STATUS_LABELS: Record<AccessoryStatus, string> = {
+  available: "Disponível",
+  rented: "Alugado",
+  maintenance: "Manutenção",
+  lost: "Perdido",
 };
 
-const UNIT_STATUS_COLORS: Record<UnitStatus, string> = {
-  disponivel: "bg-emerald-500/20 text-emerald-600 border-emerald-500/30",
-  alugado: "bg-blue-500/20 text-blue-600 border-blue-500/30",
-  perdido: "bg-red-500/20 text-red-600 border-red-500/30",
-  manutencao: "bg-amber-500/20 text-amber-600 border-amber-500/30",
-  roubado: "bg-red-700/20 text-red-700 border-red-700/30",
+const STATUS_COLORS: Record<AccessoryStatus, string> = {
+  available: "bg-emerald-500/20 text-emerald-400 border-emerald-500/30",
+  rented: "bg-amber-500/20 text-amber-400 border-amber-500/30",
+  maintenance: "bg-orange-500/20 text-orange-400 border-orange-500/30",
+  lost: "bg-destructive/10 text-destructive border-destructive/20",
+};
+
+const CATEGORIES = [
+  "segurança",
+  "conforto",
+  "transporte",
+  "navegação",
+  "Capacete",
+  "Cadeado",
+  "Cesta",
+  "Suporte de celular",
+  "Bomba de ar",
+  "Lanterna",
+  "Refletor",
+  "Bolsa",
+  "Garrafa",
+  "Outro",
+];
+
+type AccessoryForm = {
+  name: string;
+  description: string;
+  category: string;
+  serialNumber: string;
+  replacementValue: string;
+  status: AccessoryStatus;
+  obrigatorio: boolean;
+  notes: string;
+};
+
+const emptyForm: AccessoryForm = {
+  name: "",
+  description: "",
+  category: "",
+  serialNumber: "",
+  replacementValue: "",
+  status: "available",
+  obrigatorio: false,
+  notes: "",
 };
 
 // ─── Accessory Units Panel (ACC-2: grouped by variante) ────────────────────────
@@ -178,9 +216,9 @@ function AccessoryUnitsPanel({ accessoryId, onClose }: { accessoryId: number; on
               const exceptionUnits = varianteUnits.filter((u: any) => u.status !== "disponivel");
 
               return (
-                <div key={key} className="border border-border rounded-lg overflow-hidden">
+                <div key={key} className="border border-border rounded-lg overflow-hidden hover:border-primary/40 transition-colors">
                   {/* Collapsed row */}
-                  <div className="flex items-center gap-2 p-3">
+                  <div className="flex items-center gap-2 p-3 hover:bg-muted/50 transition-colors">
                     <button
                       className="flex-1 flex items-center gap-2 text-left"
                       onClick={() => toggleVariante(key)}
@@ -188,12 +226,12 @@ function AccessoryUnitsPanel({ accessoryId, onClose }: { accessoryId: number; on
                       {isExpanded ? <ChevronUp className="w-3.5 h-3.5 text-muted-foreground" /> : <ChevronDown className="w-3.5 h-3.5 text-muted-foreground" />}
                       <span className="text-sm font-medium">{varianteName}</span>
                       {/* Color-coded breakdown */}
-                      <span className="flex flex-wrap gap-1 ml-1">
-                        {disponivel > 0 && <span className="text-[11px] text-emerald-500 font-medium">{disponivel} disp</span>}
-                        {(counts["alugado"] ?? 0) > 0 && <span className="text-[11px] text-blue-500 font-medium">{counts["alugado"]} alug</span>}
-                        {(counts["manutencao"] ?? 0) > 0 && <span className="text-[11px] text-amber-500 font-medium">{counts["manutencao"]} manut</span>}
-                        {(counts["perdido"] ?? 0) > 0 && <span className="text-[11px] text-red-500 font-medium">{counts["perdido"]} perd</span>}
-                        {(counts["roubado"] ?? 0) > 0 && <span className="text-[11px] text-red-700 font-medium">{counts["roubado"]} roub</span>}
+                      <span className="flex flex-wrap gap-1 ml-1 font-mono text-[10px] text-muted-foreground">
+                        {disponivel > 0 && <span className="text-emerald-600 dark:text-emerald-400 font-semibold">{disponivel} disp</span>}
+                        {(counts["alugado"] ?? 0) > 0 && <span className="text-amber-600 dark:text-amber-400 font-semibold">{counts["alugado"]} alug</span>}
+                        {(counts["manutencao"] ?? 0) > 0 && <span className="text-orange-600 dark:text-orange-400 font-semibold">{counts["manutencao"]} manut</span>}
+                        {(counts["perdido"] ?? 0) > 0 && <span className="text-slate-600 dark:text-slate-400 font-semibold">{counts["perdido"]} perd</span>}
+                        {(counts["roubado"] ?? 0) > 0 && <span className="text-red-600 dark:text-red-400 font-semibold">{counts["roubado"]} roub</span>}
                       </span>
                     </button>
                     {/* Stepper */}
@@ -253,8 +291,8 @@ function AccessoryUnitsPanel({ accessoryId, onClose }: { accessoryId: number; on
 
                   {/* Manutenção mini-form */}
                   {manutKey === key ? (
-                    <div className="border-t border-amber-500/30 bg-amber-500/5 p-3 space-y-2">
-                      <p className="text-xs font-medium text-amber-600">Enviar para manutenção</p>
+                    <div className="border-t border-orange-500/30 bg-orange-500/5 p-3 space-y-2">
+                      <p className="text-xs font-medium text-orange-600 dark:text-orange-400">Enviar para manutenção</p>
                       <div className="grid grid-cols-2 gap-2">
                         <div>
                           <Label className="text-xs">Qtd</Label>
@@ -280,7 +318,7 @@ function AccessoryUnitsPanel({ accessoryId, onClose }: { accessoryId: number; on
                       <div className="flex gap-2">
                         <Button
                           size="sm"
-                          className="flex-1 bg-amber-600 hover:bg-amber-700 text-white"
+                          className="flex-1 bg-orange-600 hover:bg-orange-700 text-white"
                           disabled={updateMut.isPending || disponivel === 0}
                           onClick={() => {
                             const dispUnits = varianteUnits.filter((u: any) => u.status === "disponivel");
@@ -310,7 +348,7 @@ function AccessoryUnitsPanel({ accessoryId, onClose }: { accessoryId: number; on
                   ) : disponivel > 0 ? (
                     <div className="border-t border-border px-3 py-1.5">
                       <button
-                        className="flex items-center gap-1.5 text-xs text-amber-600 hover:text-amber-500 font-medium"
+                        className="flex items-center gap-1.5 text-xs text-orange-600 dark:text-orange-400 hover:text-orange-500 font-medium transition-colors"
                         onClick={() => { setManutKey(key); setManutQty(1); setManutObs(""); }}
                       >
                         <Wrench className="w-3 h-3" />
@@ -321,7 +359,7 @@ function AccessoryUnitsPanel({ accessoryId, onClose }: { accessoryId: number; on
 
                   {/* Expanded content */}
                   {isExpanded && (
-                    <div className="border-t border-border bg-secondary/10 p-3 space-y-2">
+                    <div className="border-t border-border bg-muted/30 p-3 space-y-2">
                       {/* Summary of disponivel units */}
                       {disponivel > 0 && (
                         <p className="text-xs text-muted-foreground">{disponivel} unidade{disponivel !== 1 ? "s" : ""} no estoque</p>
@@ -334,12 +372,7 @@ function AccessoryUnitsPanel({ accessoryId, onClose }: { accessoryId: number; on
                               {unit.serialNumber && (
                                 <span className="text-xs font-mono text-muted-foreground">{unit.serialNumber}</span>
                               )}
-                              <Badge
-                                variant="outline"
-                                className={`text-xs border ${UNIT_STATUS_COLORS[unit.status as UnitStatus]}`}
-                              >
-                                {UNIT_STATUS_LABELS[unit.status as UnitStatus] ?? unit.status}
-                              </Badge>
+                              <UnitStatusBadge status={unit.status as UnitStatus} />
                               {unit.observacao && (
                                 <span className="text-xs text-muted-foreground italic">{unit.observacao}</span>
                               )}
@@ -349,7 +382,7 @@ function AccessoryUnitsPanel({ accessoryId, onClose }: { accessoryId: number; on
                                 <Button
                                   size="sm"
                                   variant="ghost"
-                                  className="h-6 text-xs gap-1 text-emerald-600 hover:text-emerald-500"
+                                  className="h-6 text-xs gap-1 text-emerald-600 hover:text-emerald-500 dark:text-emerald-400"
                                   title="Resolver — voltar para disponível"
                                   disabled={updateMut.isPending}
                                   onClick={() => updateMut.mutate({ unitId: unit.id, status: "disponivel", observacao: "", variante: unit.variante ?? undefined })}
@@ -372,7 +405,7 @@ function AccessoryUnitsPanel({ accessoryId, onClose }: { accessoryId: number; on
                                 <Button
                                   size="sm"
                                   variant="ghost"
-                                  className="h-6 w-6 p-0 text-muted-foreground hover:text-destructive"
+                                  className="h-6 w-6 p-0 text-muted-foreground hover:text-destructive transition-colors"
                                   onClick={() => setDeleteUnitId(unit.id)}
                                   title="Excluir unidade"
                                 >
@@ -382,17 +415,28 @@ function AccessoryUnitsPanel({ accessoryId, onClose }: { accessoryId: number; on
                             </div>
                           </div>
                           {editingUnitId === unit.id && (
-                            <div className="p-3 pt-0 border-t border-border bg-secondary/20 space-y-2">
-                              <div>
-                                <Label className="text-xs">Novo status</Label>
-                                <Select value={editStatus} onValueChange={(v) => setEditStatus(v as UnitStatus)}>
-                                  <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
-                                  <SelectContent>
-                                    {(Object.keys(UNIT_STATUS_LABELS) as UnitStatus[]).filter(s => s !== "alugado").map((s) => (
-                                      <SelectItem key={s} value={s}>{UNIT_STATUS_LABELS[s]}</SelectItem>
-                                    ))}
-                                  </SelectContent>
-                                </Select>
+                            <div className="border-t border-border bg-muted/20 p-2.5 space-y-2">
+                              <div className="grid grid-cols-2 gap-2">
+                                <div>
+                                  <Label className="text-xs">Status</Label>
+                                  <Select value={editStatus} onValueChange={(v) => setEditStatus(v as UnitStatus)}>
+                                    <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
+                                    <SelectContent>
+                                      {(Object.entries(UNIT_STATUS_LABELS) as [UnitStatus, string][]).map(([st, label]) => (
+                                        <SelectItem key={st} value={st}>{label}</SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                </div>
+                                <div>
+                                  <Label className="text-xs">Variante</Label>
+                                  <Input
+                                    value={editVariante}
+                                    onChange={(e) => setEditVariante(e.target.value)}
+                                    placeholder="Ex: Cinza"
+                                    className="h-8 text-sm"
+                                  />
+                                </div>
                               </div>
                               <div>
                                 <Label className="text-xs">Observação</Label>
@@ -406,7 +450,7 @@ function AccessoryUnitsPanel({ accessoryId, onClose }: { accessoryId: number; on
                               <div className="flex gap-2">
                                 <Button
                                   size="sm"
-                                  className="flex-1 bg-primary hover:bg-primary/90 text-white"
+                                  className="flex-1 bg-primary hover:bg-primary/90 text-primary-foreground"
                                   onClick={() => updateMut.mutate({
                                     unitId: unit.id,
                                     status: editStatus,
@@ -463,7 +507,7 @@ function AccessoryUnitsPanel({ accessoryId, onClose }: { accessoryId: number; on
               <div className="flex gap-2">
                 <Button
                   size="sm"
-                  className="flex-1 bg-primary hover:bg-primary/90 text-white"
+                  className="flex-1 bg-primary hover:bg-primary/90 text-primary-foreground"
                   onClick={() => {
                     addUnitsMut.mutate(
                       { accessoryId, variante: newVarianteName.trim() || undefined, quantity: newVarianteQty },
@@ -509,59 +553,6 @@ function AccessoryUnitsPanel({ accessoryId, onClose }: { accessoryId: number; on
     </Dialog>
   );
 }
-
-const STATUS_LABELS: Record<AccessoryStatus, string> = {
-  available: "Disponível",
-  rented: "Alugado",
-  maintenance: "Manutenção",
-  lost: "Perdido",
-};
-
-const STATUS_COLORS: Record<AccessoryStatus, string> = {
-  available: "bg-emerald-500/20 text-emerald-400 border-emerald-500/30",
-  rented: "bg-blue-500/20 text-blue-400 border-blue-500/30",
-  maintenance: "bg-amber-500/20 text-amber-400 border-amber-500/30",
-  lost: "bg-red-500/20 text-red-400 border-red-500/30",
-};
-
-const CATEGORIES = [
-  "segurança",
-  "conforto",
-  "transporte",
-  "navegação",
-  "Capacete",
-  "Cadeado",
-  "Cesta",
-  "Suporte de celular",
-  "Bomba de ar",
-  "Lanterna",
-  "Refletor",
-  "Bolsa",
-  "Garrafa",
-  "Outro",
-];
-
-type AccessoryForm = {
-  name: string;
-  description: string;
-  category: string;
-  serialNumber: string;
-  replacementValue: string;
-  status: AccessoryStatus;
-  obrigatorio: boolean;
-  notes: string;
-};
-
-const emptyForm: AccessoryForm = {
-  name: "",
-  description: "",
-  category: "",
-  serialNumber: "",
-  replacementValue: "",
-  status: "available",
-  obrigatorio: false,
-  notes: "",
-};
 
 export default function Accessories() {
   const [search, setSearch] = useState("");
@@ -666,19 +657,21 @@ export default function Accessories() {
     ? allItems
     : allItems.filter((i: any) => i.category === categoryFilter);
 
-
   return (
     <>
-    <div className="p-4 md:p-6 space-y-4">
+      <div className="p-4 md:p-6 space-y-4">
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-xl md:text-2xl font-bold text-foreground">Acessórios</h1>
+            <h1 className="text-xl md:text-2xl font-bold text-foreground flex items-center gap-2">
+              <Package className="h-6 w-6 text-primary" />
+              Acessórios
+            </h1>
             <p className="text-xs md:text-sm text-muted-foreground mt-0.5">
               Gerencie capacetes, cadeados e demais equipamentos
             </p>
           </div>
-          <Button onClick={openCreate} className="bg-primary hover:bg-primary/90 text-white gap-1.5 h-9 text-xs md:text-sm">
+          <Button onClick={openCreate} className="gap-1.5 h-9 text-xs md:text-sm">
             <Plus className="w-4 h-4" />
             <span className="hidden sm:inline">Novo Acessório</span>
             <span className="sm:hidden">Novo</span>
@@ -689,21 +682,21 @@ export default function Accessories() {
         <div className="flex flex-col sm:flex-row gap-2 items-stretch sm:items-center">
           <div className="relative flex-1 max-w-xs">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
-            <Input placeholder="Buscar por nome ou série..." value={search} onChange={(e) => setSearch(e.target.value)} className="h-9 text-sm pl-8 bg-card border-border" />
+            <Input placeholder="Buscar por nome ou série..." value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} className="h-9 text-sm pl-8" />
           </div>
           <div className="flex gap-1.5 flex-wrap">
             {uniqueCategories.length > 0 && (
               <>
                 <span className="hidden sm:inline text-border">|</span>
                 {(["all", ...uniqueCategories] as string[]).map((cat) => (
-                  <button key={cat} onClick={() => setCategoryFilter(cat)} className={`px-2.5 py-1 rounded text-xs font-medium transition-all border ${categoryFilter === cat ? "bg-primary/15 border-primary/40 text-primary" : "bg-card border-border text-muted-foreground hover:text-foreground"}`}>
+                  <button key={cat} onClick={() => { setCategoryFilter(cat); setPage(1); }} className={`px-2.5 py-1 rounded text-xs font-medium transition-all border ${categoryFilter === cat ? "bg-primary/15 border-primary/40 text-primary" : "bg-card border-border text-muted-foreground hover:text-foreground"}`}>
                     {cat === "all" ? "Todas" : cat}
                   </button>
                 ))}
               </>
             )}
             {(search || categoryFilter !== "all") && (
-              <button onClick={() => { setSearch(""); setCategoryFilter("all"); }} className="px-2.5 py-1 rounded text-xs font-medium text-muted-foreground hover:text-foreground border border-border bg-card">
+              <button onClick={() => { setSearch(""); setCategoryFilter("all"); setPage(1); }} className="px-2.5 py-1 rounded text-xs font-medium text-muted-foreground hover:text-foreground border border-border bg-card transition-colors">
                 Limpar
               </button>
             )}
@@ -745,7 +738,7 @@ export default function Accessories() {
                     const byVariante: Array<{ variante: string | null; disponivel: number; alugado: number; manutencao: number; perdido: number; roubado: number }> = bd?.byVariante ?? [];
                     const showVariantes = bd && (byVariante.length > 1 || (byVariante.length === 1 && byVariante[0].variante !== null));
                     return (
-                      <tr key={item.id} className="group border-b border-border/40 last:border-b-0">
+                      <tr key={item.id} className="group border-b border-border/40 last:border-b-0 hover:bg-muted/30 transition-colors">
                         <td className="px-3 py-2.5">
                           <div className="min-w-0">
                             <p className="text-[13px] font-medium text-foreground truncate">{item.name}</p>
@@ -759,25 +752,25 @@ export default function Accessories() {
                           {showVariantes ? (
                             <div className="space-y-0.5">
                               {byVariante.map((v) => (
-                                <div key={v.variante ?? "__null__"} className="flex flex-wrap gap-x-2 text-[11px]">
+                                <div key={v.variante ?? "__null__"} className="flex flex-wrap gap-x-2 text-[11px] font-mono">
                                   <span className="text-muted-foreground font-medium">{v.variante ?? "Padrão"}:</span>
-                                  {v.disponivel > 0 && <span className="text-emerald-500">{v.disponivel} disp</span>}
-                                  {v.alugado > 0 && <span className="text-yellow-500">{v.alugado} alug</span>}
-                                  {v.manutencao > 0 && <span className="text-orange-500">{v.manutencao} manut</span>}
-                                  {v.perdido > 0 && <span className="text-red-500">{v.perdido} perd</span>}
-                                  {v.roubado > 0 && <span className="text-red-700">{v.roubado} roub</span>}
+                                  {v.disponivel > 0 && <span className="text-emerald-600 dark:text-emerald-400">{v.disponivel} disp</span>}
+                                  {v.alugado > 0 && <span className="text-amber-600 dark:text-amber-400">{v.alugado} alug</span>}
+                                  {v.manutencao > 0 && <span className="text-orange-600 dark:text-orange-400">{v.manutencao} manut</span>}
+                                  {v.perdido > 0 && <span className="text-slate-600 dark:text-slate-400">{v.perdido} perd</span>}
+                                  {v.roubado > 0 && <span className="text-red-600 dark:text-red-400">{v.roubado} roub</span>}
                                 </div>
                               ))}
                             </div>
                           ) : (
-                            <span className={`text-[12px] font-medium ${dispQty > 0 ? 'text-emerald-500' : 'text-red-500'}`}>
+                            <span className={`text-[12px] font-medium tabular-nums ${dispQty > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-destructive'}`}>
                               {dispQty} / {totalQty}
                             </span>
                           )}
                         </td>
                         <td className="px-3 py-2.5">
                           {isObrigatorio ? (
-                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-500/15 text-amber-500 border border-amber-500/30">
+                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-500/15 text-amber-600 border border-amber-500/30 dark:text-amber-400">
                               <ShieldCheck className="w-3 h-3" />Obrigatório
                             </span>
                           ) : (
@@ -788,9 +781,9 @@ export default function Accessories() {
                         </td>
                         <td className="px-3 py-2.5">
                           <div className="flex items-center gap-2 row-actions">
-                            <button onClick={() => openEdit(item)} className="text-[12px] text-primary hover:underline font-medium">Editar</button>
-                            <button onClick={() => setUnitsAccessoryId(item.id)} className="text-[12px] text-muted-foreground hover:text-primary">Unidades</button>
-                            <button onClick={() => setDeleteConfirmId(item.id)} className="text-muted-foreground hover:text-destructive"><Trash2 className="w-3.5 h-3.5" /></button>
+                            <button onClick={() => openEdit(item)} className="text-[12px] text-primary hover:underline font-medium transition-colors">Editar</button>
+                            <button onClick={() => setUnitsAccessoryId(item.id)} className="text-[12px] text-muted-foreground hover:text-primary transition-colors">Unidades</button>
+                            <button onClick={() => setDeleteConfirmId(item.id)} className="text-muted-foreground hover:text-destructive transition-colors"><Trash2 className="w-3.5 h-3.5" /></button>
                           </div>
                         </td>
                       </tr>
@@ -819,16 +812,16 @@ export default function Accessories() {
                       </div>
                       <div className="flex flex-col items-end gap-1">
                         {isObrigatorio && (
-                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-semibold bg-amber-500/15 text-amber-500 border border-amber-500/30">
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-semibold bg-amber-500/15 text-amber-600 border border-amber-500/30 dark:text-amber-400">
                             <ShieldCheck className="w-2.5 h-2.5" />Obrigatório
                           </span>
                         )}
                       </div>
                     </div>
                     <div className="flex gap-3 pt-2 mt-2 border-t border-border/50">
-                      <button onClick={() => openEdit(item)} className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary"><Edit className="w-3 h-3" />Editar</button>
-                      <button onClick={() => setUnitsAccessoryId(item.id)} className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary"><List className="w-3 h-3" />Unidades</button>
-                      <button onClick={() => setDeleteConfirmId(item.id)} className="flex items-center gap-1 text-xs text-muted-foreground hover:text-destructive ml-auto"><Trash2 className="w-3 h-3" /></button>
+                      <button onClick={() => openEdit(item)} className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary transition-colors"><Edit className="w-3 h-3" />Editar</button>
+                      <button onClick={() => setUnitsAccessoryId(item.id)} className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary transition-colors"><List className="w-3 h-3" />Unidades</button>
+                      <button onClick={() => setDeleteConfirmId(item.id)} className="flex items-center gap-1 text-xs text-muted-foreground hover:text-destructive ml-auto transition-colors"><Trash2 className="w-3 h-3" /></button>
                     </div>
                   </div>
                 );
@@ -836,13 +829,13 @@ export default function Accessories() {
             </div>
             {/* Pagination footer */}
             {totalPages > 1 && (
-              <div className="flex items-center justify-between px-3 py-2.5 border-t border-border bg-muted/20">
+              <div className="flex items-center justify-between px-3 py-2.5 border-t border-border">
                 <p className="text-xs text-muted-foreground">
                   Mostrando {Math.min((page - 1) * LIMIT + 1, totalAccessories)}–{Math.min(page * LIMIT, totalAccessories)} de {totalAccessories}
                 </p>
                 <div className="flex gap-1.5">
-                  <button disabled={page <= 1} onClick={() => setPage(p => p - 1)} className="px-2.5 py-1 rounded text-xs border border-border bg-card text-muted-foreground hover:text-foreground disabled:opacity-40 disabled:cursor-not-allowed">Anterior</button>
-                  <button disabled={page >= totalPages} onClick={() => setPage(p => p + 1)} className="px-2.5 py-1 rounded text-xs border border-border bg-card text-muted-foreground hover:text-foreground disabled:opacity-40 disabled:cursor-not-allowed">Próxima</button>
+                  <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>Anterior</Button>
+                  <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => setPage(p => p + 1)}>Próxima</Button>
                 </div>
               </div>
             )}
@@ -962,7 +955,6 @@ export default function Accessories() {
             <Button
               onClick={handleSubmit}
               disabled={createMutation.isPending || updateMutation.isPending}
-              className="bg-primary hover:bg-primary/90 text-white"
             >
               {editingId ? "Salvar Alterações" : "Cadastrar"}
             </Button>

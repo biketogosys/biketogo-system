@@ -13,6 +13,14 @@ interface StatusConfig {
   cls: string;
 }
 
+export const UNIT_STATUS_LABELS: Record<BikeUnitStatus, string> = {
+  disponivel: "Disponível",
+  alugado: "Alugado",
+  manutencao: "Em manutenção",
+  perdido: "Perdido",
+  roubado: "Roubado",
+};
+
 export const UNIT_STATUS_CONFIG: Record<BikeUnitStatus, StatusConfig> = {
   disponivel: {
     label: "Disponível",

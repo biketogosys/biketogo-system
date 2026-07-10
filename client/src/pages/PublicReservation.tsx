@@ -90,15 +90,15 @@ export default function PublicReservation() {
   const textMuted = isDark ? "text-[#555]" : "text-gray-400";
   const sectionBorder = isDark ? "border-[#1a1a2e]" : "border-gray-100";
   const inputBase = `w-full border rounded-lg px-4 py-3 text-sm focus:outline-none transition-colors ${isDark ? "bg-[#141420] text-white placeholder-[#555]" : "bg-white text-gray-800 placeholder-gray-400"}`;
-  const inputNormal = `${inputBase} ${isDark ? "border-[#2a2a3a] focus:border-primary" : "border-gray-300 focus:border-primary"}`;
+  const inputNormal = `${inputBase} ${isDark ? "border-[#2a2a3a] focus:border-[#C8920A]" : "border-gray-300 focus:border-[#C8920A]"}`;
   const inputError = `${inputBase} border-red-500/60 focus:border-red-400`;
-  const selectBase = `w-full border rounded-lg px-4 py-3 text-sm focus:outline-none transition-colors ${isDark ? "bg-[#141420] text-white border-[#2a2a3a] focus:border-primary" : "bg-white text-gray-800 border-gray-300 focus:border-primary"}`;
+  const selectBase = `w-full border rounded-lg px-4 py-3 text-sm focus:outline-none transition-colors ${isDark ? "bg-[#141420] text-white border-[#2a2a3a] focus:border-[#C8920A]" : "bg-white text-gray-800 border-gray-300 focus:border-[#C8920A]"}`;
   const navBtnSecondary = `flex items-center gap-2 px-5 py-3 rounded-xl text-sm border transition-all ${isDark ? "text-[#888] border-[#2a2a3a] hover:border-[#3a3a4a]" : "text-gray-500 border-gray-300 hover:border-gray-400"}`;
   const langBtnBase = isDark ? "border-[#2a2a3a] bg-[#141420]" : "border-gray-200 bg-gray-100";
   const langBtnInactive = isDark ? "text-[#888] hover:text-white" : "text-gray-500 hover:text-gray-800";
   const themeBtnClass = `p-2 rounded-lg border transition-all ${isDark ? "border-[#2a2a3a] bg-[#141420] text-[#888] hover:text-white" : "border-gray-200 bg-gray-100 text-gray-500 hover:text-gray-800"}`;
   const uploadZoneBase = `relative border-2 border-dashed rounded-xl p-5 flex flex-col items-center justify-center gap-2 cursor-pointer min-h-[140px] transition-all`;
-  const uploadZoneEmpty = isDark ? "border-[#2a2a3a] bg-[#141420] hover:border-primary/40" : "border-gray-300 bg-gray-50 hover:border-primary/60";
+  const uploadZoneEmpty = isDark ? "border-[#2a2a3a] bg-[#141420] hover:border-[#C8920A]/40" : "border-gray-300 bg-gray-50 hover:border-[#C8920A]/60";
   const lgpdBoxBg = isDark ? "bg-[#141420] border-[#2a2a3a]" : "bg-gray-50 border-gray-200";
 
   // ─── Steps (4 steps: Identificação, Contato, Endereço, Documentos+LGPD) ──────
@@ -340,8 +340,8 @@ export default function PublicReservation() {
     return (
       <div className={`min-h-screen ${bg} flex items-center justify-center p-4`}>
         <div className="max-w-md w-full text-center">
-          <div className="w-20 h-20 rounded-full bg-primary/20 flex items-center justify-center mx-auto mb-6">
-            <Check className="w-10 h-10 text-primary" />
+          <div className="w-20 h-20 rounded-full bg-[#C8920A]/20 flex items-center justify-center mx-auto mb-6">
+            <Check className="w-10 h-10 text-[#C8920A]" />
           </div>
           <h1 className={`text-2xl font-bold ${textPrimary} mb-3`} style={{ fontFamily: "'Montserrat', sans-serif" }}>
             {lang === "pt" ? "Cadastro enviado com sucesso!" : lang === "en" ? "Registration submitted successfully!" : "¡Registro enviado con éxito!"}
@@ -368,7 +368,7 @@ export default function PublicReservation() {
               href={`https://wa.me/55${waNumber}?text=${waMsg}`}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center justify-center gap-2 w-full px-6 py-4 rounded-xl font-bold text-base transition-all bg-primary text-[#0a0a0f] hover:bg-primary/90"
+              className="inline-flex items-center justify-center gap-2 w-full px-6 py-4 rounded-xl font-bold text-base transition-all bg-[#C8920A] text-[#0a0a0f] hover:bg-[#d9a020]"
             >
               <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
                 <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
@@ -420,11 +420,11 @@ export default function PublicReservation() {
               <img src={logoSrc} alt="Bike To Go" className="h-9 w-auto object-contain" />
             ) : (
               <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-lg bg-primary/20 flex items-center justify-center">
-                  <Bike className="w-5 h-5 text-primary" />
+                <div className="w-8 h-8 rounded-lg bg-[#C8920A]/20 flex items-center justify-center">
+                  <Bike className="w-5 h-5 text-[#C8920A]" />
                 </div>
                 <div>
-                  <h1 className="text-base font-bold text-primary leading-tight" style={{ fontFamily: "'Montserrat', sans-serif" }}>
+                  <h1 className="text-base font-bold text-[#C8920A] leading-tight" style={{ fontFamily: "'Montserrat', sans-serif" }}>
                     Bike To Go
                   </h1>
                   <p className={`text-[10px] ${textMuted} leading-tight`}>Floripa</p>
@@ -437,7 +437,7 @@ export default function PublicReservation() {
               {languages.map(l => (
                 <button key={l.code} onClick={() => changeLang(l.code)} title={l.label}
                   className={`px-2 py-1 rounded-md text-sm transition-all ${
-                    lang === l.code ? "bg-primary text-[#0a0a0f] font-bold shadow-sm" : langBtnInactive
+                    lang === l.code ? "bg-[#C8920A] text-[#0a0a0f] font-bold shadow-sm" : langBtnInactive
                   }`}>
                   {l.flag}
                 </button>
@@ -469,7 +469,7 @@ export default function PublicReservation() {
               <button
                 key={i}
                 onClick={() => { if (i < step) setStep(i); }}
-                className={`text-[10px] text-left transition-colors truncate ${i < step ? "cursor-pointer hover:text-primary" : "cursor-default"}`}
+                className={`text-[10px] text-left transition-colors truncate ${i < step ? "cursor-pointer hover:text-[#C8920A]" : "cursor-default"}`}
                 style={{ color: i === step ? "#C8920A" : i < step ? "#7a6010" : isDark ? "#444" : "#9ca3af" }}
                 title={i < step ? s : undefined}
               >
@@ -484,13 +484,13 @@ export default function PublicReservation() {
       <main className="max-w-2xl mx-auto px-4 py-8 pb-32 sm:pb-8">
         {/* Title */}
         <div className="text-center mb-8">
-          <span className="inline-block bg-primary text-[#0a0a0f] text-[11px] font-bold px-3 py-1 rounded-full uppercase tracking-widest mb-3">
+          <span className="inline-block bg-[#C8920A] text-[#0a0a0f] text-[11px] font-bold px-3 py-1 rounded-full uppercase tracking-widest mb-3">
             {lang === "pt" ? "Pré-Cadastro" : lang === "en" ? "Pre-Registration" : "Pre-Registro"}
           </span>
           <h2 className={`text-3xl font-extrabold ${textPrimary} mb-2`} style={{ fontFamily: "'Montserrat', sans-serif" }}>
-            {lang === "pt" ? (<>Cadastre-se para <span className="text-primary">alugar</span></>)
-              : lang === "en" ? (<>Register to <span className="text-primary">rent</span></>)
-              : (<>Regístrate para <span className="text-primary">alquilar</span></>)}
+            {lang === "pt" ? (<>Cadastre-se para <span className="text-[#C8920A]">alugar</span></>)
+              : lang === "en" ? (<>Register to <span className="text-[#C8920A]">rent</span></>)
+              : (<>Regístrate para <span className="text-[#C8920A]">alquilar</span></>)}
           </h2>
           <p className={`${textSecondary} text-sm max-w-md mx-auto leading-relaxed`}>
             {lang === "pt"
@@ -505,7 +505,7 @@ export default function PublicReservation() {
         {step === 0 && (
           <div className={`${cardBg} border rounded-2xl p-6 space-y-5`}>
             <div className={`flex items-center gap-2 pb-3 border-b ${sectionBorder}`}>
-              <span className="text-primary text-sm font-bold uppercase tracking-widest">🪪 {t.sectionIdentification}</span>
+              <span className="text-[#C8920A] text-sm font-bold uppercase tracking-widest">🪪 {t.sectionIdentification}</span>
             </div>
 
             {/* Origem */}
@@ -651,7 +651,7 @@ export default function PublicReservation() {
         {step === 1 && (
           <div className={`${cardBg} border rounded-2xl p-6 space-y-5`}>
             <div className={`flex items-center gap-2 pb-3 border-b ${sectionBorder}`}>
-              <span className="text-primary text-sm font-bold uppercase tracking-widest">📞 {t.sectionContact}</span>
+              <span className="text-[#C8920A] text-sm font-bold uppercase tracking-widest">📞 {t.sectionContact}</span>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <Field label={t.whatsapp} required error={errors.phone}>
@@ -680,7 +680,7 @@ export default function PublicReservation() {
         {step === 2 && (
           <div className={`${cardBg} border rounded-2xl p-6 space-y-5`}>
             <div className={`flex items-center gap-2 pb-3 border-b ${sectionBorder}`}>
-              <span className="text-primary text-sm font-bold uppercase tracking-widest">🏠 {t.sectionAddress}</span>
+              <span className="text-[#C8920A] text-sm font-bold uppercase tracking-widest">🏠 {t.sectionAddress}</span>
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
               <Field label={t.zipCode} required error={errors.zipCode}>
@@ -691,7 +691,7 @@ export default function PublicReservation() {
                       setZipCode(v);
                       if (v.replace(/\D/g,"").length === 8) fetchCEP(v);
                     }} />
-                  {cepLoading && <Loader2 className="absolute right-3 top-3.5 w-4 h-4 animate-spin text-primary" />}
+                  {cepLoading && <Loader2 className="absolute right-3 top-3.5 w-4 h-4 animate-spin text-[#C8920A]" />}
                 </div>
               </Field>
               <Field label={t.state} required error={errors.state}>
@@ -736,7 +736,7 @@ export default function PublicReservation() {
             {/* Documentos */}
             <div className={`${cardBg} border rounded-2xl p-6 space-y-5`}>
               <div className={`flex items-center gap-2 pb-3 border-b ${sectionBorder}`}>
-                <span className="text-primary text-sm font-bold uppercase tracking-widest">{t.sectionDocumentPhotos}</span>
+                <span className="text-[#C8920A] text-sm font-bold uppercase tracking-widest">{t.sectionDocumentPhotos}</span>
               </div>
 
 
@@ -779,9 +779,9 @@ export default function PublicReservation() {
 
                 {/* Prévia: PDF */}
                 {docFrontBase64 && docFrontIsPdf ? (
-                  <div className={`relative flex items-center gap-3 rounded-xl border p-4 ${isDark ? "border-primary/30 bg-[#141420]" : "border-primary/30 bg-orange-50"}`}>
-                    <div className="w-10 h-10 rounded-lg bg-primary/20 flex items-center justify-center shrink-0">
-                      <FileText className="w-5 h-5 text-primary" />
+                  <div className={`relative flex items-center gap-3 rounded-xl border p-4 ${isDark ? "border-[#C8920A]/30 bg-[#141420]" : "border-[#C8920A]/30 bg-orange-50"}`}>
+                    <div className="w-10 h-10 rounded-lg bg-[#C8920A]/20 flex items-center justify-center shrink-0">
+                      <FileText className="w-5 h-5 text-[#C8920A]" />
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className={`text-sm font-medium truncate ${textPrimary}`}>{docFrontName || "documento.pdf"}</p>
@@ -796,7 +796,7 @@ export default function PublicReservation() {
                     </button>
                     {docFrontUploading && (
                       <div className="absolute inset-0 flex items-center justify-center bg-black/40 rounded-xl">
-                        <Loader2 className="w-6 h-6 animate-spin text-primary" />
+                        <Loader2 className="w-6 h-6 animate-spin text-[#C8920A]" />
                       </div>
                     )}
                   </div>
@@ -806,7 +806,7 @@ export default function PublicReservation() {
                     <img
                       src={docFrontPreview}
                       alt="Frente"
-                      className="w-full h-36 object-cover rounded-xl border border-primary/30 cursor-pointer"
+                      className="w-full h-36 object-cover rounded-xl border border-[#C8920A]/30 cursor-pointer"
                       onClick={() => openLb(docFrontPreview, lang === "pt" ? "Frente" : "Front")}
                     />
                     <button
@@ -818,7 +818,7 @@ export default function PublicReservation() {
                     </button>
                     {docFrontUploading && (
                       <div className="absolute inset-0 flex items-center justify-center bg-black/40 rounded-xl">
-                        <Loader2 className="w-6 h-6 animate-spin text-primary" />
+                        <Loader2 className="w-6 h-6 animate-spin text-[#C8920A]" />
                       </div>
                     )}
                   </div>
@@ -858,7 +858,7 @@ export default function PublicReservation() {
                 <button
                   type="button"
                   onClick={() => setShowVerso(true)}
-                  className={`text-xs font-medium transition-colors ${isDark ? "text-[#888] hover:text-primary" : "text-gray-400 hover:text-primary"}`}
+                  className={`text-xs font-medium transition-colors ${isDark ? "text-[#888] hover:text-[#C8920A]" : "text-gray-400 hover:text-[#C8920A]"}`}
                 >
                   + {lang === "pt" ? "Adicionar verso (opcional)" : lang === "en" ? "Add back side (optional)" : "Agregar dorso (opcional)"}
                 </button>
@@ -882,7 +882,7 @@ export default function PublicReservation() {
                       <img
                         src={docBackPreview}
                         alt="Verso"
-                        className="w-full h-36 object-cover rounded-xl border border-primary/30 cursor-pointer"
+                        className="w-full h-36 object-cover rounded-xl border border-[#C8920A]/30 cursor-pointer"
                         onClick={() => openLb(docBackPreview, lang === "pt" ? "Verso" : "Back")}
                       />
                       <button
@@ -894,7 +894,7 @@ export default function PublicReservation() {
                       </button>
                       {docBackUploading && (
                         <div className="absolute inset-0 flex items-center justify-center bg-black/40 rounded-xl">
-                          <Loader2 className="w-6 h-6 animate-spin text-primary" />
+                          <Loader2 className="w-6 h-6 animate-spin text-[#C8920A]" />
                         </div>
                       )}
                     </div>
@@ -909,7 +909,7 @@ export default function PublicReservation() {
                         if (f) handleDocPhoto("back", f);
                       }}
                     >
-                      <Upload className="w-6 h-6 text-primary/60" />
+                      <Upload className="w-6 h-6 text-[#C8920A]/60" />
                       <p className={`text-xs text-center ${textMuted}`}>
                         {lang === "pt" ? "Clique ou arraste a foto aqui" : lang === "en" ? "Click or drag photo here" : "Haz clic o arrastra la foto aquí"}
                       </p>
@@ -977,7 +977,7 @@ export default function PublicReservation() {
             {/* LGPD */}
             <div className={`${cardBg} border rounded-2xl p-6 space-y-4`}>
               <div className={`flex items-center gap-2 pb-3 border-b ${sectionBorder}`}>
-                <span className="text-primary text-sm font-bold uppercase tracking-widest">🛡️ {t.sectionPrivacy}</span>
+                <span className="text-[#C8920A] text-sm font-bold uppercase tracking-widest">🛡️ {t.sectionPrivacy}</span>
               </div>
               <div className={`${lgpdBoxBg} border rounded-lg p-4 text-xs ${textSecondary} leading-relaxed`}>
                 <strong className={`${textPrimary} block mb-1`}>{t.lgpdTitle}</strong>
@@ -985,13 +985,13 @@ export default function PublicReservation() {
               </div>
               <label className="flex items-start gap-3 cursor-pointer">
                 <input type="checkbox" checked={lgpdConsent} onChange={e => setLgpdConsent(e.target.checked)}
-                  className="mt-0.5 w-4 h-4 accent-[var(--primary)] flex-shrink-0" />
+                  className="mt-0.5 w-4 h-4 accent-[#C8920A] flex-shrink-0" />
                 <span className={`text-sm ${textSecondary} leading-relaxed`}>{t.lgpdConsent}</span>
               </label>
               {errors.lgpdConsent && <p className="text-red-400 text-xs">{errors.lgpdConsent}</p>}
               <label className="flex items-start gap-3 cursor-pointer">
                 <input type="checkbox" checked={marketingConsent} onChange={e => setMarketingConsent(e.target.checked)}
-                  className="mt-0.5 w-4 h-4 accent-[var(--primary)] flex-shrink-0" />
+                  className="mt-0.5 w-4 h-4 accent-[#C8920A] flex-shrink-0" />
                 <span className={`text-sm ${textSecondary} leading-relaxed`}>
                   {lang === "pt" ? "Aceito receber comunicações de marketing e promoções da Bike To Go." : lang === "en" ? "I agree to receive marketing communications and promotions from Bike To Go." : "Acepto recibir comunicaciones de marketing y promociones de Bike To Go."}
                 </span>
@@ -1004,7 +1004,7 @@ export default function PublicReservation() {
               )}
 
               <button onClick={handleSubmit} disabled={submitting}
-                className="w-full flex items-center justify-center gap-2 px-8 py-4 rounded-xl font-bold text-base transition-all disabled:opacity-50 bg-primary text-[#0a0a0f] hover:bg-primary/90">
+                className="w-full flex items-center justify-center gap-2 px-8 py-4 rounded-xl font-bold text-base transition-all disabled:opacity-50 bg-[#C8920A] text-[#0a0a0f] hover:bg-[#d9a020]">
                 {submitting ? (
                   <><Loader2 className="w-5 h-5 animate-spin" />
                     {lang === "pt" ? "Enviando..." : lang === "en" ? "Sending..." : "Enviando..."}
@@ -1034,7 +1034,7 @@ export default function PublicReservation() {
                 </button>
               )}
               <button onClick={nextStep}
-                className="flex items-center gap-2 px-6 py-3 rounded-xl font-semibold text-sm transition-all bg-primary text-[#0a0a0f] hover:bg-primary/90">
+                className="flex items-center gap-2 px-6 py-3 rounded-xl font-semibold text-sm transition-all bg-[#C8920A] text-[#0a0a0f] hover:bg-[#d9a020]">
                 {lang === "pt" ? "Continuar" : lang === "en" ? "Continue" : "Continuar"}
                 <ChevronRight className="w-4 h-4" />
               </button>

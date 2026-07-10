@@ -115,4 +115,4 @@ client/public/__manus__/version.json
 # Manus internal directories
 .manus/
 __manus__/
-*.patch
+.project-config.json
