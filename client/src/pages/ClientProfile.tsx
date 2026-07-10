@@ -542,7 +542,7 @@ function EditClientModal({ open, onClose, client, clientId, onSuccess }: EditCli
                     <div className="relative w-full rounded-lg overflow-hidden border border-border bg-secondary">
                       {form.docFrontIsPdf ? (
                         <div className="flex items-center gap-3 px-4 py-3">
-                          <FileText className="w-8 h-8 text-[#C8920A]" />
+                          <FileText className="w-8 h-8 text-primary" />
                           <div className="flex-1 min-w-0">
                             <p className="text-sm font-medium text-foreground truncate">PDF selecionado</p>
                             <p className="text-xs text-muted-foreground">Frente, verso e QR incluídos</p>
@@ -562,14 +562,14 @@ function EditClientModal({ open, onClose, client, clientId, onSuccess }: EditCli
                     </div>
                   ) : (
                     <div
-                      className="w-full h-28 border-2 border-dashed border-border rounded-lg flex flex-col items-center justify-center gap-2 text-muted-foreground cursor-pointer hover:border-[#C8920A]/50 hover:text-[#C8920A] transition-colors"
+                      className="w-full h-28 border-2 border-dashed border-border rounded-lg flex flex-col items-center justify-center gap-2 text-muted-foreground cursor-pointer hover:border-primary/50 hover:text-primary transition-colors"
                       onClick={() => docRef.current?.click()}
                       onDrop={(e) => { e.preventDefault(); const f = e.dataTransfer.files?.[0]; if (f) handleDocPhoto("front", f); }}
                       onDragOver={(e) => e.preventDefault()}
                     >
                       <div className="flex gap-3">
-                        <FileText className="w-6 h-6 text-[#C8920A]/60" />
-                        <ImageIcon className="w-6 h-6 text-[#C8920A]/60" />
+                        <FileText className="w-6 h-6 text-primary/60" />
+                        <ImageIcon className="w-6 h-6 text-primary/60" />
                       </div>
                       <p className="text-xs font-medium">Arraste aqui ou clique para selecionar</p>
                       <p className="text-[11px] text-muted-foreground/70">PDF ou imagem · até 10 MB</p>
@@ -579,7 +579,7 @@ function EditClientModal({ open, onClose, client, clientId, onSuccess }: EditCli
                 {/* Botão adicionar verso */}
                 {form.docFrontBase64 && !form.docFrontIsPdf && !form.showVerso && (
                   <button type="button" onClick={() => set("showVerso", true)}
-                    className="text-xs text-[#C8920A] underline underline-offset-2 hover:opacity-80 transition-opacity">
+                    className="text-xs text-primary underline underline-offset-2 hover:opacity-80 transition-opacity">
                     + Adicionar verso
                   </button>
                 )}
@@ -597,11 +597,11 @@ function EditClientModal({ open, onClose, client, clientId, onSuccess }: EditCli
                         </button>
                       </div>
                     ) : (
-                      <div className="w-full h-28 border-2 border-dashed border-border rounded-lg flex flex-col items-center justify-center gap-2 text-muted-foreground cursor-pointer hover:border-[#C8920A]/50 hover:text-[#C8920A] transition-colors"
+                      <div className="w-full h-28 border-2 border-dashed border-border rounded-lg flex flex-col items-center justify-center gap-2 text-muted-foreground cursor-pointer hover:border-primary/50 hover:text-primary transition-colors"
                         onClick={() => backRef.current?.click()}
                         onDrop={(e) => { e.preventDefault(); const f = e.dataTransfer.files?.[0]; if (f) handleDocPhoto("back", f); }}
                         onDragOver={(e) => e.preventDefault()}>
-                        <ImageIcon className="w-6 h-6 text-[#C8920A]/60" />
+                        <ImageIcon className="w-6 h-6 text-primary/60" />
                         <p className="text-xs">Clique ou arraste a foto aqui</p>
                       </div>
                     )}
@@ -619,9 +619,9 @@ function EditClientModal({ open, onClose, client, clientId, onSuccess }: EditCli
                       { Icon: Download, text: "Toque em Exportar / Baixar PDF e salve o arquivo" },
                     ].map((item, i) => (
                       <li key={i} className="flex gap-3 text-xs text-muted-foreground leading-relaxed">
-                        <span className="font-bold text-[#C8920A] min-w-fit">{i + 1}.</span>
+                        <span className="font-bold text-primary min-w-fit">{i + 1}.</span>
                         <div className="flex gap-2 items-start">
-                          <item.Icon className="w-4 h-4 text-[#C8920A] mt-0.5 flex-shrink-0" />
+                          <item.Icon className="w-4 h-4 text-primary mt-0.5 flex-shrink-0" />
                           <span>{item.text}</span>
                         </div>
                       </li>
