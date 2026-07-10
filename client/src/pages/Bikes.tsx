@@ -23,19 +23,22 @@ import {
   ShieldOff,
   ShieldAlert,
   Wrench,
+  Settings2,
+  Tag,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-
+import { Card, CardContent, CardFooter } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { useConfirm } from "@/components/ConfirmDialog";
 import { friendlyError } from "@/lib/utils";
+import { UnitStatusBadge, type BikeUnitStatus } from "@/components/UnitStatusBadge";
 
 // LOTE-2: BikeStatus and statusConfig removed (bikes.status is now inert)
 type BikeCategory = "mtb" | "speed" | "gravel";
@@ -79,8 +82,15 @@ function DiscountRulesEditor({ bikeId, onClose }: { bikeId: number; onClose: () 
   return (
     <Dialog open onOpenChange={onClose}>
       <DialogContent className="max-w-md dialog-mobile">
-        <DialogHeader><DialogTitle className="flex items-center gap-2"><Percent className="w-4 h-4 text-primary" />Desconto Progressivo</DialogTitle></DialogHeader>
-        {isLoading ? <div className="flex justify-center py-4"><Loader2 className="w-5 h-5 animate-spin text-primary" /></div> : (
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Percent className="w-4 h-4 text-primary" />
+            Desconto Progressivo
+          </DialogTitle>
+        </DialogHeader>
+        {isLoading ? (
+          <div className="flex justify-center py-4"><Loader2 className="w-5 h-5 animate-spin text-primary" /></div>
+        ) : (
           <div className="space-y-3">
             <p className="text-xs text-muted-foreground">Configure descontos automáticos por número de dias de aluguel.</p>
             {localRules.map((rule, idx) => (
@@ -89,13 +99,19 @@ function DiscountRulesEditor({ bikeId, onClose }: { bikeId: number; onClose: () 
                 <span className="text-xs text-muted-foreground whitespace-nowrap">dias =</span>
                 <Input type="number" min="0" max="100" step="0.5" placeholder="%" value={rule.discountPercent} onChange={e => updateRule(idx, "discountPercent", e.target.value)} className="h-8 text-sm" />
                 <span className="text-xs text-muted-foreground">%</span>
-                <button onClick={() => removeRule(idx)} className="text-muted-foreground hover:text-destructive"><Trash2 className="w-3.5 h-3.5" /></button>
+                <button onClick={() => removeRule(idx)} className="text-muted-foreground hover:text-destructive transition-colors">
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
               </div>
             ))}
-            <button onClick={addRule} className="text-xs text-primary hover:underline flex items-center gap-1"><Plus className="w-3 h-3" />Adicionar faixa</button>
+            <button onClick={addRule} className="text-xs text-primary hover:underline flex items-center gap-1">
+              <Plus className="w-3 h-3" />Adicionar faixa
+            </button>
             <div className="flex gap-3 pt-3 border-t border-border">
               <Button variant="outline" onClick={onClose} className="flex-1">Cancelar</Button>
-              <Button onClick={handleSave} disabled={setRules.isPending} className="flex-1">{setRules.isPending ? "Salvando..." : "Salvar regras"}</Button>
+              <Button onClick={handleSave} disabled={setRules.isPending} className="flex-1">
+                {setRules.isPending ? "Salvando..." : "Salvar regras"}
+              </Button>
             </div>
           </div>
         )}
@@ -103,25 +119,6 @@ function DiscountRulesEditor({ bikeId, onClose }: { bikeId: number; onClose: () 
     </Dialog>
   );
 }
-
-// ─── Bike Unit Status helpers ─────────────────────────────────────────────────
-type BikeUnitStatus = "disponivel" | "perdido" | "roubado" | "manutencao" | "alugado";
-
-const BIKE_UNIT_STATUS_LABELS: Record<BikeUnitStatus, string> = {
-  disponivel: "Disponível",
-  perdido: "Perdido",
-  roubado: "Roubado",
-  manutencao: "Manutenção",
-  alugado: "Alugado",
-};
-
-const BIKE_UNIT_STATUS_COLORS: Record<BikeUnitStatus, string> = {
-  disponivel: "bg-emerald-500/20 text-emerald-600 border-emerald-500/30",
-  perdido: "bg-slate-500/20 text-slate-500 border-slate-500/30",
-  roubado: "bg-red-500/20 text-red-600 border-red-500/30",
-  manutencao: "bg-orange-500/20 text-orange-600 border-orange-500/30",
-  alugado: "bg-amber-500/20 text-amber-600 border-amber-500/30",
-};
 
 // ─── Bike Units Subcomponent (rendered only when expanded) ────────────────────
 function BikeUnitsPanel({ bikeSizeId, bikeId }: { bikeSizeId: number; bikeId: number }) {
@@ -162,7 +159,7 @@ function BikeUnitsPanel({ bikeSizeId, bikeId }: { bikeSizeId: number; bikeId: nu
     String(a.numeroSistema).localeCompare(String(b.numeroSistema), undefined, { numeric: true }));
 
   return (
-    <div className="border-t border-border bg-secondary/20 p-3 space-y-2">
+    <div className="border-t border-border bg-muted/30 p-3 space-y-2">
       {isLoading ? (
         <div className="flex justify-center py-3"><Loader2 className="w-4 h-4 animate-spin text-primary" /></div>
       ) : unitList.length === 0 ? (
@@ -190,9 +187,7 @@ function BikeUnitsPanel({ bikeSizeId, bikeId }: { bikeSizeId: number; bikeId: nu
                   ) : (
                     <span className="text-xs font-mono flex-1 truncate">{unit.numeroSistema}</span>
                   )}
-                  <span className={`text-[10px] px-1.5 py-0.5 rounded border font-medium shrink-0 ${BIKE_UNIT_STATUS_COLORS[st]}`}>
-                    {BIKE_UNIT_STATUS_LABELS[st]}
-                  </span>
+                  <UnitStatusBadge status={st} />
                   <div className="flex gap-0.5 shrink-0">
                     {editingId === unit.id ? (
                       <>
@@ -201,17 +196,17 @@ function BikeUnitsPanel({ bikeSizeId, bikeId }: { bikeSizeId: number; bikeId: nu
                       </>
                     ) : (
                       <button
-                        className="text-muted-foreground hover:text-primary p-0.5 rounded"
+                        className="text-muted-foreground hover:text-primary p-0.5 rounded transition-colors"
                         title="Editar Nº"
                         onClick={() => { setEditingId(unit.id); setEditNumero(unit.numeroSistema); }}
                       >
                         <Pencil className="w-3 h-3" />
                       </button>
                     )}
-                    {/* Status buttons — disponivel/perdido/roubado/manutencao (BU-3C-FRONT-1) */}
+                    {/* Status buttons — disponivel/perdido/roubado/manutencao */}
                     {st !== "disponivel" && (
                       <button
-                        className="text-muted-foreground hover:text-emerald-600 p-0.5 rounded"
+                        className="text-muted-foreground hover:text-emerald-600 p-0.5 rounded transition-colors"
                         title="Marcar disponível"
                         onClick={() => setStatusMut.mutate({ id: unit.id, status: "disponivel" })}
                       >
@@ -220,7 +215,7 @@ function BikeUnitsPanel({ bikeSizeId, bikeId }: { bikeSizeId: number; bikeId: nu
                     )}
                     {st !== "perdido" && (
                       <button
-                        className="text-muted-foreground hover:text-slate-500 p-0.5 rounded"
+                        className="text-muted-foreground hover:text-slate-500 p-0.5 rounded transition-colors"
                         title="Marcar perdido"
                         onClick={() => setStatusMut.mutate({ id: unit.id, status: "perdido" })}
                       >
@@ -229,7 +224,7 @@ function BikeUnitsPanel({ bikeSizeId, bikeId }: { bikeSizeId: number; bikeId: nu
                     )}
                     {st !== "roubado" && (
                       <button
-                        className="text-muted-foreground hover:text-red-600 p-0.5 rounded"
+                        className="text-muted-foreground hover:text-red-600 p-0.5 rounded transition-colors"
                         title="Marcar roubado"
                         onClick={() => setStatusMut.mutate({ id: unit.id, status: "roubado" })}
                       >
@@ -238,7 +233,7 @@ function BikeUnitsPanel({ bikeSizeId, bikeId }: { bikeSizeId: number; bikeId: nu
                     )}
                     {st !== "manutencao" && (
                       <button
-                        className="text-muted-foreground hover:text-orange-600 p-0.5 rounded"
+                        className="text-muted-foreground hover:text-orange-600 p-0.5 rounded transition-colors"
                         title="Enviar pra manutenção"
                         onClick={() => setStatusMut.mutate({ id: unit.id, status: "manutencao" })}
                       >
@@ -246,7 +241,7 @@ function BikeUnitsPanel({ bikeSizeId, bikeId }: { bikeSizeId: number; bikeId: nu
                       </button>
                     )}
                     <button
-                      className="text-muted-foreground hover:text-destructive p-0.5 rounded"
+                      className="text-muted-foreground hover:text-destructive p-0.5 rounded transition-colors"
                       title="Remover unidade"
                       onClick={() => setConfirmDeleteId(unit.id)}
                     >
@@ -305,7 +300,6 @@ function BikeSizesTab({ bikeId }: { bikeId: number }) {
   const [obs, setObs] = useState("");
   const [editId, setEditId] = useState<number | null>(null);
   const [editData, setEditData] = useState<{ tamanho: string }>({ tamanho: "" });
-  // Expanded sizes
   const [expandedIds, setExpandedIds] = useState<Set<number>>(new Set());
 
   const toggleExpand = (id: number) => {
@@ -333,16 +327,19 @@ function BikeSizesTab({ bikeId }: { bikeId: number }) {
 
   return (
     <div className="space-y-4">
-      {isLoading ? <p className="text-sm text-muted-foreground">Carregando...</p> : (
+      {isLoading ? (
+        <p className="text-sm text-muted-foreground">Carregando...</p>
+      ) : (
         <div className="space-y-2">
-          {(sizes as any[]).length === 0 && <p className="text-sm text-muted-foreground">Nenhum tamanho cadastrado.</p>}
+          {(sizes as any[]).length === 0 && (
+            <p className="text-sm text-muted-foreground">Nenhum tamanho cadastrado.</p>
+          )}
           {(sizes as any[]).map((s: any) => {
             const isExpanded = expandedIds.has(s.id);
             return (
               <div key={s.id} className="border border-border rounded-lg overflow-hidden">
                 {/* Header row */}
-                <div className="flex items-center gap-2 p-3">
-                  {/* Chevron + info — clickable to expand */}
+                <div className="flex items-center gap-2 p-3 hover:bg-muted/50 transition-colors">
                   <button
                     className="flex-1 flex items-center gap-2 text-left min-w-0"
                     onClick={() => { if (editId !== s.id) toggleExpand(s.id); }}
@@ -362,7 +359,7 @@ function BikeSizesTab({ bikeId }: { bikeId: number }) {
                     ) : (
                       <div className="flex-1 min-w-0">
                         <span className="font-medium text-sm">{s.tamanho}</span>
-                        {/* Breakdown badges */}
+                        {/* Breakdown inline pills */}
                         <span className="flex flex-wrap gap-x-2 gap-y-0.5 mt-0.5">
                           {((s as any).disponivel ?? 0) > 0 && (
                             <span className="text-[11px] text-emerald-600 dark:text-emerald-400 flex items-center gap-0.5">
@@ -371,8 +368,8 @@ function BikeSizesTab({ bikeId }: { bikeId: number }) {
                             </span>
                           )}
                           {(s as any).alugada > 0 && (
-                            <span className="text-[11px] flex items-center gap-0.5" style={{ color: 'var(--primary)' }}>
-                              <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ background: 'var(--primary)' }} />
+                            <span className="text-[11px] text-amber-600 dark:text-amber-400 flex items-center gap-0.5">
+                              <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-500" />
                               {(s as any).alugada} alugada
                             </span>
                           )}
@@ -399,8 +396,8 @@ function BikeSizesTab({ bikeId }: { bikeId: number }) {
                       </>
                     ) : (
                       <>
-                        <button onClick={() => startEdit(s)} className="text-muted-foreground hover:text-primary p-1"><Pencil className="w-3.5 h-3.5" /></button>
-                        <button onClick={async () => { if (await confirmDialog({ title: "Remover tamanho?", description: "Todas as unidades deste tamanho serão removidas.", confirmText: "Remover", destructive: true })) deleteMut.mutate({ id: s.id }); }} className="text-muted-foreground hover:text-destructive p-1"><Trash2 className="w-3.5 h-3.5" /></button>
+                        <button onClick={() => startEdit(s)} className="text-muted-foreground hover:text-primary p-1 rounded transition-colors"><Pencil className="w-3.5 h-3.5" /></button>
+                        <button onClick={async () => { if (await confirmDialog({ title: "Remover tamanho?", description: "Todas as unidades deste tamanho serão removidas.", confirmText: "Remover", destructive: true })) deleteMut.mutate({ id: s.id }); }} className="text-muted-foreground hover:text-destructive p-1 rounded transition-colors"><Trash2 className="w-3.5 h-3.5" /></button>
                       </>
                     )}
                   </div>
@@ -445,12 +442,13 @@ function MaintenanceTab({ bikeId }: { bikeId: number }) {
   return (
     <div className="space-y-2 py-1">
       {emManutencao.map((u) => (
-        <div key={u.id} className="flex items-center justify-between gap-2 rounded-lg border p-2.5">
+        <div key={u.id} className="flex items-center justify-between gap-2 rounded-lg border border-border p-2.5 hover:bg-muted/50 transition-colors">
           <div className="min-w-0">
             <div className="flex items-center gap-2">
               <Wrench className="w-3.5 h-3.5 text-orange-600 shrink-0" />
               <span className="font-medium text-sm">Nº {u.numeroSistema}</span>
               <Badge variant="outline" className="text-xs">{u.tamanho}</Badge>
+              <UnitStatusBadge status="manutencao" />
             </div>
             {u.observacao && <p className="text-xs text-muted-foreground mt-1 truncate">{u.observacao}</p>}
           </div>
@@ -485,7 +483,6 @@ function BikePhotoUpload({ bikeId, currentUrl, onUploaded }: { bikeId: number; c
 
   return (
     <div className="space-y-3">
-      {/* Preview na proporção 4:3 */}
       {currentUrl ? (
         <div className="relative w-full rounded-lg overflow-hidden bg-secondary border border-border" style={{ aspectRatio: "4/3" }}>
           <img src={currentUrl} alt="Foto da bicicleta" className="w-full h-full object-cover" />
@@ -501,11 +498,7 @@ function BikePhotoUpload({ bikeId, currentUrl, onUploaded }: { bikeId: number; c
         </button>
       )}
       <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleFile} />
-      {/* Guia de tamanho */}
-      <p className="text-xs text-muted-foreground">
-        Recomendado: 800×600px, proporção 4:3, máximo 2MB
-      </p>
-      {/* Aviso > 2MB */}
+      <p className="text-xs text-muted-foreground">Recomendado: 800×600px, proporção 4:3, máximo 2MB</p>
       {sizeWarning && (
         <p className="text-xs text-amber-500 bg-amber-500/10 border border-amber-500/30 rounded-md px-3 py-2">
           ⚠️ Foto muito grande — pode deixar o formulário lento
@@ -559,13 +552,15 @@ function BikeFormDialog({ bike, onClose, onSuccess }: { bike: any | null; onClos
   return (
     <Dialog open onOpenChange={onClose}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto dialog-mobile">
-        <DialogHeader><DialogTitle>{isEdit ? "Editar Bicicleta" : "Nova Bicicleta"}</DialogTitle></DialogHeader>
+        <DialogHeader>
+          <DialogTitle>{isEdit ? "Editar Bicicleta" : "Nova Bicicleta"}</DialogTitle>
+        </DialogHeader>
         <Tabs defaultValue="dados">
-          <TabsList className="w-full grid grid-cols-4 h-auto">
-            <TabsTrigger value="dados" className="text-xs py-2 px-1">Dados</TabsTrigger>
-            <TabsTrigger value="foto" disabled={!currentId} className="text-xs py-2 px-1">Foto</TabsTrigger>
-            <TabsTrigger value="tamanhos" disabled={!currentId} className="text-xs py-2 px-1">Tamanhos</TabsTrigger>
-            <TabsTrigger value="manutencao" disabled={!currentId} className="text-xs py-2 px-1">
+          <TabsList className="w-full grid grid-cols-4 h-9">
+            <TabsTrigger value="dados" className="text-xs">Dados</TabsTrigger>
+            <TabsTrigger value="foto" disabled={!currentId} className="text-xs">Foto</TabsTrigger>
+            <TabsTrigger value="tamanhos" disabled={!currentId} className="text-xs">Tamanhos</TabsTrigger>
+            <TabsTrigger value="manutencao" disabled={!currentId} className="text-xs">
               <span className="hidden sm:inline">Manutenção</span>
               <span className="sm:hidden">Manut.</span>
             </TabsTrigger>
@@ -576,27 +571,12 @@ function BikeFormDialog({ bike, onClose, onSuccess }: { bike: any | null; onClos
             <div className="grid grid-cols-2 gap-3">
               <div><Label className="text-xs">Nº de Série *</Label><Input value={form.serialNumber} onChange={e => set("serialNumber", e.target.value)} className="h-8 text-sm" /></div>
               <div><Label className="text-xs">Modelo *</Label><Input value={form.model} onChange={e => set("model", e.target.value)} className="h-8 text-sm" /></div>
-              <div>
-                <Label className="text-xs">Marca</Label>
-                <Select value={form.brand || "_none"} onValueChange={v => set("brand", v === "_none" ? "" : v)}>
-                  <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Selecionar..." /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="_none">Selecionar...</SelectItem>
-                    <SelectItem value="Trek">Trek</SelectItem>
-                    <SelectItem value="Sense">Sense</SelectItem>
-                    <SelectItem value="Oggi">Oggi</SelectItem>
-                    <SelectItem value="Cannondale">Cannondale</SelectItem>
-                    <SelectItem value="Specialized">Specialized</SelectItem>
-                    <SelectItem value="Outro">Outro</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+              <div><Label className="text-xs">Marca</Label><Input value={form.brand} onChange={e => set("brand", e.target.value)} className="h-8 text-sm" /></div>
               <div>
                 <Label className="text-xs">Categoria</Label>
-                <Select value={form.category || "_none"} onValueChange={v => set("category", v === "_none" ? "" : v)}>
-                  <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Selecionar..." /></SelectTrigger>
+                <Select value={form.category || ""} onValueChange={v => set("category", v)}>
+                  <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Selecione" /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="_none">Selecionar...</SelectItem>
                     <SelectItem value="mtb">MTB</SelectItem>
                     <SelectItem value="speed">Speed</SelectItem>
                     <SelectItem value="gravel">Gravel</SelectItem>
@@ -607,8 +587,6 @@ function BikeFormDialog({ bike, onClose, onSuccess }: { bike: any | null; onClos
               <div><Label className="text-xs">Diária (R$)</Label><Input type="number" value={form.dailyRate} onChange={e => set("dailyRate", e.target.value)} className="h-8 text-sm" /></div>
               <div><Label className="text-xs">Peso (kg)</Label><Input value={form.weight} onChange={e => set("weight", e.target.value)} className="h-8 text-sm" /></div>
               <div><Label className="text-xs">Limite de peso (kg)</Label><Input value={form.weightLimit} onChange={e => set("weightLimit", e.target.value)} className="h-8 text-sm" /></div>
-
-              {/* LOTE-2: Status field removed — availability derived from bike_units */}
             </div>
             <div><Label className="text-xs">Descrição</Label><Textarea value={form.description} onChange={e => set("description", e.target.value)} className="text-sm min-h-[60px]" /></div>
             <div><Label className="text-xs">Observações internas</Label><Textarea value={form.notes} onChange={e => set("notes", e.target.value)} className="text-sm min-h-[60px]" /></div>
@@ -637,6 +615,25 @@ function BikeFormDialog({ bike, onClose, onSuccess }: { bike: any | null; onClos
   );
 }
 
+// ─── Availability pill (inline, used in card) ─────────────────────────────────
+function AvailabilityPill({ disp, qtd }: { disp: number; qtd: number }) {
+  if (qtd === 0) return (
+    <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-secondary text-secondary-foreground">
+      Sem tamanhos
+    </span>
+  );
+  if (disp > 0) return (
+    <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-emerald-500/15 text-emerald-600 border border-emerald-500/30 dark:text-emerald-400">
+      {disp}/{qtd} disp.
+    </span>
+  );
+  return (
+    <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-destructive/10 text-destructive border border-destructive/20">
+      Indisponível
+    </span>
+  );
+}
+
 // ─── Main Bikes Page ──────────────────────────────────────────────────────────
 export default function Bikes() {
   const confirmDialog = useConfirm();
@@ -660,34 +657,53 @@ export default function Bikes() {
   });
 
   return (
-    <div className="space-y-4">
-      {/* Header */}
+    <div className="p-6 space-y-6">
+      {/* Page header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl md:text-2xl font-bold text-foreground">Bicicletas</h1>
-          <p className="text-xs md:text-sm text-muted-foreground mt-0.5">Gerencie a frota, tamanhos e manutenções</p>
+          <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
+            <BikeIcon className="h-6 w-6 text-primary" />
+            Bicicletas
+          </h1>
+          <p className="text-sm text-muted-foreground mt-1">
+            {totalBikes} bicicleta{totalBikes !== 1 ? "s" : ""} na frota
+          </p>
         </div>
-        <Button onClick={() => { setEditBike(null); setShowForm(true); }} className="gap-1.5 h-9 text-xs md:text-sm">
-          <Plus className="w-4 h-4" />
-          <span className="hidden sm:inline">Nova Bicicleta</span>
-          <span className="sm:hidden">Nova</span>
+        <Button size="sm" onClick={() => { setEditBike(null); setShowForm(true); }}>
+          <Plus className="h-4 w-4 mr-1" /> Nova Bicicleta
         </Button>
       </div>
 
-      {/* Filters — horizontal compact */}
+      {/* Filters */}
       <div className="flex flex-col sm:flex-row gap-2 items-stretch sm:items-center">
         <div className="relative flex-1 max-w-xs">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
-          <Input placeholder="Buscar por modelo, série..." value={search} onChange={e => setSearch(e.target.value)} className="h-9 text-sm pl-8 bg-card border-border" />
+          <Input
+            placeholder="Buscar por modelo, série..."
+            value={search}
+            onChange={e => { setSearch(e.target.value); setPage(1); }}
+            className="h-9 text-sm pl-8"
+          />
         </div>
         <div className="flex gap-1.5 flex-wrap">
           {([undefined, "mtb", "speed", "gravel"] as (string | undefined)[]).map(c => (
-            <button key={String(c)} onClick={() => setCategoryFilter(c)} className={`px-2.5 py-1 rounded text-xs font-medium transition-all border ${categoryFilter === c ? "bg-primary/15 border-primary/40 text-primary" : "bg-card border-border text-muted-foreground hover:text-foreground"}`}>
+            <button
+              key={String(c)}
+              onClick={() => { setCategoryFilter(c); setPage(1); }}
+              className={`px-2.5 py-1 rounded text-xs font-medium transition-all border ${
+                categoryFilter === c
+                  ? "bg-primary/15 border-primary/40 text-primary"
+                  : "bg-card border-border text-muted-foreground hover:text-foreground"
+              }`}
+            >
               {c === undefined ? "Todas" : categoryLabels[c as BikeCategory] || c}
             </button>
           ))}
           {(search || categoryFilter) && (
-            <button onClick={() => { setSearch(""); setCategoryFilter(undefined); setPage(1); }} className="px-2.5 py-1 rounded text-xs font-medium text-muted-foreground hover:text-foreground border border-border bg-card">
+            <button
+              onClick={() => { setSearch(""); setCategoryFilter(undefined); setPage(1); }}
+              className="px-2.5 py-1 rounded text-xs font-medium text-muted-foreground hover:text-foreground border border-border bg-card transition-colors"
+            >
               Limpar
             </button>
           )}
@@ -696,7 +712,9 @@ export default function Bikes() {
 
       {/* Content */}
       {isLoading ? (
-        <div className="flex items-center justify-center h-48"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div>
+        <div className="flex items-center justify-center h-48">
+          <Loader2 className="w-6 h-6 animate-spin text-primary" />
+        </div>
       ) : bikes.length === 0 ? (
         <div className="flex flex-col items-center justify-center h-48 text-muted-foreground">
           <BikeIcon className="w-10 h-10 mb-3 opacity-30" />
@@ -704,114 +722,115 @@ export default function Bikes() {
         </div>
       ) : (
         <>
-          {/* Desktop table */}
-          <div className="hidden md:block bg-card border border-border rounded-lg overflow-hidden">
-            <table className="w-full table-compact">
-              <thead>
-                <tr className="border-b border-border bg-muted/30">
-                  <th className="text-left text-[11px] font-semibold text-muted-foreground uppercase tracking-wider px-3 py-2.5">Bicicleta</th>
-                  <th className="text-left text-[11px] font-semibold text-muted-foreground uppercase tracking-wider px-3 py-2.5">Categoria</th>
-                  <th className="text-left text-[11px] font-semibold text-muted-foreground uppercase tracking-wider px-3 py-2.5">Status</th>
-                  <th className="text-left text-[11px] font-semibold text-muted-foreground uppercase tracking-wider px-3 py-2.5">Diária</th>
-                  <th className="w-32 px-3 py-2.5" />
-                </tr>
-              </thead>
-              <tbody>
-                {bikes.map((bike: any) => (
-                  <tr key={bike.id} className="group border-b border-border/40 last:border-b-0">
-                    <td className="px-3 py-2.5">
-                      <div className="flex items-center gap-2.5">
-                        <div className="w-9 h-9 rounded-md overflow-hidden bg-secondary flex-shrink-0 border border-border">
-                          {bike.photoUrl ? (
-                            <img src={bike.photoUrl} alt={bike.model} className="w-full h-full object-cover" />
-                          ) : (
-                            <div className="w-full h-full flex items-center justify-center"><BikeIcon className="w-4 h-4 text-muted-foreground/30" /></div>
-                          )}
-                        </div>
-                        <div className="min-w-0">
-                          <p className="text-[13px] font-medium text-foreground truncate">{bike.model}</p>
-                          <p className="text-[11px] text-muted-foreground">{bike.brand || ''} {bike.serialNumber ? `• #${bike.serialNumber}` : ''}</p>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-3 py-2.5">
-                      {bike.category && <span className="px-1.5 py-0.5 bg-primary/10 text-primary rounded text-[10px] uppercase font-medium">{categoryLabels[bike.category as BikeCategory] || bike.category}</span>}
-                    </td>
-                    <td className="px-3 py-2.5">
-                      {(() => {
-                        const disp = (bike as any).disponivelTotal;
-                        const qtd = (bike as any).qtdTotal;
-                        if (qtd === 0) return <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-secondary text-secondary-foreground">Sem tamanhos</span>;
-                        if (disp > 0) return <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-emerald-100 text-emerald-700 border border-emerald-200">{disp}/{qtd} disp.</span>;
-                        return <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-red-100 text-red-700 border border-red-200">Indisponível</span>;
-                      })()}
-                    </td>
-                    <td className="px-3 py-2.5 text-[13px] font-semibold text-primary">
-                      {bike.dailyRate ? `R$ ${parseFloat(bike.dailyRate).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}` : '—'}
-                    </td>
-                    <td className="px-3 py-2.5">
-                      <div className="flex items-center gap-2 row-actions">
-                        <button onClick={() => { setEditBike(bike); setShowForm(true); }} className="text-[12px] text-primary hover:underline font-medium">Editar</button>
-                        <button onClick={() => setDiscountBikeId(bike.id)} className="text-[12px] text-muted-foreground hover:text-primary">Descontos</button>
-                        <button onClick={async () => { if (await confirmDialog({ title: "Remover bike?", confirmText: "Remover", destructive: true })) deleteMutation.mutate({ id: bike.id }); }} className="text-muted-foreground hover:text-destructive"><Trash2 className="w-3.5 h-3.5" /></button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          {/* Mobile cards */}
-          <div className="md:hidden space-y-2">
+          {/* Card grid — hierárquico (modelo → tamanhos → unidades via dialog) */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {bikes.map((bike: any) => (
-              <div key={bike.id} className="bg-card border border-border rounded-lg p-3 active:bg-accent/40 transition-colors">
-                <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 rounded-md overflow-hidden bg-secondary flex-shrink-0 border border-border">
-                    {bike.photoUrl ? (
-                      <img src={bike.photoUrl} alt={bike.model} className="w-full h-full object-cover" />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center"><BikeIcon className="w-5 h-5 text-muted-foreground/30" /></div>
-                    )}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-foreground truncate">{bike.model}</p>
-                    <p className="text-xs text-muted-foreground">{bike.brand} {bike.category && `• ${categoryLabels[bike.category as BikeCategory] || bike.category}`}</p>
-                    {bike.dailyRate && <p className="text-xs font-semibold text-primary mt-0.5">R$ {parseFloat(bike.dailyRate).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}/dia</p>}
-                  </div>
-                  {(() => {
-                    const disp = (bike as any).disponivelTotal;
-                    const qtd = (bike as any).qtdTotal;
-                    if (qtd === 0) return <span className="text-[10px] px-2 py-0.5 rounded-full font-medium flex-shrink-0 bg-secondary text-secondary-foreground">Sem tamanhos</span>;
-                    if (disp > 0) return <span className="text-[10px] px-2 py-0.5 rounded-full font-medium flex-shrink-0 bg-emerald-100 text-emerald-700 border border-emerald-200">{disp}/{qtd} disp.</span>;
-                    return <span className="text-[10px] px-2 py-0.5 rounded-full font-medium flex-shrink-0 bg-red-100 text-red-700 border border-red-200">Indisponível</span>;
-                  })()}
+              <Card
+                key={bike.id}
+                className="group border border-border bg-card hover:border-primary/40 hover:shadow-md transition-all duration-200 overflow-hidden"
+              >
+                {/* Foto / placeholder */}
+                <div className="relative w-full bg-muted border-b border-border" style={{ aspectRatio: "16/9" }}>
+                  {bike.photoUrl ? (
+                    <img src={bike.photoUrl} alt={bike.model} className="w-full h-full object-cover" />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center">
+                      <BikeIcon className="w-10 h-10 text-muted-foreground/20" />
+                    </div>
+                  )}
+                  {/* Category badge */}
+                  {bike.category && (
+                    <span className="absolute top-2 left-2 text-[10px] px-1.5 py-0.5 rounded font-semibold uppercase bg-primary/90 text-primary-foreground">
+                      {categoryLabels[bike.category as BikeCategory] || bike.category}
+                    </span>
+                  )}
+                  {/* Availability pill */}
+                  <span className="absolute top-2 right-2">
+                    <AvailabilityPill disp={(bike as any).disponivelTotal ?? 0} qtd={(bike as any).qtdTotal ?? 0} />
+                  </span>
                 </div>
-                <div className="flex gap-3 pt-2 mt-2 border-t border-border/50">
-                  <button onClick={() => { setEditBike(bike); setShowForm(true); }} className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary"><Pencil className="w-3 h-3" />Editar</button>
-                  <button onClick={() => setDiscountBikeId(bike.id)} className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary"><Percent className="w-3 h-3" />Descontos</button>
-                  <button onClick={async () => { if (await confirmDialog({ title: "Remover bike?", confirmText: "Remover", destructive: true })) deleteMutation.mutate({ id: bike.id }); }} className="flex items-center gap-1 text-xs text-muted-foreground hover:text-destructive ml-auto"><Trash2 className="w-3 h-3" /></button>
-                </div>
-              </div>
+
+                <CardContent className="p-4 space-y-2">
+                  {/* Model + serial */}
+                  <div>
+                    <p className="font-semibold text-sm text-foreground leading-tight">{bike.model}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {bike.brand && <span>{bike.brand}</span>}
+                      {bike.brand && bike.serialNumber && <span className="mx-1">·</span>}
+                      {bike.serialNumber && <span className="font-mono">#{bike.serialNumber}</span>}
+                    </p>
+                  </div>
+
+                  {/* Daily rate */}
+                  {bike.dailyRate && (
+                    <p className="text-sm font-bold text-primary">
+                      R$ {parseFloat(bike.dailyRate).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                      <span className="text-xs font-normal text-muted-foreground">/dia</span>
+                    </p>
+                  )}
+                </CardContent>
+
+                <CardFooter className="px-4 pb-4 pt-0 flex items-center gap-2 border-t border-border/50 mt-2 pt-3">
+                  <Button
+                    size="sm"
+                    variant="default"
+                    className="flex-1 h-8 text-xs"
+                    onClick={() => { setEditBike(bike); setShowForm(true); }}
+                  >
+                    <Settings2 className="w-3.5 h-3.5 mr-1" />
+                    Gerenciar
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-8 text-xs px-2.5"
+                    onClick={() => setDiscountBikeId(bike.id)}
+                    title="Regras de desconto"
+                  >
+                    <Percent className="w-3.5 h-3.5" />
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                    onClick={async () => {
+                      if (await confirmDialog({ title: "Remover bike?", confirmText: "Remover", destructive: true }))
+                        deleteMutation.mutate({ id: bike.id });
+                    }}
+                    title="Remover bicicleta"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </Button>
+                </CardFooter>
+              </Card>
             ))}
           </div>
+
           {/* Pagination footer */}
           {totalPages > 1 && (
-            <div className="flex items-center justify-between px-3 py-2.5 border-t border-border bg-muted/20">
+            <div className="flex items-center justify-between pt-2">
               <p className="text-xs text-muted-foreground">
                 Mostrando {Math.min((page - 1) * LIMIT + 1, totalBikes)}–{Math.min(page * LIMIT, totalBikes)} de {totalBikes}
               </p>
               <div className="flex gap-1.5">
-                <button disabled={page <= 1} onClick={() => setPage(p => p - 1)} className="px-2.5 py-1 rounded text-xs border border-border bg-card text-muted-foreground hover:text-foreground disabled:opacity-40 disabled:cursor-not-allowed">Anterior</button>
-                <button disabled={page >= totalPages} onClick={() => setPage(p => p + 1)} className="px-2.5 py-1 rounded text-xs border border-border bg-card text-muted-foreground hover:text-foreground disabled:opacity-40 disabled:cursor-not-allowed">Próxima</button>
+                <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>Anterior</Button>
+                <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => setPage(p => p + 1)}>Próxima</Button>
               </div>
             </div>
           )}
         </>
       )}
 
-      {showForm && <BikeFormDialog bike={editBike} onClose={() => { setShowForm(false); setEditBike(null); }} onSuccess={() => { setShowForm(false); setEditBike(null); utils.bikes.list.invalidate(); }} />}
-      {discountBikeId !== null && <DiscountRulesEditor bikeId={discountBikeId} onClose={() => setDiscountBikeId(null)} />}
+      {showForm && (
+        <BikeFormDialog
+          bike={editBike}
+          onClose={() => { setShowForm(false); setEditBike(null); }}
+          onSuccess={() => { setShowForm(false); setEditBike(null); utils.bikes.list.invalidate(); }}
+        />
+      )}
+      {discountBikeId !== null && (
+        <DiscountRulesEditor bikeId={discountBikeId} onClose={() => setDiscountBikeId(null)} />
+      )}
     </div>
   );
 }
