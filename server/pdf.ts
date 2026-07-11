@@ -363,29 +363,16 @@ async function fetchLogoBuffer(logoUrl: string | null): Promise<Buffer | null> {
       // cai no fallback
     }
   }
-  // Fallback: logo BTG padrão via manus-storage (S3)
+  // Fallback: logo BTG padrão via storage (backend abstraído — Manus/S3/local)
   const DEFAULT_LOGO_KEY = "logo-btg_a866cb03.png";
   try {
-    const { ENV } = await import("./_core/env");
-    if (ENV.forgeApiUrl && ENV.forgeApiKey) {
-      const forgeUrl = new URL(
-        "v1/storage/presign/get",
-        ENV.forgeApiUrl.replace(/\/+$/, "") + "/",
-      );
-      forgeUrl.searchParams.set("path", DEFAULT_LOGO_KEY);
-      const forgeResp = await fetch(forgeUrl, {
-        headers: { Authorization: `Bearer ${ENV.forgeApiKey}` },
-        signal: AbortSignal.timeout(5000),
-      });
-      if (forgeResp.ok) {
-        const { url } = (await forgeResp.json()) as { url: string };
-        if (url) {
-          const imgResp = await fetch(url, { signal: AbortSignal.timeout(5000) });
-          if (imgResp.ok) {
-            const ab = await imgResp.arrayBuffer();
-            return Buffer.from(ab);
-          }
-        }
+    const { storageGet } = await import("./storage");
+    const { url } = await storageGet(DEFAULT_LOGO_KEY);
+    if (url && url.startsWith("http")) {
+      const imgResp = await fetch(url, { signal: AbortSignal.timeout(5000) });
+      if (imgResp.ok) {
+        const ab = await imgResp.arrayBuffer();
+        return Buffer.from(ab);
       }
     }
   } catch {

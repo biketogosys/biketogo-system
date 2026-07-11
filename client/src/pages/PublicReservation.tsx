@@ -4,11 +4,12 @@
  * O cliente preenche apenas seus dados; o admin cria o aluguel manualmente.
  * Suporte a idiomas: PT-BR 🇧🇷 | EN 🇺🇸 | ES 🇪🇸
  */
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
 import {
   Loader2, ChevronRight, ChevronLeft, Check, X, Sun, Moon, Bike,
   HelpCircle, Smartphone, Download, Upload, FileText, Image as ImageIcon, Info,
+  IdCard, Phone as PhoneIcon, Home as HomeIcon, ShieldCheck,
 } from "lucide-react";
 import { translations, languages, type Language } from "@/lib/i18n";
 import { maskCPF, maskRG, maskCEP, maskPhone, maskDate, isValidCPF } from "@/hooks/useMask";
@@ -35,12 +36,12 @@ function Field({ label, required, error, hint, children }: {
 }) {
   return (
     <div className="flex flex-col gap-1.5">
-      <label className="text-xs font-semibold text-[#aaa] dark:text-[#aaa] light-label">
-        {label}{required && <span className="text-red-400 ml-0.5">*</span>}
+      <label className="text-xs font-semibold text-muted-foreground">
+        {label}{required && <span className="text-destructive ml-0.5">*</span>}
       </label>
       {children}
-      {hint && !error && <span className="text-[11px] text-[#888]">{hint}</span>}
-      {error && <span className="text-[11px] text-red-400">{error}</span>}
+      {hint && !error && <span className="text-[11px] text-muted-foreground/80">{hint}</span>}
+      {error && <span className="text-[11px] text-destructive">{error}</span>}
     </div>
   );
 }
@@ -56,9 +57,20 @@ export default function PublicReservation() {
     if (browser.startsWith("en")) return "en";
     return "pt";
   });
+  // Dark-first (padrão da casa): só sai do dark se o visitante escolheu light
   const [isDark, setIsDark] = useState(() => {
-    return localStorage.getItem("btg_form_theme") === "dark";
+    return localStorage.getItem("btg_form_theme") !== "light";
   });
+
+  // O tema desta página vive na classe .dark do <html> (mesmos tokens do app).
+  // Ao desmontar, restaura o tema do painel admin (localStorage "theme").
+  useEffect(() => {
+    const root = document.documentElement;
+    root.classList.toggle("dark", isDark);
+    return () => {
+      root.classList.toggle("dark", localStorage.getItem("theme") === "dark");
+    };
+  }, [isDark]);
 
   // ─── Lightbox ────────────────────────────────────────────────────────────────
   const [lbSrc, setLbSrc] = useState<string | null>(null);
@@ -81,25 +93,27 @@ export default function PublicReservation() {
   };
 
   // ─── Theme classes ────────────────────────────────────────────────────────────
-  const bg = isDark ? "bg-[#0a0a0f]" : "bg-gray-50";
-  const cardBg = isDark ? "bg-[#0d0d1a] border-[#1a1a2e]" : "bg-white border-gray-200";
-  const headerBg = isDark ? "bg-[#0a0a0f]/95 border-[#1a1a2e]" : "bg-white/95 border-gray-200";
-  const progressBg = isDark ? "bg-[#0d0d1a] border-[#1a1a2e]" : "bg-gray-100 border-gray-200";
-  const textPrimary = isDark ? "text-white" : "text-gray-900";
-  const textSecondary = isDark ? "text-[#888]" : "text-gray-500";
-  const textMuted = isDark ? "text-[#555]" : "text-gray-400";
-  const sectionBorder = isDark ? "border-[#1a1a2e]" : "border-gray-100";
-  const inputBase = `w-full border rounded-lg px-4 py-3 text-sm focus:outline-none transition-colors ${isDark ? "bg-[#141420] text-white placeholder-[#555]" : "bg-white text-gray-800 placeholder-gray-400"}`;
-  const inputNormal = `${inputBase} ${isDark ? "border-[#2a2a3a] focus:border-primary" : "border-gray-300 focus:border-primary"}`;
-  const inputError = `${inputBase} border-red-500/60 focus:border-red-400`;
-  const selectBase = `w-full border rounded-lg px-4 py-3 text-sm focus:outline-none transition-colors ${isDark ? "bg-[#141420] text-white border-[#2a2a3a] focus:border-primary" : "bg-white text-gray-800 border-gray-300 focus:border-primary"}`;
-  const navBtnSecondary = `flex items-center gap-2 px-5 py-3 rounded-xl text-sm border transition-all ${isDark ? "text-[#888] border-[#2a2a3a] hover:border-[#3a3a4a]" : "text-gray-500 border-gray-300 hover:border-gray-400"}`;
-  const langBtnBase = isDark ? "border-[#2a2a3a] bg-[#141420]" : "border-gray-200 bg-gray-100";
-  const langBtnInactive = isDark ? "text-[#888] hover:text-white" : "text-gray-500 hover:text-gray-800";
-  const themeBtnClass = `p-2 rounded-lg border transition-all ${isDark ? "border-[#2a2a3a] bg-[#141420] text-[#888] hover:text-white" : "border-gray-200 bg-gray-100 text-gray-500 hover:text-gray-800"}`;
-  const uploadZoneBase = `relative border-2 border-dashed rounded-xl p-5 flex flex-col items-center justify-center gap-2 cursor-pointer min-h-[140px] transition-all`;
-  const uploadZoneEmpty = isDark ? "border-[#2a2a3a] bg-[#141420] hover:border-primary/40" : "border-gray-300 bg-gray-50 hover:border-primary/60";
-  const lgpdBoxBg = isDark ? "bg-[#141420] border-[#2a2a3a]" : "bg-gray-50 border-gray-200";
+  // Tokens semânticos da casa — o dark/light vem da classe .dark no <html>
+  // (efeito acima), nunca de paleta hex própria.
+  const bg = "bg-background";
+  const cardBg = "bg-card border-border";
+  const headerBg = "bg-background/95 border-border";
+  const progressBg = "bg-card border-border";
+  const textPrimary = "text-foreground";
+  const textSecondary = "text-muted-foreground";
+  const textMuted = "text-muted-foreground/70";
+  const sectionBorder = "border-border";
+  const inputBase = "w-full border rounded-lg px-4 py-3 text-sm bg-background dark:bg-input/30 text-foreground placeholder:text-muted-foreground/50 focus:outline-none transition-colors";
+  const inputNormal = `${inputBase} border-input focus:border-primary focus:ring-2 focus:ring-primary/20`;
+  const inputError = `${inputBase} border-destructive/60 focus:border-destructive focus:ring-2 focus:ring-destructive/20`;
+  const selectBase = inputNormal;
+  const navBtnSecondary = "flex items-center gap-2 px-5 py-3 rounded-xl text-sm border border-border text-muted-foreground hover:text-foreground hover:border-muted-foreground/40 transition-all";
+  const langBtnBase = "border-border bg-muted";
+  const langBtnInactive = "text-muted-foreground hover:text-foreground";
+  const themeBtnClass = "p-2 rounded-lg border border-border bg-muted text-muted-foreground hover:text-foreground transition-all";
+  const uploadZoneBase = "relative border-2 border-dashed rounded-xl p-5 flex flex-col items-center justify-center gap-2 cursor-pointer min-h-[140px] transition-all";
+  const uploadZoneEmpty = "border-input bg-muted/30 hover:border-primary/50";
+  const lgpdBoxBg = "bg-muted/40 border-border";
 
   // ─── Steps (4 steps: Identificação, Contato, Endereço, Documentos+LGPD) ──────
   const STEPS = [
@@ -307,16 +321,21 @@ export default function PublicReservation() {
       });
 
       // Upload documents after client is created (SEC-1: use HMAC token, never raw clientId)
+      // NÃO-FATAL: o lead já foi criado acima. Se o upload falhar, ainda mostramos
+      // a tela de sucesso (documentos ficam pendentes) — assim o usuário não reenvia
+      // o formulário e duplica o lead.
       const { clientId: _cid, uploadToken } = result as any;
       if (uploadToken) {
         if (docFrontBase64) {
           setDocFrontUploading(true);
           try { await uploadDocMutation.mutateAsync({ token: uploadToken, base64: docFrontBase64, side: "front", mimeType: docFrontMime }); }
+          catch (e) { console.warn("[reservar] falha no upload da frente do documento:", e); }
           finally { setDocFrontUploading(false); }
         }
         if (docBackBase64) {
           setDocBackUploading(true);
           try { await uploadDocMutation.mutateAsync({ token: uploadToken, base64: docBackBase64, side: "back", mimeType: docBackMime }); }
+          catch (e) { console.warn("[reservar] falha no upload do verso do documento:", e); }
           finally { setDocBackUploading(false); }
         }
       }
@@ -343,7 +362,7 @@ export default function PublicReservation() {
           <div className="w-20 h-20 rounded-full bg-primary/20 flex items-center justify-center mx-auto mb-6">
             <Check className="w-10 h-10 text-primary" />
           </div>
-          <h1 className={`text-2xl font-bold ${textPrimary} mb-3`} style={{ fontFamily: "'Montserrat', sans-serif" }}>
+          <h1 className={`text-2xl font-bold ${textPrimary} mb-3`}>
             {lang === "pt" ? "Cadastro enviado com sucesso!" : lang === "en" ? "Registration submitted successfully!" : "¡Registro enviado con éxito!"}
           </h1>
           <p className={`${textSecondary} text-sm leading-relaxed mb-6`}>
@@ -368,7 +387,7 @@ export default function PublicReservation() {
               href={`https://wa.me/55${waNumber}?text=${waMsg}`}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center justify-center gap-2 w-full px-6 py-4 rounded-xl font-bold text-base transition-all bg-primary text-[#0a0a0f] hover:bg-primary/90"
+              className="inline-flex items-center justify-center gap-2 w-full px-6 py-4 rounded-xl font-bold text-base transition-all bg-primary text-primary-foreground hover:bg-primary/90"
             >
               <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
                 <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
@@ -424,7 +443,7 @@ export default function PublicReservation() {
                   <Bike className="w-5 h-5 text-primary" />
                 </div>
                 <div>
-                  <h1 className="text-base font-bold text-primary leading-tight" style={{ fontFamily: "'Montserrat', sans-serif" }}>
+                  <h1 className="text-base font-bold text-primary leading-tight">
                     Bike To Go
                   </h1>
                   <p className={`text-[10px] ${textMuted} leading-tight`}>Floripa</p>
@@ -436,10 +455,10 @@ export default function PublicReservation() {
             <div className={`flex items-center gap-0.5 border rounded-lg p-0.5 ${langBtnBase}`}>
               {languages.map(l => (
                 <button key={l.code} onClick={() => changeLang(l.code)} title={l.label}
-                  className={`px-2 py-1 rounded-md text-sm transition-all ${
-                    lang === l.code ? "bg-primary text-[#0a0a0f] font-bold shadow-sm" : langBtnInactive
+                  className={`px-2 py-1 rounded-md text-xs font-semibold uppercase transition-all ${
+                    lang === l.code ? "bg-primary text-primary-foreground shadow-sm" : langBtnInactive
                   }`}>
-                  {l.flag}
+                  {l.code}
                 </button>
               ))}
             </div>
@@ -458,8 +477,7 @@ export default function PublicReservation() {
               <button
                 key={i}
                 onClick={() => { if (i < step) setStep(i); }}
-                className={`h-1.5 rounded-full transition-all ${i < step ? "cursor-pointer" : "cursor-default"}`}
-                style={{ background: i <= step ? "#C8920A" : isDark ? "#1a1a2e" : "#d1d5db" }}
+                className={`h-1.5 rounded-full transition-all ${i <= step ? "bg-primary" : "bg-border"} ${i < step ? "cursor-pointer" : "cursor-default"}`}
                 title={i < step ? STEPS[i] : undefined}
               />
             ))}
@@ -469,8 +487,9 @@ export default function PublicReservation() {
               <button
                 key={i}
                 onClick={() => { if (i < step) setStep(i); }}
-                className={`text-[10px] text-left transition-colors truncate ${i < step ? "cursor-pointer hover:text-primary" : "cursor-default"}`}
-                style={{ color: i === step ? "#C8920A" : i < step ? "#7a6010" : isDark ? "#444" : "#9ca3af" }}
+                className={`text-[10px] text-left transition-colors truncate ${
+                  i === step ? "text-primary font-semibold" : i < step ? "text-primary/60 cursor-pointer hover:text-primary" : "text-muted-foreground/60 cursor-default"
+                }`}
                 title={i < step ? s : undefined}
               >
                 {s}
@@ -484,10 +503,10 @@ export default function PublicReservation() {
       <main className="max-w-2xl mx-auto px-4 py-8 pb-32 sm:pb-8">
         {/* Title */}
         <div className="text-center mb-8">
-          <span className="inline-block bg-primary text-[#0a0a0f] text-[11px] font-bold px-3 py-1 rounded-full uppercase tracking-widest mb-3">
+          <span className="inline-block bg-primary text-primary-foreground text-[11px] font-bold px-3 py-1 rounded-full uppercase tracking-widest mb-3">
             {lang === "pt" ? "Pré-Cadastro" : lang === "en" ? "Pre-Registration" : "Pre-Registro"}
           </span>
-          <h2 className={`text-3xl font-extrabold ${textPrimary} mb-2`} style={{ fontFamily: "'Montserrat', sans-serif" }}>
+          <h2 className={`text-3xl font-extrabold ${textPrimary} mb-2`}>
             {lang === "pt" ? (<>Cadastre-se para <span className="text-primary">alugar</span></>)
               : lang === "en" ? (<>Register to <span className="text-primary">rent</span></>)
               : (<>Regístrate para <span className="text-primary">alquilar</span></>)}
@@ -505,7 +524,7 @@ export default function PublicReservation() {
         {step === 0 && (
           <div className={`${cardBg} border rounded-2xl p-6 space-y-5`}>
             <div className={`flex items-center gap-2 pb-3 border-b ${sectionBorder}`}>
-              <span className="text-primary text-sm font-bold uppercase tracking-widest">🪪 {t.sectionIdentification}</span>
+              <span className="text-primary text-sm font-bold uppercase tracking-widest flex items-center gap-2"><IdCard className="w-4 h-4 shrink-0" />{t.sectionIdentification}</span>
             </div>
 
             {/* Origem */}
@@ -651,7 +670,7 @@ export default function PublicReservation() {
         {step === 1 && (
           <div className={`${cardBg} border rounded-2xl p-6 space-y-5`}>
             <div className={`flex items-center gap-2 pb-3 border-b ${sectionBorder}`}>
-              <span className="text-primary text-sm font-bold uppercase tracking-widest">📞 {t.sectionContact}</span>
+              <span className="text-primary text-sm font-bold uppercase tracking-widest flex items-center gap-2"><PhoneIcon className="w-4 h-4 shrink-0" />{t.sectionContact}</span>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <Field label={t.whatsapp} required error={errors.phone}>
@@ -680,7 +699,7 @@ export default function PublicReservation() {
         {step === 2 && (
           <div className={`${cardBg} border rounded-2xl p-6 space-y-5`}>
             <div className={`flex items-center gap-2 pb-3 border-b ${sectionBorder}`}>
-              <span className="text-primary text-sm font-bold uppercase tracking-widest">🏠 {t.sectionAddress}</span>
+              <span className="text-primary text-sm font-bold uppercase tracking-widest flex items-center gap-2"><HomeIcon className="w-4 h-4 shrink-0" />{t.sectionAddress}</span>
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
               <Field label={t.zipCode} required error={errors.zipCode}>
@@ -765,7 +784,7 @@ export default function PublicReservation() {
                     : docFrontIsPdf
                     ? (lang === "pt" ? "Documento (PDF)" : lang === "en" ? "Document (PDF)" : "Documento (PDF)")
                     : (lang === "pt" ? "Documento" : lang === "en" ? "Document" : "Documento")}
-                  <span className="text-red-400 ml-0.5">*</span>
+                  <span className="text-destructive ml-0.5">*</span>
                 </p>
 
                 {/* Input file oculto */}
@@ -779,7 +798,7 @@ export default function PublicReservation() {
 
                 {/* Prévia: PDF */}
                 {docFrontBase64 && docFrontIsPdf ? (
-                  <div className={`relative flex items-center gap-3 rounded-xl border p-4 ${isDark ? "border-primary/30 bg-[#141420]" : "border-primary/30 bg-orange-50"}`}>
+                  <div className="relative flex items-center gap-3 rounded-xl border border-primary/30 bg-primary/5 p-4">
                     <div className="w-10 h-10 rounded-lg bg-primary/20 flex items-center justify-center shrink-0">
                       <FileText className="w-5 h-5 text-primary" />
                     </div>
@@ -825,7 +844,7 @@ export default function PublicReservation() {
                 ) : (
                   /* Drop zone vazia */
                   <div
-                    className={`${uploadZoneBase} ${errors.docFront ? "border-red-500/60" : uploadZoneEmpty}`}
+                    className={`${uploadZoneBase} ${errors.docFront ? "border-destructive/60" : uploadZoneEmpty}`}
                     onClick={() => frontRef.current?.click()}
                     onDragOver={e => e.preventDefault()}
                     onDrop={e => {
@@ -835,22 +854,22 @@ export default function PublicReservation() {
                     }}
                   >
                     <div className="flex justify-center gap-2.5 mb-1">
-                      <span className="w-10 h-10 rounded-full bg-blue-50 dark:bg-blue-950 flex items-center justify-center">
-                        <FileText className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                      <span className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
+                        <FileText className="w-5 h-5 text-primary" />
                       </span>
-                      <span className="w-10 h-10 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center">
-                        <ImageIcon className="w-5 h-5 text-gray-500" />
+                      <span className="w-10 h-10 rounded-full bg-muted flex items-center justify-center">
+                        <ImageIcon className="w-5 h-5 text-muted-foreground" />
                       </span>
                     </div>
-                    <p className={`text-sm font-medium text-center ${errors.docFront ? "text-red-400" : textPrimary}`}>
+                    <p className={`text-sm font-medium text-center ${errors.docFront ? "text-destructive" : textPrimary}`}>
                       {lang === "pt" ? "Arraste aqui ou clique para selecionar" : lang === "en" ? "Drag here or click to select" : "Arrastra aquí o haz clic para seleccionar"}
                     </p>
-                    <p className={`text-xs ${errors.docFront ? "text-red-400" : textMuted}`}>
+                    <p className={`text-xs ${errors.docFront ? "text-destructive" : textMuted}`}>
                       {lang === "pt" ? "PDF ou imagem · até 10 MB" : lang === "en" ? "PDF or image · up to 10 MB" : "PDF o imagen · hasta 10 MB"}
                     </p>
                   </div>
                 )}
-                {errors.docFront && <p className="text-[11px] text-red-400 mt-1">{errors.docFront}</p>}
+                {errors.docFront && <p className="text-[11px] text-destructive mt-1">{errors.docFront}</p>}
               </div>
 
               {/* Botão "Adicionar verso" — só aparece quando: imagem selecionada + não é PDF + verso ainda não visível */}
@@ -858,7 +877,7 @@ export default function PublicReservation() {
                 <button
                   type="button"
                   onClick={() => setShowVerso(true)}
-                  className={`text-xs font-medium transition-colors ${isDark ? "text-[#888] hover:text-primary" : "text-gray-400 hover:text-primary"}`}
+                  className="text-xs font-medium transition-colors text-muted-foreground hover:text-primary"
                 >
                   + {lang === "pt" ? "Adicionar verso (opcional)" : lang === "en" ? "Add back side (optional)" : "Agregar dorso (opcional)"}
                 </button>
@@ -922,7 +941,7 @@ export default function PublicReservation() {
               {/* Tutorial CNH digital (ícones lucide, sem emoji) */}
               <div className={`border-t ${sectionBorder} pt-4`}>
                 <p className={`text-[13px] font-medium mb-3 flex items-center gap-1.5 ${textSecondary}`}>
-                  <HelpCircle className="w-4 h-4 text-gray-500 shrink-0" />
+                  <HelpCircle className="w-4 h-4 text-muted-foreground shrink-0" />
                   {lang === "pt" ? "Como baixar o PDF da sua CNH digital"
                     : lang === "en" ? "How to download your digital driver's license PDF"
                     : "Cómo descargar el PDF de tu licencia digital"}
@@ -952,8 +971,8 @@ export default function PublicReservation() {
                     const last = i === 2;
                     return (
                       <li key={i} className="flex items-center gap-3">
-                        <span className={`shrink-0 w-[26px] h-[26px] rounded-full flex items-center justify-center text-[13px] font-medium ${last ? "bg-blue-50 text-blue-600 dark:bg-blue-950 dark:text-blue-400" : isDark ? "bg-gray-800 text-gray-300" : "bg-gray-100 text-gray-700"}`}>{i + 1}</span>
-                        <Icon className={`w-[19px] h-[19px] shrink-0 ${last ? "text-blue-600 dark:text-blue-400" : "text-gray-500"}`} />
+                        <span className={`shrink-0 w-[26px] h-[26px] rounded-full flex items-center justify-center text-[13px] font-medium ${last ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"}`}>{i + 1}</span>
+                        <Icon className={`w-[19px] h-[19px] shrink-0 ${last ? "text-primary" : "text-muted-foreground"}`} />
                         <span className={`text-[13px] leading-relaxed ${textSecondary}`}>{lang === "pt" ? s.pt : lang === "en" ? s.en : s.es}</span>
                       </li>
                     );
@@ -962,8 +981,8 @@ export default function PublicReservation() {
               </div>
 
               {/* Nota: estrangeiro / foto */}
-              <div className={`rounded-lg px-3 py-2.5 flex items-start gap-2 ${isDark ? "bg-gray-900" : "bg-gray-50"}`}>
-                <Info className="w-4 h-4 text-gray-400 mt-0.5 shrink-0" />
+              <div className="rounded-lg px-3 py-2.5 flex items-start gap-2 bg-muted/40">
+                <Info className="w-4 h-4 text-muted-foreground mt-0.5 shrink-0" />
                 <span className={`text-xs leading-relaxed ${textSecondary}`}>
                   {lang === "pt"
                     ? "Estrangeiro ou sem CNH digital? Envie uma foto do documento (passaporte ou RG)."
@@ -977,7 +996,7 @@ export default function PublicReservation() {
             {/* LGPD */}
             <div className={`${cardBg} border rounded-2xl p-6 space-y-4`}>
               <div className={`flex items-center gap-2 pb-3 border-b ${sectionBorder}`}>
-                <span className="text-primary text-sm font-bold uppercase tracking-widest">🛡️ {t.sectionPrivacy}</span>
+                <span className="text-primary text-sm font-bold uppercase tracking-widest flex items-center gap-2"><ShieldCheck className="w-4 h-4 shrink-0" />{t.sectionPrivacy}</span>
               </div>
               <div className={`${lgpdBoxBg} border rounded-lg p-4 text-xs ${textSecondary} leading-relaxed`}>
                 <strong className={`${textPrimary} block mb-1`}>{t.lgpdTitle}</strong>
@@ -985,26 +1004,26 @@ export default function PublicReservation() {
               </div>
               <label className="flex items-start gap-3 cursor-pointer">
                 <input type="checkbox" checked={lgpdConsent} onChange={e => setLgpdConsent(e.target.checked)}
-                  className="mt-0.5 w-4 h-4 accent-[var(--primary)] flex-shrink-0" />
+                  className="mt-0.5 w-4 h-4 accent-primary flex-shrink-0" />
                 <span className={`text-sm ${textSecondary} leading-relaxed`}>{t.lgpdConsent}</span>
               </label>
-              {errors.lgpdConsent && <p className="text-red-400 text-xs">{errors.lgpdConsent}</p>}
+              {errors.lgpdConsent && <p className="text-destructive text-xs">{errors.lgpdConsent}</p>}
               <label className="flex items-start gap-3 cursor-pointer">
                 <input type="checkbox" checked={marketingConsent} onChange={e => setMarketingConsent(e.target.checked)}
-                  className="mt-0.5 w-4 h-4 accent-[var(--primary)] flex-shrink-0" />
+                  className="mt-0.5 w-4 h-4 accent-primary flex-shrink-0" />
                 <span className={`text-sm ${textSecondary} leading-relaxed`}>
                   {lang === "pt" ? "Aceito receber comunicações de marketing e promoções da Bike To Go." : lang === "en" ? "I agree to receive marketing communications and promotions from Bike To Go." : "Acepto recibir comunicaciones de marketing y promociones de Bike To Go."}
                 </span>
               </label>
 
               {errors.submit && (
-                <div className="bg-red-900/20 border border-red-500/30 rounded-lg p-4 text-sm text-red-400">
+                <div className="bg-destructive/10 border border-destructive/30 rounded-lg p-4 text-sm text-destructive">
                   {errors.submit}
                 </div>
               )}
 
               <button onClick={handleSubmit} disabled={submitting}
-                className="w-full flex items-center justify-center gap-2 px-8 py-4 rounded-xl font-bold text-base transition-all disabled:opacity-50 bg-primary text-[#0a0a0f] hover:bg-primary/90">
+                className="w-full flex items-center justify-center gap-2 px-8 py-4 rounded-xl font-bold text-base transition-all disabled:opacity-50 bg-primary text-primary-foreground hover:bg-primary/90">
                 {submitting ? (
                   <><Loader2 className="w-5 h-5 animate-spin" />
                     {lang === "pt" ? "Enviando..." : lang === "en" ? "Sending..." : "Enviando..."}
@@ -1021,11 +1040,7 @@ export default function PublicReservation() {
 
         {/* ─── Navigation — sticky no mobile ───────────────────────────────── */}
         {step < 3 && (
-          <div className={`fixed bottom-0 left-0 right-0 sm:static sm:mt-6 px-4 py-3 sm:px-0 sm:py-0 safe-area-bottom ${
-            isDark
-              ? "bg-[#0a0a0f]/95 border-t border-[#1a1a2e] sm:bg-transparent sm:border-0"
-              : "bg-white/95 border-t border-gray-200 sm:bg-transparent sm:border-0"
-          } backdrop-blur sm:backdrop-blur-none z-40`}>
+          <div className="fixed bottom-0 left-0 right-0 sm:static sm:mt-6 px-4 py-3 sm:px-0 sm:py-0 safe-area-bottom bg-background/95 border-t border-border sm:bg-transparent sm:border-0 backdrop-blur sm:backdrop-blur-none z-40">
             <div className={`flex gap-3 max-w-2xl mx-auto ${step === 0 ? "justify-end" : "justify-between"}`}>
               {step > 0 && (
                 <button onClick={prevStep} className={navBtnSecondary}>
@@ -1034,7 +1049,7 @@ export default function PublicReservation() {
                 </button>
               )}
               <button onClick={nextStep}
-                className="flex items-center gap-2 px-6 py-3 rounded-xl font-semibold text-sm transition-all bg-primary text-[#0a0a0f] hover:bg-primary/90">
+                className="flex items-center gap-2 px-6 py-3 rounded-xl font-semibold text-sm transition-all bg-primary text-primary-foreground hover:bg-primary/90">
                 {lang === "pt" ? "Continuar" : lang === "en" ? "Continue" : "Continuar"}
                 <ChevronRight className="w-4 h-4" />
               </button>
@@ -1042,11 +1057,7 @@ export default function PublicReservation() {
           </div>
         )}
         {step === 3 && step > 0 && (
-          <div className={`fixed bottom-0 left-0 right-0 sm:hidden px-4 py-3 safe-area-bottom ${
-            isDark
-              ? "bg-[#0a0a0f]/95 border-t border-[#1a1a2e]"
-              : "bg-white/95 border-t border-gray-200"
-          } backdrop-blur z-40`}>
+          <div className="fixed bottom-0 left-0 right-0 sm:hidden px-4 py-3 safe-area-bottom bg-background/95 border-t border-border backdrop-blur z-40">
             <button onClick={prevStep} className={`${navBtnSecondary} w-full justify-center`}>
               <ChevronLeft className="w-4 h-4" />
               {lang === "pt" ? "Voltar" : lang === "en" ? "Back" : "Volver"}
@@ -1055,7 +1066,7 @@ export default function PublicReservation() {
         )}
       </main>
 
-      <footer className={`border-t ${isDark ? "border-[#1a1a2e]" : "border-gray-200"} py-6 text-center`}>
+      <footer className="border-t border-border py-6 text-center">
         <p className={`text-xs ${textMuted}`}>
           Bike To Go Floripa — {lang === "pt" ? "Aluguel de bicicletas" : lang === "en" ? "Bike rentals" : "Alquiler de bicicletas"}
         </p>

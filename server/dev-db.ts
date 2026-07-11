@@ -158,11 +158,37 @@ async function seed(db: DevDb) {
     ])
     .returning({ id: schema.bikeUnits.id });
 
-  await db.insert(schema.accessories).values([
-    { name: "Capacete", category: "seguranca", quantity: 5, quantidadeTotal: 5, obrigatorio: true, replacementValue: "80.00" },
-    { name: "Cadeado", category: "seguranca", quantity: 4, quantidadeTotal: 4, replacementValue: "50.00" },
-    { name: "Cadeirinha infantil", category: "conforto", quantity: 2, quantidadeTotal: 2, dailyRate: "10.00", replacementValue: "250.00" },
-  ]);
+  // Acessórios + unidades. O router accessories.create gera as unidades
+  // automaticamente; aqui o insert é direto, então criamos à mão — sem elas,
+  // um acessório obrigatório trava a criação de contrato.
+  const accRows = await db
+    .insert(schema.accessories)
+    .values([
+      { name: "Capacete", category: "seguranca", quantity: 5, quantidadeTotal: 5, obrigatorio: true, replacementValue: "80.00" },
+      { name: "Cadeado", category: "seguranca", quantity: 4, quantidadeTotal: 4, replacementValue: "50.00" },
+      { name: "Cadeirinha infantil", category: "conforto", quantity: 2, quantidadeTotal: 2, dailyRate: "10.00", replacementValue: "250.00" },
+    ])
+    .returning({ id: schema.accessories.id, name: schema.accessories.name });
+
+  const unitPlan: Record<string, { qty: number; variante?: string }[]> = {
+    "Capacete": [{ qty: 3, variante: "M" }, { qty: 2, variante: "G" }],
+    "Cadeado": [{ qty: 4 }],
+    "Cadeirinha infantil": [{ qty: 2 }],
+  };
+  for (const acc of accRows) {
+    let n = 0;
+    for (const group of unitPlan[acc.name] ?? [{ qty: 1 }]) {
+      for (let i = 0; i < group.qty; i++) {
+        n++;
+        await db.insert(schema.accessoryUnits).values({
+          accessoryId: acc.id,
+          serialNumber: `${acc.name.slice(0, 3).toUpperCase()}-${String(n).padStart(3, "0")}`,
+          status: "disponivel",
+          variante: group.variante ?? null,
+        });
+      }
+    }
+  }
 
   // Contrato ativo com aluguel pago no mês corrente (alimenta o Financeiro)
   const [contract] = await db

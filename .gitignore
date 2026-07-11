@@ -109,6 +109,9 @@ temp/
 # Banco PGlite do modo dev local (npm run dev:local)
 .dev-db/
 
+# Storage local do modo dev (fallback quando não há Manus/S3)
+.dev-storage/
+
 # Webdev artifacts (checkpoint zips, migrations, etc.)
 .webdev/
 
