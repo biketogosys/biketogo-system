@@ -1127,23 +1127,23 @@ const accessoriesRouter = router({
         category: rawFilters.category ?? undefined,
       };
       const allItems = await getAccessories(filters);
-      // Derive quantidadeDisponivel from accessory_units status (source of truth)
-      const { getAccessoryBreakdown } = await import("./db");
-      const enriched = await Promise.all(
-        allItems.map(async (item) => {
-          const breakdown = await getAccessoryBreakdown(item.id);
-          return {
-            ...item,
-            quantidadeTotal: breakdown.total > 0 ? breakdown.total : (item.quantidadeTotal ?? item.quantity ?? 0),
-            quantidadeDisponivel: breakdown.disponivel,
-            breakdown,
-          };
-        })
-      );
-      const total = enriched.length;
+      const total = allItems.length;
       const totalPages = Math.ceil(total / limit);
       const offset = (page - 1) * limit;
-      const data = enriched.slice(offset, offset + limit);
+      // Paginar ANTES de enriquecer: breakdown só dos itens da página, em UMA
+      // query batch (antes era 1 query por acessório da tabela inteira).
+      const pageItems = allItems.slice(offset, offset + limit);
+      const { getAccessoryBreakdowns } = await import("./db");
+      const bdMap = await getAccessoryBreakdowns(pageItems.map((i) => i.id));
+      const data = pageItems.map((item) => {
+        const breakdown = bdMap.get(item.id)!;
+        return {
+          ...item,
+          quantidadeTotal: breakdown.total > 0 ? breakdown.total : (item.quantidadeTotal ?? item.quantity ?? 0),
+          quantidadeDisponivel: breakdown.disponivel,
+          breakdown,
+        };
+      });
       return { data, total, totalPages, page };
     }),
   listByCategory: adminAuthProcedure
@@ -1291,11 +1291,13 @@ const accessoriesRouter = router({
   availability: adminAuthProcedure
     .input(z.object({ accessoryIds: z.array(z.number()).min(1) }))
     .query(async ({ input }) => {
-      const { getAccessoryBreakdown } = await import("./db");
-      return Promise.all(input.accessoryIds.map(async (id) => {
-        const bd = await getAccessoryBreakdown(id);
-        return { accessoryId: id, variantes: bd.byVariante.map((v: any) => ({ variante: v.variante, disponivel: v.disponivel })) };
-      }));
+      // UMA query batch em vez de 1 por acessório
+      const { getAccessoryBreakdowns } = await import("./db");
+      const bdMap = await getAccessoryBreakdowns(input.accessoryIds);
+      return input.accessoryIds.map((id) => {
+        const bd = bdMap.get(id)!;
+        return { accessoryId: id, variantes: bd.byVariante.map((v) => ({ variante: v.variante, disponivel: v.disponivel })) };
+      });
     }),
   updateUnitStatus: adminAuthProcedure
     .input(z.object({
@@ -1737,18 +1739,17 @@ const publicApiRouter = router({
       const { eq, inArray, isNull: isNullOp, and: andOp } = await import("drizzle-orm");
       // Get all sizes for this bike
       const allSizes = await db.select().from(bs).where(eq(bs.bikeId, input.bikeId));
-      // Derivar disponibilidade pelo modelo de fonte única de verdade
-      const { getSizeAvailability } = await import("./db");
-      const sizeAvailability = await Promise.all(
-        allSizes.map(async (size) => ({
-          id: size.id,
-          bikeId: size.bikeId,
-          tamanho: size.tamanho,
-          quantidadeTotal: size.quantidadeTotal,
-          quantidadeDisponivel: await getSizeAvailability(size.id),
-        }))
-      );
-      return sizeAvailability;
+      // Derivar disponibilidade pelo modelo de fonte única de verdade —
+      // UMA chamada batch (4 queries no total, antes eram 4 POR tamanho)
+      const { getSizeBreakdowns } = await import("./db");
+      const bdMap = await getSizeBreakdowns(allSizes.map((s) => s.id));
+      return allSizes.map((size) => ({
+        id: size.id,
+        bikeId: size.bikeId,
+        tamanho: size.tamanho,
+        quantidadeTotal: size.quantidadeTotal,
+        quantidadeDisponivel: bdMap.get(size.id)?.disponivel ?? 0,
+      }));
     }),
   // Get discount rules for a bike
   bikeDiscountRules: publicProcedure
@@ -2184,17 +2185,19 @@ async function releaseAccessoryUnits(db: any, contractId: number): Promise<void>
 
 // Pré-valida disponibilidade por (accessoryId, variante) ANTES de reservar (evita reserva parcial).
 async function assertAccessoryAvailability(lines: Array<{accessoryId:number;variante:string|null;qty:number}>): Promise<void> {
-  const { getAccessoryBreakdown } = await import("./db");
+  const { getAccessoryBreakdowns } = await import("./db");
   const need = new Map<string, {accessoryId:number;variante:string|null;qty:number}>();
   for (const l of lines) {
     const k = `${l.accessoryId}::${l.variante ?? "__null__"}`;
     const cur = need.get(k); if (cur) cur.qty += l.qty; else need.set(k, { ...l });
   }
-  for (const d of Array.from(need.values())) {
-    const bd = await getAccessoryBreakdown(d.accessoryId);
+  const needList = Array.from(need.values());
+  const bdMap = await getAccessoryBreakdowns(Array.from(new Set(needList.map((d) => d.accessoryId))));
+  for (const d of needList) {
+    const bd = bdMap.get(d.accessoryId)!;
     const disp = d.variante == null
       ? bd.disponivel
-      : (bd.byVariante.find((v: any) => v.variante === d.variante)?.disponivel ?? 0);
+      : (bd.byVariante.find((v) => v.variante === d.variante)?.disponivel ?? 0);
     if (disp < d.qty) throw new TRPCError({ code: "PRECONDITION_FAILED",
       message: `Acessório indisponível (variante: ${d.variante ?? "—"}). Disponível: ${disp}, pedido: ${d.qty}.` });
   }
@@ -2203,7 +2206,7 @@ async function assertAccessoryAvailability(lines: Array<{accessoryId:number;vari
 // Como assertAccessoryAvailability, mas para EDIÇÃO: soma as unidades que o próprio
 // contrato já segura, para não falsa-reprovar ao manter o mesmo acessório.
 async function assertAccessoryAvailabilityForUpdate(db: any, contractId: number, lines: Array<{accessoryId:number;variante:string|null;qty:number}>): Promise<void> {
-  const { getAccessoryBreakdown } = await import("./db");
+  const { getAccessoryBreakdowns } = await import("./db");
   const { accessoryUnits, contractAccessories } = await import("../drizzle/schema");
   const { eq } = await import("drizzle-orm");
   const held = new Map<string, number>();
@@ -2221,9 +2224,11 @@ async function assertAccessoryAvailabilityForUpdate(db: any, contractId: number,
     const k = `${l.accessoryId}::${l.variante ?? "__null__"}`;
     const cur = need.get(k); if (cur) cur.qty += l.qty; else need.set(k, { ...l });
   }
-  for (const [k, d] of Array.from(need.entries())) {
-    const bd = await getAccessoryBreakdown(d.accessoryId);
-    const disp = d.variante == null ? bd.disponivel : (bd.byVariante.find((v: any) => v.variante === d.variante)?.disponivel ?? 0);
+  const needEntries = Array.from(need.entries());
+  const bdMap = await getAccessoryBreakdowns(Array.from(new Set(needEntries.map(([, d]) => d.accessoryId))));
+  for (const [k, d] of needEntries) {
+    const bd = bdMap.get(d.accessoryId)!;
+    const disp = d.variante == null ? bd.disponivel : (bd.byVariante.find((v) => v.variante === d.variante)?.disponivel ?? 0);
     const effective = disp + (held.get(k) ?? 0);
     if (effective < d.qty) throw new TRPCError({ code: "PRECONDITION_FAILED", message: `Acessório indisponível (variante: ${d.variante ?? "—"}). Disponível: ${effective}, pedido: ${d.qty}.` });
   }

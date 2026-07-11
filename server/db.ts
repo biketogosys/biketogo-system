@@ -876,51 +876,60 @@ export type AccessoryBreakdownResult = {
   byVariante: AccessoryBreakdownVariante[];
 };
 
-/**
- * Derives accessory availability from accessory_units rows (by status and variante).
- * Replaces the old usageMap/qty approach — source of truth is the unit status.
- */
-export async function getAccessoryBreakdown(accessoryId: number): Promise<AccessoryBreakdownResult> {
-  const db = await getDb();
-  const empty: AccessoryBreakdownResult = {
+function emptyAccessoryBreakdown(): AccessoryBreakdownResult {
+  return {
     total: 0, disponivel: 0, alugado: 0, manutencao: 0, perdido: 0, roubado: 0,
     byVariante: [],
   };
-  if (!db) return empty;
+}
+
+/**
+ * Versão BATCH: deriva a disponibilidade de N acessórios em UMA query
+ * (crítico no Supabase pooler, onde cada query é uma viagem de rede).
+ * Fonte única da lógica — o singular delega pra cá.
+ */
+export async function getAccessoryBreakdowns(
+  accessoryIds: number[],
+): Promise<Map<number, AccessoryBreakdownResult>> {
+  const result = new Map<number, AccessoryBreakdownResult>();
+  if (accessoryIds.length === 0) return result;
+  for (const id of accessoryIds) result.set(id, emptyAccessoryBreakdown());
+
+  const db = await getDb();
+  if (!db) return result;
 
   const { accessoryUnits } = await import("../drizzle/schema");
 
   const units = await db
-    .select({ status: accessoryUnits.status, variante: accessoryUnits.variante })
+    .select({
+      accessoryId: accessoryUnits.accessoryId,
+      status: accessoryUnits.status,
+      variante: accessoryUnits.variante,
+    })
     .from(accessoryUnits)
-    .where(eq(accessoryUnits.accessoryId, accessoryId));
+    .where(inArray(accessoryUnits.accessoryId, accessoryIds));
 
-  if (units.length === 0) return empty;
-
-  const totals: AccessoryBreakdownResult = {
-    total: units.length,
-    disponivel: 0, alugado: 0, manutencao: 0, perdido: 0, roubado: 0,
-    byVariante: [],
-  };
-
-  const varianteMap = new Map<string, AccessoryBreakdownVariante>();
+  const varianteMaps = new Map<number, Map<string, AccessoryBreakdownVariante>>();
 
   for (const unit of units) {
+    const totals = result.get(unit.accessoryId);
+    if (!totals) continue;
     const label = unit.variante ?? null;
     const mapKey = label ?? "__null__";
 
-    // Aggregate totals
+    totals.total++;
     if (unit.status === "disponivel") totals.disponivel++;
     else if (unit.status === "alugado") totals.alugado++;
     else if (unit.status === "manutencao") totals.manutencao++;
     else if (unit.status === "perdido") totals.perdido++;
     else if (unit.status === "roubado") totals.roubado++;
 
-    // Per-variante
-    if (!varianteMap.has(mapKey)) {
-      varianteMap.set(mapKey, { variante: label, total: 0, disponivel: 0, alugado: 0, manutencao: 0, perdido: 0, roubado: 0 });
+    let vMap = varianteMaps.get(unit.accessoryId);
+    if (!vMap) { vMap = new Map(); varianteMaps.set(unit.accessoryId, vMap); }
+    if (!vMap.has(mapKey)) {
+      vMap.set(mapKey, { variante: label, total: 0, disponivel: 0, alugado: 0, manutencao: 0, perdido: 0, roubado: 0 });
     }
-    const vEntry = varianteMap.get(mapKey)!;
+    const vEntry = vMap.get(mapKey)!;
     vEntry.total++;
     if (unit.status === "disponivel") vEntry.disponivel++;
     else if (unit.status === "alugado") vEntry.alugado++;
@@ -929,6 +938,18 @@ export async function getAccessoryBreakdown(accessoryId: number): Promise<Access
     else if (unit.status === "roubado") vEntry.roubado++;
   }
 
-  totals.byVariante = Array.from(varianteMap.values());
-  return totals;
+  for (const [accessoryId, vMap] of Array.from(varianteMaps.entries())) {
+    result.get(accessoryId)!.byVariante = Array.from(vMap.values());
+  }
+  return result;
+}
+
+/**
+ * Derives accessory availability from accessory_units rows (by status and variante).
+ * Replaces the old usageMap/qty approach — source of truth is the unit status.
+ * Delega para o batch getAccessoryBreakdowns (fonte única da lógica).
+ */
+export async function getAccessoryBreakdown(accessoryId: number): Promise<AccessoryBreakdownResult> {
+  const m = await getAccessoryBreakdowns([accessoryId]);
+  return m.get(accessoryId) ?? emptyAccessoryBreakdown();
 }
