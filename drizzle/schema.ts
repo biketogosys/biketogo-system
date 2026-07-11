@@ -129,7 +129,9 @@ export const clientDocuments = pgTable("client_documents", {
   url: text("url").notNull(),
   cloudinaryPublicId: varchar("cloudinaryPublicId", { length: 255 }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-});
+}, (t) => [
+  index("client_documents_client_idx").on(t.clientId),
+]);
 export type ClientDocument = typeof clientDocuments.$inferSelect;
 export type InsertClientDocument = typeof clientDocuments.$inferInsert;
 
@@ -208,6 +210,7 @@ export const rentals = pgTable("rentals", {
 }, (t) => [
   index("rentals_size_dates_idx").on(t.bikeSizeId, t.startDate, t.endDate),
   index("rentals_contract_idx").on(t.contractId),
+  index("rentals_client_idx").on(t.clientId),
 ]);
 export type Rental = typeof rentals.$inferSelect;
 export type InsertRental = typeof rentals.$inferInsert;
@@ -221,7 +224,9 @@ export const rentalAccessories = pgTable("rental_accessories", {
   dailyRate: numeric("dailyRate", { precision: 10, scale: 2 }),
   unitId: integer("unitId"),  // FK → accessory_units (nullable)
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-});
+}, (t) => [
+  index("rental_accessories_rental_idx").on(t.rentalId),
+]);
 export type RentalAccessory = typeof rentalAccessories.$inferSelect;
 export type InsertRentalAccessory = typeof rentalAccessories.$inferInsert;
 
@@ -275,7 +280,9 @@ export const expenses = pgTable("expenses", {
   date: date("date").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().notNull(),
-});
+}, (t) => [
+  index("expenses_date_idx").on(t.date),
+]);
 export type Expense = typeof expenses.$inferSelect;
 export type InsertExpense = typeof expenses.$inferInsert;
 
@@ -288,7 +295,9 @@ export const revenues = pgTable("revenues", {
   date: date("date").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().notNull(),
-});
+}, (t) => [
+  index("revenues_date_idx").on(t.date),
+]);
 export type Revenue = typeof revenues.$inferSelect;
 export type InsertRevenue = typeof revenues.$inferInsert;
 
@@ -303,7 +312,9 @@ export const contracts = pgTable("contracts", {
   encerradoEm: timestamp("encerradoEm"),
   deletedAt: timestamp("deletedAt"),
   pendenciaAcessorio: boolean("pendenciaAcessorio").default(false).notNull(),
-});
+}, (t) => [
+  index("contracts_client_idx").on(t.clientId),
+]);
 export type Contract = typeof contracts.$inferSelect;
 export type InsertContract = typeof contracts.$inferInsert;
 
@@ -317,7 +328,9 @@ export const contractAccessories = pgTable("contract_accessories", {
   observacao: text("observacao"),
   fotoUrl: text("fotoUrl"),
   unitId: integer("unitId"),  // FK → accessory_units (nullable)
-});
+}, (t) => [
+  index("contract_accessories_contract_idx").on(t.contractId),
+]);
 export type ContractAccessory = typeof contractAccessories.$inferSelect;
 export type InsertContractAccessory = typeof contractAccessories.$inferInsert;
 
@@ -330,7 +343,9 @@ export const bikeSizes = pgTable("bike_sizes", {
   quantidadeDisponivel: integer("quantidadeDisponivel").default(1).notNull(),
   observacao: text("observacao"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-});
+}, (t) => [
+  index("bike_sizes_bike_idx").on(t.bikeId),
+]);
 export type BikeSize = typeof bikeSizes.$inferSelect;
 export type InsertBikeSize = typeof bikeSizes.$inferInsert;
 
@@ -373,7 +388,9 @@ export const auditLogs = pgTable("audit_logs", {
   dadosDepois: jsonb("dadosDepois"),
   ip: varchar("ip", { length: 45 }),
   criadoEm: timestamp("criadoEm").defaultNow().notNull(),
-});
+}, (t) => [
+  index("audit_logs_criado_em_idx").on(t.criadoEm),
+]);
 export type AuditLog = typeof auditLogs.$inferSelect;
 export type InsertAuditLog = typeof auditLogs.$inferInsert;
 
@@ -386,7 +403,9 @@ export const accessoryUnits = pgTable("accessory_units", {
   variante: varchar("variante", { length: 100 }),
   observacao: text("observacao"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-});
+}, (t) => [
+  index("accessory_units_accessory_idx").on(t.accessoryId),
+]);
 export type AccessoryUnit = typeof accessoryUnits.$inferSelect;
 export type InsertAccessoryUnit = typeof accessoryUnits.$inferInsert;
 
