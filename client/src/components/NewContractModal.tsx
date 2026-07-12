@@ -75,7 +75,22 @@ function VerifiedClientAutocomplete({
 
   useEffect(() => {
     function handleClick(e: MouseEvent) {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) setOpen(false);
+      const target = e.target as HTMLElement | null;
+      if (!target) return;
+      // Cliques em BARRA DE ROLAGEM disparam mousedown mas não devem fechar a
+      // lista. O DialogContent (max-h-[90vh] overflow-y-auto) tem barra própria:
+      // rolar o formulário fechava o autocomplete. Ignora 3 casos de scrollbar:
+      const root = document.documentElement;
+      // 1) barra da janela (clique além da largura/altura útil do documento)
+      if (e.clientX > root.clientWidth || e.clientY > root.clientHeight) return;
+      // 2/3) barra de um elemento rolável (clique cai no "gutter", além do client*)
+      if (
+        (target.scrollHeight > target.clientHeight && e.offsetX > target.clientWidth) ||
+        (target.scrollWidth > target.clientWidth && e.offsetY > target.clientHeight)
+      ) {
+        return;
+      }
+      if (containerRef.current && !containerRef.current.contains(target)) setOpen(false);
     }
     document.addEventListener("mousedown", handleClick);
     return () => document.removeEventListener("mousedown", handleClick);

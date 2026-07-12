@@ -151,7 +151,7 @@ Reescrever `client/src/index.css` canonicamente, do zero, mantendo nomes de toke
   `.badge-*` ad-hoc** migrando pro `UnitStatusBadge`/variantes shadcn.
 - **Gate:** app sobe, todas as telas renderizam com as cores certas (tsc + visual).
 
-## Fase 2 — Primitivos shadcn polidos (1 sessão)
+## Fase 2 — Primitivos shadcn polidos (1 sessão) — ✅ FEITA
 **Skills:** shadcn · emil-design-eng · apple-design
 
 Reforjar os primitivos em `components/ui/` ao padrão premium (é o que conserta o
@@ -161,7 +161,33 @@ variantes sem âmbar-gritante), `dialog` (elevação/backdrop/entrada com mola),
 border+shadow padrão), `table`, `badge`, `skeleton`, `tabs`, `sonner` (toasts).
 - **Gate:** conferir cada primitivo no `dev:local` (o modal de bike bonito).
 
-## Fase 3 — Sistema de movimento (0,5 sessão)
+> **Concluída.** Reforjados usando os tokens de motion/sombra da Fase 1:
+> - **button** — `transition-all` → props específicas + `duration-150 ease-out`
+>   (curva forte da casa) + `active:scale-[0.97]` (feedback de press, emil); âmbar
+>   ganhou `shadow-sm` tintada + press que escurece (deixa de ser bloco chapado);
+>   hover refinado em outline/ghost/secondary; `link` sem scale.
+> - **dialog** — backdrop `bg-black/50` + `backdrop-blur-[2px]` (scrim material
+>   apple "dim to focus"); content `shadow-lg`→`shadow-2xl` tintada, `rounded-lg`
+>   →`rounded-xl` (14px); close button virou ghost icon-button de verdade
+>   (hover bg, `active:scale-95`, foco consistente). Modal segue centrado
+>   (transform-origin center é o certo p/ modal, emil).
+> - **input/textarea** — affordance de hover na borda (`hover:border-ring/45`) +
+>   `border-color` na transição.
+> - **select** — trigger com press (`active:scale-[0.99]`) + hover border +
+>   **chevron gira 180° ao abrir** (`[&[data-state=open]>svg]:rotate-180` +
+>   `transition-transform`).
+> - **card** — `transition-shadow` pronto (um `hover:shadow-md` no uso eleva).
+> - **tabs** — trigger com `active:scale-[0.98]` + transição de bg.
+> - `badge`/`skeleton`/`sonner` — deixados como estão (já aceitáveis; tocá-los
+>   seria ruído). Nota: `sonner.tsx` importa `useTheme` de `next-themes` (dead
+>   weight — app usa `ThemeContext`; retorna "system", inofensivo).
+> **Gate verde:** `tsc` 0 · `npm test` 61/61 · verificado ao vivo em dark no DOM —
+> "Nova Bicicleta" (transição específica + ease-out + sombra), dialog aberto
+> (blur(2px) + shadow-2xl + radius 14px), input/select transições, chevron
+> rotate 180° (valor assentado) · zero erro de console. (Screenshot da preview
+> segue travando no ambiente — verificação por computed-styles em elementos reais.)
+
+## Fase 3 — Sistema de movimento (0,5 sessão) — ✅ FEITA
 **Skills:** improve-animations · apple-design · animation-vocabulary
 
 1. `improve-animations`: auditar o motion atual (hoje ~zero) → plano priorizado.
@@ -169,6 +195,29 @@ border+shadow padrão), `table`, `badge`, `skeleton`, `tabs`, `sonner` (toasts).
    nas transições (não linear), transições interrompíveis, respeito a
    `prefers-reduced-motion`. Nomear cada efeito via `animation-vocabulary`.
 - **Gate:** motion perceptível mas sóbrio; reduced-motion desliga tudo.
+
+> **Concluída.** Sistema de movimento (primitivas reusáveis) em `index.css`:
+> - **`.motion-stagger`** — Stagger (fade-in + slide-in-from-bottom) nos filhos
+>   diretos, passo ~40ms, cap em 12; **`.motion-enter`** (rise+fade),
+>   **`.motion-enter-spring`** (Pop-in com overshoot via `--ease-spring`),
+>   **`.motion-enter-scale`** (scale-in de 0.96, nunca de scale(0) — emil).
+> - **Padrão `@starting-style` + transition** (não keyframes): o estado de
+>   REPOUSO é visível; o offset de entrada vive só no `@starting-style`. À prova
+>   de falha — se a transição não rodar (aba oculta no mount, browser sem
+>   suporte, reduced-motion), o conteúdo aparece assentado, **nunca preso
+>   invisível**. Só `transform`+`opacity`+`box-shadow` (compositor).
+> - **Regras não-camadas de propósito** — vencem a utility `transition-shadow`
+>   do Card (camada `utilities`); `box-shadow` incluído na lista pra o card não
+>   perder a transição de sombra.
+> - **Demonstração:** KPI cards do dashboard (`SectionCards`) sobem em cascata ao
+>   montar. Rollout amplo (todas as telas) é a Fase 4.
+> **Gate:** `tsc` 0 · `npm test` 61/61 · verificado no DOM — cards com
+> `transition: opacity, transform, box-shadow` + delays escalonados (0.02→0.14s)
+> + curva ease-out, **repouso opacity 1** (robusto) · zero erro de console.
+> **Nota honesta:** o renderer da preview não avança o relógio de animação (rAF
+> não dispara — mesma causa do screenshot travar), então NÃO deu pra *ver* a
+> cascata rodar aqui; verifiquei o mecanismo (correto + à prova de falha). Em
+> browser real roda. Recomendo o Matheus abrir `dev:local` e conferir a olho.
 
 ## Fase 4 — Rework tela a tela (2–3 sessões)
 **Skills:** todas

@@ -472,3 +472,60 @@
     border-color: oklch(0.58 0.12 285 / 0.30);
   }
 }
+
+/* ============================================================================
+   Sistema de movimento (Fase 3) — primitivas de entrada
+   ----------------------------------------------------------------------------
+   Padrão @starting-style + transition (emil): o estado de REPOUSO é visível
+   (opacity 1, sem offset); o estado de entrada vive só no @starting-style, na
+   primeira renderização. À prova de falha — se a transição não rodar (aba
+   oculta no mount, reduced-motion, browser sem suporte), o conteúdo aparece
+   assentado, nunca preso invisível. Só transform + opacity (compositor).
+   Vocabulário: `.motion-stagger` = Stagger de fade-in + slide-in-from-bottom;
+   `.motion-enter-spring` = Pop in (mola via --ease-spring). Reduced-motion:
+   o bloco global em @layer base zera a duração → aparece instantâneo.
+   ========================================================================== */
+/* Regras SEM @layer de propósito: declarações não-camadas vencem qualquer
+   camada (inclusive `utilities`), então o motion sobrepõe a utility
+   `transition-shadow` do Card. box-shadow entra na lista pra o card não perder
+   a transição de sombra. O reduced-motion global usa !important e ainda vence. */
+.motion-enter {
+  transition: opacity var(--dur-slow) var(--ease-out),
+              transform var(--dur-slow) var(--ease-out),
+              box-shadow var(--dur-base) var(--ease-out);
+  @starting-style { opacity: 0; transform: translateY(10px); }
+}
+/* Entrada com mola (overshoot sutil) — para elementos-herói/destaque. */
+.motion-enter-spring {
+  transition: opacity var(--dur-slow) var(--ease-out),
+              transform var(--dur-slower) var(--ease-spring),
+              box-shadow var(--dur-base) var(--ease-out);
+  @starting-style { opacity: 0; transform: translateY(12px); }
+}
+/* Entrada por escala (scale-in) — de 0.96, nunca de scale(0) (emil). */
+.motion-enter-scale {
+  transition: opacity var(--dur-base) var(--ease-out),
+              transform var(--dur-base) var(--ease-out);
+  @starting-style { opacity: 0; transform: scale(0.96); }
+}
+
+/* Stagger: cada filho direto entra em cascata (passo ~40ms; emil: 30–80ms)
+   via transition-delay. Cap em 12 — além disso assenta junto do 12º. */
+.motion-stagger > * {
+  transition: opacity var(--dur-slow) var(--ease-out),
+              transform var(--dur-slow) var(--ease-out),
+              box-shadow var(--dur-base) var(--ease-out);
+  @starting-style { opacity: 0; transform: translateY(10px); }
+}
+.motion-stagger > *:nth-child(1) { transition-delay: 0.02s; }
+.motion-stagger > *:nth-child(2) { transition-delay: 0.06s; }
+.motion-stagger > *:nth-child(3) { transition-delay: 0.10s; }
+.motion-stagger > *:nth-child(4) { transition-delay: 0.14s; }
+.motion-stagger > *:nth-child(5) { transition-delay: 0.18s; }
+.motion-stagger > *:nth-child(6) { transition-delay: 0.22s; }
+.motion-stagger > *:nth-child(7) { transition-delay: 0.26s; }
+.motion-stagger > *:nth-child(8) { transition-delay: 0.30s; }
+.motion-stagger > *:nth-child(9) { transition-delay: 0.34s; }
+.motion-stagger > *:nth-child(10){ transition-delay: 0.38s; }
+.motion-stagger > *:nth-child(11){ transition-delay: 0.42s; }
+.motion-stagger > *:nth-child(n+12){ transition-delay: 0.46s; }
