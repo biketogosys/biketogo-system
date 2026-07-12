@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
-import { Loader2, Shield, ChevronLeft, ChevronRight, Search, Filter } from "lucide-react";
+import { Shield, ChevronLeft, ChevronRight, Search, Filter } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -160,8 +161,8 @@ export default function AuditLog() {
       {/* Table */}
       <div className="bg-card border border-border rounded-xl overflow-hidden">
         {isLoading ? (
-          <div className="flex items-center justify-center h-48">
-            <Loader2 className="w-5 h-5 animate-spin text-primary" />
+          <div className="p-4 space-y-3">
+            {Array.from({ length: 8 }).map((_, i) => <Skeleton key={i} className="h-9 w-full" />)}
           </div>
         ) : logs.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-48 text-muted-foreground">

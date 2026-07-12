@@ -454,7 +454,16 @@ export async function generateContractPdf(
   const contractNum = String(data.contractId).padStart(4, "0");
 
   return new Promise((resolve, reject) => {
-    const doc = new PDFDocument({ margin: M, size: "A4", autoFirstPage: true });
+    // bufferPages: permite carimbar o rodapé em TODAS as páginas no fim (a
+    // contagem total só é conhecida depois que o conteúdo termina de fluir).
+    // margin.bottom reservado (44) mantém o texto corrido acima da faixa de
+    // rodapé (H-26..H) em qualquer página — sem isso o texto invade o rodapé.
+    const doc = new PDFDocument({
+      size: "A4",
+      autoFirstPage: true,
+      bufferPages: true,
+      margins: { top: M, bottom: 44, left: M, right: M },
+    });
     const chunks: Buffer[] = [];
     doc.on("data", (c) => chunks.push(c));
     doc.on("end",  () => resolve(Buffer.concat(chunks)));
@@ -462,6 +471,14 @@ export async function generateContractPdf(
 
     const W = doc.page.width;
     const H = doc.page.height;
+    const FOOTER_H = 26;
+    const CONTENT_BOTTOM = H - 44; // limite inferior do conteúdo (acima do rodapé)
+
+    // Quebra de página controlada: se não couberem `needed` pontos antes do
+    // rodapé, começa uma página nova. Evita título/assinatura órfãos no pé.
+    function ensureSpace(needed: number) {
+      if (doc.y + needed > CONTENT_BOTTOM) doc.addPage();
+    }
 
     // ── HEADER BAND ──────────────────────────────────────────────────────────
     doc.rect(0, 0, W, 90).fill(DARK);
@@ -493,6 +510,7 @@ export async function generateContractPdf(
     // ── Helper: título de seção ───────────────────────────────────────────────
     function sectionTitle(n: number, t: string) {
       doc.moveDown(0.7);
+      ensureSpace(48); // título + régua + um pouco de conteúdo não órfãos no pé
       const y = doc.y;
       doc.fillColor(INK).font("Helvetica-Bold").fontSize(10)
         .text(`${n}. ${t}`, M, y);
@@ -663,6 +681,9 @@ export async function generateContractPdf(
     renderTerms(doc, empresaTermos);
     // ── ASSINATURAS ───────────────────────────────────────────────────────────
     doc.moveDown(2.4);
+    // Bloco de assinaturas + fecho não pode partir no meio: se não couber,
+    // joga tudo pra próxima página (antes ficava órfão gerando página quase vazia).
+    ensureSpace(90);
     const sy = doc.y;
     const sw = (CW - 60) / 2;
 
@@ -684,17 +705,30 @@ export async function generateContractPdf(
     doc.fillColor(MUTED).font("Helvetica").fontSize(8.5)
       .text(`${empresaCidade}, ${emitidoLong}.`, M, doc.y, { width: CW, align: "center" });
 
-    // ── FOOTER BAND ───────────────────────────────────────────────────────────
-    doc.page.margins.bottom = 0;
-    doc.rect(0, H - 26, W, 26).fill(DARK);
-    doc.fillColor(BANDTX).font("Helvetica").fontSize(7)
-      .text(
-        `${empresaNome} · CNPJ ${empresaCnpj} · ${empresaCidade} · ${empresaEmail}`,
-        M, H - 17, { width: CW - 60, lineBreak: false }
-      );
-    doc.fillColor(GOLD).font("Helvetica").fontSize(7)
-      .text(language === "en" ? "Page 1" : "Página 1", M, H - 17, { width: CW, align: "right", lineBreak: false });
+    // ── FOOTER BAND (carimbado em TODAS as páginas) ───────────────────────────
+    // Só agora sabemos o total de páginas — percorre todas as páginas
+    // bufferizadas e desenha a faixa + "Página X de Y" no pé de cada uma.
+    const range = doc.bufferedPageRange();
+    for (let p = 0; p < range.count; p++) {
+      doc.switchToPage(range.start + p);
+      // Zera a margem inferior desta página: sem isso, desenhar texto em H-17
+      // (abaixo do limite de conteúdo) faz o pdfkit achar que "não cabe" e
+      // adicionar páginas em cascata.
+      doc.page.margins.bottom = 0;
+      doc.rect(0, H - FOOTER_H, W, FOOTER_H).fill(DARK);
+      doc.fillColor(BANDTX).font("Helvetica").fontSize(7)
+        .text(
+          `${empresaNome} · CNPJ ${empresaCnpj} · ${empresaCidade} · ${empresaEmail}`,
+          M, H - 17, { width: CW - 60, lineBreak: false }
+        );
+      const pageLabel = language === "en"
+        ? `Page ${p + 1} of ${range.count}`
+        : `Página ${p + 1} de ${range.count}`;
+      doc.fillColor(GOLD).font("Helvetica").fontSize(7)
+        .text(pageLabel, M, H - 17, { width: CW, align: "right", lineBreak: false });
+    }
 
+    doc.flushPages();
     doc.end();
   });
 }

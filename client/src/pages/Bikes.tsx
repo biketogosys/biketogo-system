@@ -28,6 +28,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -89,7 +90,9 @@ function DiscountRulesEditor({ bikeId, onClose }: { bikeId: number; onClose: () 
           </DialogTitle>
         </DialogHeader>
         {isLoading ? (
-          <div className="flex justify-center py-4"><Loader2 className="w-5 h-5 animate-spin text-primary" /></div>
+          <div className="space-y-2 py-2">
+            {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-8 w-full" />)}
+          </div>
         ) : (
           <div className="space-y-3">
             <p className="text-xs text-muted-foreground">Configure descontos automáticos por número de dias de aluguel.</p>
@@ -161,7 +164,9 @@ function BikeUnitsPanel({ bikeSizeId, bikeId }: { bikeSizeId: number; bikeId: nu
   return (
     <div className="border-t border-border bg-muted/30 p-3 space-y-2">
       {isLoading ? (
-        <div className="flex justify-center py-3"><Loader2 className="w-4 h-4 animate-spin text-primary" /></div>
+        <div className="space-y-2 py-2">
+          {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-9 w-full" />)}
+        </div>
       ) : unitList.length === 0 ? (
         <p className="text-xs text-muted-foreground">Nenhuma unidade cadastrada.</p>
       ) : (
@@ -712,8 +717,20 @@ export default function Bikes() {
 
       {/* Content */}
       {isLoading ? (
-        <div className="flex items-center justify-center h-48">
-          <Loader2 className="w-6 h-6 animate-spin text-primary" />
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div key={i} className="border border-border bg-card rounded-xl overflow-hidden">
+              <Skeleton className="w-full rounded-none" style={{ aspectRatio: "16/9" }} />
+              <div className="p-4 space-y-3">
+                <Skeleton className="h-4 w-2/3" />
+                <Skeleton className="h-3 w-1/3" />
+                <div className="flex gap-2 pt-1">
+                  <Skeleton className="h-8 flex-1" />
+                  <Skeleton className="h-8 w-16" />
+                </div>
+              </div>
+            </div>
+          ))}
         </div>
       ) : bikes.length === 0 ? (
         <div className="flex flex-col items-center justify-center h-48 text-muted-foreground">

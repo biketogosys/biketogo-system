@@ -6,6 +6,7 @@ import {
   MessageCircle, Link, Eye, EyeOff, Building2, Plus, X, Bike, FileText,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -220,8 +221,19 @@ export default function Settings() {
 
   if (isLoading) {
     return (
-      <div className="p-6 flex items-center justify-center h-48">
-        <Loader2 className="w-6 h-6 animate-spin text-primary" />
+      <div className="p-6 max-w-3xl mx-auto space-y-6">
+        <div className="space-y-2">
+          <Skeleton className="h-7 w-44" />
+          <Skeleton className="h-4 w-72" />
+        </div>
+        {Array.from({ length: 3 }).map((_, i) => (
+          <div key={i} className="bg-card border border-border rounded-xl p-5 space-y-4">
+            <Skeleton className="h-5 w-40" />
+            <Skeleton className="h-9 w-full" />
+            <Skeleton className="h-9 w-full" />
+            <Skeleton className="h-9 w-2/3" />
+          </div>
+        ))}
       </div>
     );
   }

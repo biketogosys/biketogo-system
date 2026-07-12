@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import {
-  Plus, Pencil, Trash2, Tag, Download, Wallet, Loader2,
+  Plus, Pencil, Trash2, Tag, Download, Wallet,
   TrendingUp, TrendingDown, ArrowUpRight, ArrowDownRight,
   ReceiptText, HandCoins, Bike,
 } from "lucide-react";
@@ -163,8 +163,8 @@ function CategoryManagerDialog({
             </Button>
           </div>
           {isLoading ? (
-            <div className="flex justify-center py-4">
-              <Loader2 className="size-5 animate-spin text-primary" />
+            <div className="space-y-2 py-2">
+              {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-9 w-full" />)}
             </div>
           ) : (
             <div className="space-y-1 max-h-60 overflow-y-auto">

@@ -26,6 +26,7 @@ import { SegmentedTabs } from "@/components/ui/segmented-tabs";
 import { DataTable } from "@/components/ui/data-table";
 import type { ColumnDef } from "@tanstack/react-table";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
@@ -191,8 +192,8 @@ function CloseContractDialog({
         </DialogHeader>
 
         {isLoading ? (
-          <div className="flex justify-center py-8">
-            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+          <div className="space-y-3 py-2">
+            {Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-11 w-full" />)}
           </div>
         ) : (
           <div className="space-y-6">
@@ -447,8 +448,14 @@ function ContractDetail({
 
   if (isLoading) {
     return (
-      <div className="flex justify-center items-center h-64">
-        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      <div className="p-6 space-y-4">
+        <Skeleton className="h-7 w-56" />
+        <div className="bg-card border border-border rounded-xl p-5 space-y-3">
+          {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-5 w-full" />)}
+        </div>
+        <div className="bg-card border border-border rounded-xl p-5 space-y-3">
+          {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}
+        </div>
       </div>
     );
   }

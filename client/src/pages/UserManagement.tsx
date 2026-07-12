@@ -2,12 +2,19 @@ import { trpc } from "@/lib/trpc";
 import { useState } from "react";
 import { toast } from "sonner";
 import {
-  Plus, Loader2, UserCog, X, Pencil, Trash2, Shield, ShieldCheck,
+  Plus, UserCog, Pencil, Trash2, Shield, ShieldCheck,
   Eye, EyeOff, Mail, User as UserIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
 import { useConfirm } from "@/components/ConfirmDialog";
 import { friendlyError } from "@/lib/utils";
 
@@ -74,18 +81,14 @@ function UserFormDialog({
   const isPending = createMutation.isPending || updateMutation.isPending;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative bg-card border border-border rounded-xl w-full max-w-md shadow-2xl">
-        <div className="flex items-center justify-between p-5 border-b border-border">
-          <h2 className="text-base font-semibold text-foreground" style={{ fontFamily: "'Montserrat', sans-serif" }}>
+    <Dialog open onOpenChange={(v) => { if (!v) onClose(); }}>
+      <DialogContent className="max-w-md dialog-mobile">
+        <DialogHeader>
+          <DialogTitle className="text-base">
             {user ? "Editar Usuário" : "Novo Usuário"}
-          </h2>
-          <button onClick={onClose} className="text-muted-foreground hover:text-foreground">
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-        <form onSubmit={handleSubmit} className="p-5 space-y-4">
+          </DialogTitle>
+        </DialogHeader>
+        <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <Label className="text-xs text-muted-foreground mb-1.5 block">Nome *</Label>
             <div className="relative">
@@ -136,26 +139,34 @@ function UserFormDialog({
           <div className="grid grid-cols-2 gap-3">
             <div>
               <Label className="text-xs text-muted-foreground mb-1.5 block">Papel</Label>
-              <select
+              <Select
                 value={form.role}
-                onChange={(e) => setForm({ ...form, role: e.target.value as AdminRole })}
-                className="w-full px-3 py-2 rounded-md bg-secondary border border-border text-sm text-foreground"
+                onValueChange={(v) => setForm({ ...form, role: v as AdminRole })}
               >
-                <option value="admin">Administrador</option>
-                <option value="operator">Operador</option>
-              </select>
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="admin">Administrador</SelectItem>
+                  <SelectItem value="operator">Operador</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             {user && (
               <div>
                 <Label className="text-xs text-muted-foreground mb-1.5 block">Status</Label>
-                <select
+                <Select
                   value={form.active ? "active" : "inactive"}
-                  onChange={(e) => setForm({ ...form, active: e.target.value === "active" })}
-                  className="w-full px-3 py-2 rounded-md bg-secondary border border-border text-sm text-foreground"
+                  onValueChange={(v) => setForm({ ...form, active: v === "active" })}
                 >
-                  <option value="active">Ativo</option>
-                  <option value="inactive">Inativo</option>
-                </select>
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="active">Ativo</SelectItem>
+                    <SelectItem value="inactive">Inativo</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
             )}
           </div>
@@ -170,8 +181,8 @@ function UserFormDialog({
             </Button>
           </div>
         </form>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -209,8 +220,8 @@ export default function UserManagement() {
       </div>
 
       {isLoading ? (
-        <div className="flex items-center justify-center h-48">
-          <Loader2 className="w-6 h-6 animate-spin text-primary" />
+        <div className="bg-card border border-border rounded-xl p-4 space-y-3">
+          {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}
         </div>
       ) : users.length === 0 ? (
         <div className="flex flex-col items-center justify-center h-48 text-muted-foreground">
