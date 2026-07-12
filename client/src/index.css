@@ -1,10 +1,33 @@
+/* ============================================================================
+   BikeTogo — index.css (rebuild canônico da Fase 1 do rework de UI)
+   ----------------------------------------------------------------------------
+   Fundação Tailwind v4 (OKLCH) + tema dark-first âmbar. Reescrito do zero
+   mantendo TODOS os nomes de token que os componentes já consomem, e somando o
+   que faltava: escala de motion (durações + easings/spring), z-index, sombras
+   tintadas, material de vidro e escala tipográfica óptica.
+
+   Regras da casa (ver CLAUDE.md / REDESIGN-PLAN.md):
+   - Cor só via token semântico. Par sempre superfície + -foreground.
+   - Dark é o estado primário; light é fallback sóbrio.
+   - Âmbar é o acento (oklch(0.82 0.17 80)), não bloco chapado.
+   - Grays tintados de um só matiz (hue 75, chroma mínima) — coesão com o âmbar.
+   ========================================================================== */
+
+/* @import da fonte PRIMEIRO — precede o tailwindcss/tw-animate-css inlined,
+   senão o postcss reclama ("@import must precede all other statements"). */
+@import url('https://fonts.googleapis.com/css2?family=Geist:wght@300..800&family=Geist+Mono:wght@400;500&display=swap');
 @import "tailwindcss";
 @import "tw-animate-css";
-@import url('https://fonts.googleapis.com/css2?family=Geist:wght@300..800&family=Geist+Mono:wght@400;500&display=swap');
 
 @custom-variant dark (&:is(.dark *));
 
+/* ----------------------------------------------------------------------------
+   @theme inline — expõe os tokens de runtime como utilitários do Tailwind.
+   `inline` é o que faz `shadow-md`, `text-h1`, `bg-primary` etc. reagirem à
+   troca de tema (os valores referenciam var()s definidas em :root / .dark).
+   -------------------------------------------------------------------------- */
 @theme inline {
+  /* — Forma / raio — */
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);
@@ -12,6 +35,8 @@
   --radius-2xl: calc(var(--radius) * 1.8);
   --radius-3xl: calc(var(--radius) * 2.2);
   --radius-4xl: calc(var(--radius) * 2.6);
+
+  /* — Superfícies e semântica de cor — */
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -44,125 +69,291 @@
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
+
+  /* — Tipografia — */
   --font-sans: 'Geist', system-ui, sans-serif;
   --font-heading: 'Geist', system-ui, sans-serif;
-  --font-mono: 'Geist Mono', monospace;
+  --font-mono: 'Geist Mono', ui-monospace, monospace;
+
+  /* Escala tipográfica óptica (apple-design): tracking negativo cresce com o
+     tamanho, leading aperta no display e afrouxa no corpo, peso entra na
+     hierarquia. Utilitários: text-display / text-h1 / text-h2 / text-h3 /
+     text-caption — pareados com line-height + letter-spacing + weight. */
+  --text-display: clamp(2.25rem, 1.6rem + 2.6vw, 3rem);
+  --text-display--line-height: 1.04;
+  --text-display--letter-spacing: -0.022em;
+  --text-display--font-weight: 600;
+
+  --text-h1: 1.875rem;
+  --text-h1--line-height: 1.15;
+  --text-h1--letter-spacing: -0.02em;
+  --text-h1--font-weight: 600;
+
+  --text-h2: 1.5rem;
+  --text-h2--line-height: 1.2;
+  --text-h2--letter-spacing: -0.017em;
+  --text-h2--font-weight: 600;
+
+  --text-h3: 1.25rem;
+  --text-h3--line-height: 1.3;
+  --text-h3--letter-spacing: -0.012em;
+  --text-h3--font-weight: 600;
+
+  --text-caption: 0.75rem;
+  --text-caption--line-height: 1.35;
+  --text-caption--letter-spacing: 0.01em;
+  --text-caption--font-weight: 500;
+
+  /* — Motion (easings) — expostos como `ease-*` no Tailwind.
+     Springs/curvas físicas: use ease-spring em entradas com "momento"
+     (overshoot sutil ~1.7%); ease-out para hover/estado; ease-emphasized
+     para transições de mais peso. Durações em --dur-* (abaixo, :root). */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --ease-emphasized: cubic-bezier(0.2, 0, 0, 1);
+  --ease-spring: linear(
+    0, 0.006, 0.025 2.8%, 0.101 6.1%, 0.539 18.9%, 0.721 25.3%, 0.849 31.5%,
+    0.937 38.1%, 0.968 41.8%, 0.991 45.7%, 1.006 50.1%, 1.015 55%, 1.017 63.9%,
+    1.001
+  );
+
+  /* — Sombras tintadas — sobrescrevem a escala do Tailwind (upgrade sem tocar
+     componentes: shadow-sm/md/lg/... viram tintadas). Referenciam --sh-* de
+     runtime, calibradas por tema (dark = mais profundas). — */
+  --shadow-2xs: 0 1px 2px 0 var(--sh-1);
+  --shadow-xs: 0 1px 2px 0 var(--sh-1);
+  --shadow-sm: 0 1px 3px 0 var(--sh-1), 0 1px 2px -1px var(--sh-2);
+  --shadow: 0 2px 4px -1px var(--sh-1), 0 1px 2px -1px var(--sh-2);
+  --shadow-md: 0 4px 10px -2px var(--sh-2), 0 2px 6px -2px var(--sh-1);
+  --shadow-lg: 0 10px 24px -4px var(--sh-2), 0 6px 14px -6px var(--sh-2);
+  --shadow-xl: 0 20px 40px -8px var(--sh-3), 0 10px 20px -8px var(--sh-2);
+  --shadow-2xl: 0 32px 64px -12px var(--sh-3);
 }
 
-/* ---------- LIGHT (fallback: branco / cinza claro + marca âmbar) ---------- */
+/* ----------------------------------------------------------------------------
+   LIGHT — fallback sóbrio (branco / cinza claro levemente quente + marca âmbar)
+   -------------------------------------------------------------------------- */
 :root {
   --radius: 0.625rem;
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
+
+  --background: oklch(0.995 0.001 75);
+  --foreground: oklch(0.16 0.006 75);
+  --card: oklch(1 0.001 75);
+  --card-foreground: oklch(0.16 0.006 75);
+  --popover: oklch(1 0.001 75);
+  --popover-foreground: oklch(0.16 0.006 75);
 
   --primary: oklch(0.82 0.17 80);
   --primary-foreground: oklch(0.28 0.07 46);
 
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
+  --secondary: oklch(0.968 0.003 75);
+  --secondary-foreground: oklch(0.22 0.006 75);
+  --muted: oklch(0.968 0.003 75);
+  --muted-foreground: oklch(0.53 0.008 75);
+  --accent: oklch(0.962 0.006 78);
+  --accent-foreground: oklch(0.22 0.006 75);
+  --destructive: oklch(0.577 0.225 27.3);
   --destructive-foreground: oklch(0.985 0 0);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
+  --border: oklch(0.915 0.004 75);
+  --input: oklch(0.915 0.004 75);
   --ring: oklch(0.82 0.17 80);
 
   --chart-1: oklch(0.82 0.17 80);
   --chart-2: oklch(0.75 0.15 70);
   --chart-3: oklch(0.66 0.13 58);
   --chart-4: oklch(0.60 0.12 250);
-  --chart-5: oklch(0.65 0.17 162);
+  --chart-5: oklch(0.65 0.15 162);
 
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
+  --sidebar: oklch(0.982 0.002 75);
+  --sidebar-foreground: oklch(0.16 0.006 75);
   --sidebar-primary: oklch(0.82 0.17 80);
   --sidebar-primary-foreground: oklch(0.28 0.07 46);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
+  --sidebar-accent: oklch(0.962 0.006 78);
+  --sidebar-accent-foreground: oklch(0.22 0.006 75);
+  --sidebar-border: oklch(0.915 0.004 75);
   --sidebar-ring: oklch(0.82 0.17 80);
+
+  /* Sombras (light): quentes e sutis. */
+  --sh-1: oklch(0.20 0.03 75 / 0.06);
+  --sh-2: oklch(0.20 0.03 75 / 0.10);
+  --sh-3: oklch(0.20 0.03 75 / 0.16);
+
+  /* Material de vidro (light). */
+  --glass-bg: oklch(1 0.001 75 / 0.72);
+  --glass-border: oklch(0.16 0.006 75 / 0.06);
+  --glass-blur: 16px;
+  --glass-saturate: 160%;
+
+  /* Durações de motion. */
+  --dur-fast: 120ms;
+  --dur-base: 200ms;
+  --dur-slow: 320ms;
+  --dur-slower: 480ms;
+
+  /* Escala de z-index (documental + uso em CSS de componente). */
+  --z-base: 0;
+  --z-dropdown: 50;
+  --z-sticky: 100;
+  --z-overlay: 200;
+  --z-modal: 300;
+  --z-popover: 400;
+  --z-toast: 500;
 }
 
-/* ---------- DARK (estado primário da casa) ---------- */
+/* ----------------------------------------------------------------------------
+   DARK — estado primário da casa. Grays neutros com faísca quente (hue 75,
+   chroma mínima) pra casar com o âmbar sem virar "dashboard amarelo".
+   -------------------------------------------------------------------------- */
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
+  --background: oklch(0.145 0.004 75);
+  --foreground: oklch(0.985 0.002 75);
+  --card: oklch(0.205 0.004 75);
+  --card-foreground: oklch(0.985 0.002 75);
+  --popover: oklch(0.223 0.005 75);
+  --popover-foreground: oklch(0.985 0.002 75);
 
   --primary: oklch(0.82 0.17 80);
   --primary-foreground: oklch(0.26 0.06 46);
 
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
+  --secondary: oklch(0.269 0.005 75);
+  --secondary-foreground: oklch(0.985 0.002 75);
+  --muted: oklch(0.269 0.005 75);
+  --muted-foreground: oklch(0.712 0.012 75);
+  --accent: oklch(0.285 0.006 78);
+  --accent-foreground: oklch(0.985 0.002 75);
+  --destructive: oklch(0.704 0.191 22.2);
   --destructive-foreground: oklch(0.985 0 0);
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.55 0.12 78);
+  --ring: oklch(0.62 0.14 80);
 
   --chart-1: oklch(0.82 0.17 80);
   --chart-2: oklch(0.75 0.15 70);
   --chart-3: oklch(0.66 0.13 58);
-  --chart-4: oklch(0.627 0.265 303.9);
-  --chart-5: oklch(0.696 0.17 162.48);
+  --chart-4: oklch(0.627 0.24 303.9);
+  --chart-5: oklch(0.696 0.17 162.5);
 
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
+  --sidebar: oklch(0.205 0.004 75);
+  --sidebar-foreground: oklch(0.985 0.002 75);
   --sidebar-primary: oklch(0.82 0.17 80);
   --sidebar-primary-foreground: oklch(0.26 0.06 46);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.285 0.006 78);
+  --sidebar-accent-foreground: oklch(0.985 0.002 75);
   --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.55 0.12 78);
+  --sidebar-ring: oklch(0.62 0.14 80);
+
+  /* Sombras (dark): mais profundas — a superfície escura come sombra fraca. */
+  --sh-1: oklch(0 0 0 / 0.36);
+  --sh-2: oklch(0 0 0 / 0.48);
+  --sh-3: oklch(0 0 0 / 0.62);
+
+  /* Material de vidro (dark). */
+  --glass-bg: oklch(0.205 0.004 75 / 0.72);
+  --glass-border: oklch(1 0 0 / 0.08);
 }
 
+/* ----------------------------------------------------------------------------
+   @layer base — fundamentos de documento
+   -------------------------------------------------------------------------- */
 @layer base {
   * {
     @apply border-border outline-ring/50;
   }
-  body {
-    @apply bg-background text-foreground;
-    font-family: 'Geist', system-ui, sans-serif;
-  }
-  h1, h2, h3, h4, h5, h6 {
-    font-family: 'Geist', system-ui, sans-serif;
-    @apply font-semibold;
-  }
+
   html {
     @apply font-sans;
+    scroll-behavior: smooth;
+    -webkit-text-size-adjust: 100%;
   }
-  ::-webkit-scrollbar { width: 5px; height: 5px; }
-  ::-webkit-scrollbar-track { background: oklch(0.14 0.005 240); }
-  ::-webkit-scrollbar-thumb { background: oklch(0.28 0.006 240); border-radius: 3px; }
-  ::-webkit-scrollbar-thumb:hover { background: oklch(0.82 0.17 80); }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+    font-feature-settings: "cv11", "ss01";
+  }
+
+  /* Headings: tracking óptico por nível (aperta quanto maior) + wrap
+     equilibrado pra não deixar "viúvas" numa linha só. */
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-heading);
+    @apply font-semibold;
+    text-wrap: balance;
+  }
+  h1 { letter-spacing: -0.02em; }
+  h2 { letter-spacing: -0.017em; }
+  h3 { letter-spacing: -0.012em; }
+  h4 { letter-spacing: -0.008em; }
+
+  p { text-wrap: pretty; }
+
+  /* Métricas/valores/datas: dígitos tabulares e sem ligadura. */
+  .tabular-nums { font-variant-numeric: tabular-nums; }
+
+  /* Seleção de texto na cor da marca (sutil). */
+  ::selection {
+    background: oklch(0.82 0.17 80 / 0.28);
+    color: inherit;
+  }
+
+  /* Scrollbar fina e tematizada. */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb {
+    background: var(--border);
+    border-radius: 999px;
+  }
+  ::-webkit-scrollbar-thumb:hover { background: var(--muted-foreground); }
+  * { scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+
+  /* Cursor pointer em tudo que é interativo (não-desabilitado). */
   button:not(:disabled),
   [role="button"]:not([aria-disabled="true"]),
   [type="button"]:not(:disabled),
   [type="submit"]:not(:disabled),
   [type="reset"]:not(:disabled),
   a[href],
+  label[for],
   select:not(:disabled),
   input[type="checkbox"]:not(:disabled),
   input[type="radio"]:not(:disabled) {
     @apply cursor-pointer;
   }
+
+  /* Foco visível e consistente para navegação por teclado. */
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+
+  /* Acessibilidade de movimento (apple §14): reduz a quase-zero mantendo
+     legibilidade. Reduced-motion desliga entradas/springs; reduced-transparency
+     solidifica o vidro; more-contrast reforça bordas. */
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+  @media (prefers-reduced-transparency: reduce) {
+    :root { --glass-bg: var(--card); --glass-blur: 0px; }
+    .glass { backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }
+  }
+  @media (prefers-contrast: more) {
+    :root { --border: oklch(0.7 0.008 75); }
+    .dark { --border: oklch(1 0 0 / 28%); }
+  }
 }
 
+/* ----------------------------------------------------------------------------
+   @layer components — utilitários load-bearing + material + badges
+   -------------------------------------------------------------------------- */
 @layer components {
+  /* Container centralizado responsivo. */
   .container {
     width: 100%;
     margin-left: auto;
@@ -170,28 +361,26 @@
     padding-left: 1rem;
     padding-right: 1rem;
   }
-
-  .flex {
-    min-height: 0;
-    min-width: 0;
-  }
-
   @media (min-width: 640px) {
-    .container {
-      padding-left: 1.5rem;
-      padding-right: 1.5rem;
-    }
+    .container { padding-left: 1.5rem; padding-right: 1.5rem; }
   }
-
   @media (min-width: 1024px) {
-    .container {
-      padding-left: 2rem;
-      padding-right: 2rem;
-      max-width: 1400px;
-    }
+    .container { padding-left: 2rem; padding-right: 2rem; max-width: 1400px; }
   }
 
-  /* ─── Mobile-first table utilities ─────────────────────────────────────── */
+  /* Hack load-bearing: impede que filho flex estoure o container (overflow). */
+  .flex { min-height: 0; min-width: 0; }
+
+  /* Material de vidro reutilizável (header/toolbar/sheet flutuante). Enter via
+     blur+scale, não só opacity (apple §12 "materialize, don't just fade"). */
+  .glass {
+    background: var(--glass-bg);
+    backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+    border-color: var(--glass-border);
+  }
+
+  /* ─── Tabela compacta (mobile-first) ─────────────────────────────────── */
   .table-compact th,
   .table-compact td {
     padding: 0.5rem 0.75rem;
@@ -204,23 +393,14 @@
   .dark .table-compact tr:nth-child(even) {
     background-color: oklch(0.80 0 0 / 0.03);
   }
-  .table-compact tr:hover {
-    background-color: oklch(0.50 0 0 / 0.06);
-  }
-  .dark .table-compact tr:hover {
-    background-color: oklch(0.80 0 0 / 0.06);
-  }
+  .table-compact tr:hover { background-color: var(--accent); }
 
-  /* ─── Safe area bottom (iOS notch) ────────────────────────────────────── */
-  .safe-area-bottom {
-    padding-bottom: env(safe-area-inset-bottom, 0px);
-  }
+  /* ─── Safe area (notch iOS) ──────────────────────────────────────────── */
+  .safe-area-bottom { padding-bottom: env(safe-area-inset-bottom, 0px); }
 
-  /* ─── Touch-friendly inputs (mobile) ─────────────────────────────────── */
+  /* ─── Inputs touch-friendly + dialog fullscreen no mobile ────────────── */
   @media (max-width: 767px) {
-    input, select, textarea, button {
-      min-height: 44px;
-    }
+    input, select, textarea, button { min-height: 44px; }
     .dialog-mobile {
       width: 100vw !important;
       max-width: 100vw !important;
@@ -228,68 +408,67 @@
       max-height: 100dvh !important;
       border-radius: 0 !important;
       margin: 0 !important;
-      }
+    }
   }
 
-  /* ─── Inline actions on hover (desktop) ───────────────────────────────── */
+  /* ─── Ações de linha reveladas no hover (desktop) ────────────────────── */
   @media (min-width: 768px) {
-    .row-actions {
-      opacity: 0;
-      transition: opacity 0.15s ease;
-    }
+    .row-actions { opacity: 0; transition: opacity var(--dur-fast) var(--ease-out); }
     tr:hover .row-actions,
-    .group:hover .row-actions {
-      opacity: 1;
-    }
+    .group:hover .row-actions { opacity: 1; }
   }
 
-  /* ─── Status Badges ─────────────────────────────────────────────────────── */
+  /* ─── Status badges ──────────────────────────────────────────────────────
+     Calibrados: mesma forma/peso, matiz semântico, saturação contida (< 80%),
+     legíveis em dark e light. Ainda consumidos por Clients/ClientProfile/
+     Dashboard/UserManagement; a migração pro <UnitStatusBadge> é da Fase 4.
+     -------------------------------------------------------------------------- */
+  .badge-lead,
+  .badge-verified,
+  .badge-blocked,
+  .badge-available,
+  .badge-rented,
+  .badge-maintenance {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.125rem 0.5rem;
+    border-radius: var(--radius-sm);
+    font-size: 0.6875rem;
+    font-weight: 600;
+    line-height: 1.2;
+    letter-spacing: 0.01em;
+    white-space: nowrap;
+    border: 1px solid transparent;
+  }
   .badge-lead {
-    display: inline-flex; align-items: center;
-    padding: 2px 8px; border-radius: 4px;
-    font-size: 0.7rem; font-weight: 600; letter-spacing: 0.03em;
-    background-color: oklch(0.65 0.18 50 / 0.18);
-    color: oklch(0.82 0.18 50);
-    border: 1px solid oklch(0.65 0.18 50 / 0.35);
+    background-color: oklch(0.70 0.14 55 / 0.16);
+    color: oklch(0.80 0.14 60);
+    border-color: oklch(0.70 0.14 55 / 0.30);
   }
   .badge-verified {
-    display: inline-flex; align-items: center;
-    padding: 2px 8px; border-radius: 4px;
-    font-size: 0.7rem; font-weight: 600; letter-spacing: 0.03em;
-    background-color: oklch(0.60 0.15 200 / 0.18);
-    color: oklch(0.78 0.15 200);
-    border: 1px solid oklch(0.60 0.15 200 / 0.35);
+    background-color: oklch(0.64 0.11 200 / 0.16);
+    color: oklch(0.78 0.11 200);
+    border-color: oklch(0.64 0.11 200 / 0.30);
   }
   .badge-blocked {
-    display: inline-flex; align-items: center;
-    padding: 2px 8px; border-radius: 4px;
-    font-size: 0.7rem; font-weight: 600; letter-spacing: 0.03em;
-    background-color: oklch(0.50 0.18 25 / 0.18);
-    color: oklch(0.72 0.18 25);
-    border: 1px solid oklch(0.50 0.18 25 / 0.35);
+    background-color: oklch(0.58 0.16 25 / 0.16);
+    color: oklch(0.72 0.16 25);
+    border-color: oklch(0.58 0.16 25 / 0.32);
   }
   .badge-available {
-    display: inline-flex; align-items: center;
-    padding: 2px 8px; border-radius: 4px;
-    font-size: 0.7rem; font-weight: 600; letter-spacing: 0.03em;
-    background-color: oklch(0.60 0.18 145 / 0.18);
-    color: oklch(0.78 0.18 145);
-    border: 1px solid oklch(0.60 0.18 145 / 0.35);
+    background-color: oklch(0.62 0.13 150 / 0.16);
+    color: oklch(0.78 0.13 150);
+    border-color: oklch(0.62 0.13 150 / 0.30);
   }
   .badge-rented {
-    display: inline-flex; align-items: center;
-    padding: 2px 8px; border-radius: 4px;
-    font-size: 0.7rem; font-weight: 600; letter-spacing: 0.03em;
-    background-color: oklch(0.65 0.18 50 / 0.18);
-    color: oklch(0.82 0.18 50);
-    border: 1px solid oklch(0.65 0.18 50 / 0.35);
+    background-color: oklch(0.72 0.13 80 / 0.16);
+    color: oklch(0.84 0.14 82);
+    border-color: oklch(0.72 0.13 80 / 0.30);
   }
   .badge-maintenance {
-    display: inline-flex; align-items: center;
-    padding: 2px 8px; border-radius: 4px;
-    font-size: 0.7rem; font-weight: 600; letter-spacing: 0.03em;
-    background-color: oklch(0.55 0.15 280 / 0.18);
-    color: oklch(0.78 0.15 280);
-    border: 1px solid oklch(0.55 0.15 280 / 0.35);
+    background-color: oklch(0.58 0.12 285 / 0.16);
+    color: oklch(0.76 0.12 285);
+    border-color: oklch(0.58 0.12 285 / 0.30);
   }
 }

@@ -131,3 +131,4 @@ HANDOFF.md
 # (mantém só o launch.json, que é config de projeto inofensiva)
 .claude/*
 !.claude/launch.json
+REDESIGN-PLAN.md

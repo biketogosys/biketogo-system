@@ -97,9 +97,27 @@ Levantados na varredura E2E desta sessão (todas as 11 telas exercitadas):
 **Entregável desta fase:** este bloco de decisões (acima) — aprovado, vira o
 contrato visual das fases 1–4.
 
-## Fase 1 — Rebuild do `index.css` do zero (0,5 sessão) — ⏳ PRÓXIMA (turnkey)
+## Fase 1 — Rebuild do `index.css` do zero (0,5 sessão) — ✅ FEITA
 **Skills:** shadcn-ui-system · shadcn · apple-design
 **Decisão travada:** preservar os nomes de token existentes (não nuke literal).
+
+> **Concluída.** `client/src/index.css` reescrito canonicamente do zero mantendo
+> TODOS os nomes de token consumidos (censo por grep: só o set padrão shadcn).
+> Somados os tokens que faltavam: escala de motion (`--ease-spring` via
+> `linear()` + `--ease-out/in-out/emphasized` + `--dur-fast/base/slow/slower`),
+> escala de z-index (`--z-dropdown…toast`), **sombras tintadas** (sobrescrevem a
+> escala do Tailwind — `shadow-sm/md/lg/xl/2xl` viram tintadas e theme-reactive,
+> mais profundas no dark), **material de vidro** (`.glass` + `--glass-*`) e
+> **escala tipográfica óptica** (`text-display/h1/h2/h3/caption` com line-height +
+> tracking + weight pareados). Grays ganharam faísca quente (hue 75, chroma
+> mínima) pra casar com o âmbar. Badges `.badge-*` **mantidos e calibrados**
+> (< 80% sat, mesma forma) — migração pro `UnitStatusBadge` fica pra Fase 4.
+> Corrigido de brinde o warning de ordem de `@import` do postcss (fonte movida
+> pro topo). **Gate verde:** `tsc` 0 · `npm test` 61/61 · tokens light+dark lidos
+> ao vivo no DOM (dashboard 9 cards, primary, badges) via computed styles ·
+> zero erro de console. (Screenshot da preview travou — limitação do renderer;
+> verificação feita por computed-styles em elementos reais, mais precisa que olho
+> nu pra mudança de token.)
 
 > **Começar a próxima sessão AQUI.** Passos concretos:
 > 1. `Skill anthropic-skills:shadcn-ui-system` (tokens da casa) + `apple-design`
