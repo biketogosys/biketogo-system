@@ -212,8 +212,8 @@ export default function UserManagement() {
           </p>
         </div>
         <Button
+          size="sm"
           onClick={() => { setEditUser(null); setShowForm(true); }}
-          className="gap-2"
         >
           <Plus className="w-4 h-4" />Novo usuário
         </Button>

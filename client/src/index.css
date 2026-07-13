@@ -134,6 +134,10 @@
    LIGHT — fallback sóbrio (branco / cinza claro levemente quente + marca âmbar)
    -------------------------------------------------------------------------- */
 :root {
+  /* Controles nativos (select/option, date picker, scrollbar) seguem o tema —
+     sem isso, os <option> do <select> nativo ficam texto claro em fundo branco
+     no dark (ilegíveis). */
+  color-scheme: light;
   --radius: 0.625rem;
 
   --background: oklch(0.995 0.001 75);
@@ -205,6 +209,7 @@
    chroma mínima) pra casar com o âmbar sem virar "dashboard amarelo".
    -------------------------------------------------------------------------- */
 .dark {
+  color-scheme: dark;
   --background: oklch(0.145 0.004 75);
   --foreground: oklch(0.985 0.002 75);
   --card: oklch(0.205 0.004 75);
@@ -494,6 +499,12 @@
               transform var(--dur-slow) var(--ease-out),
               box-shadow var(--dur-base) var(--ease-out);
   @starting-style { opacity: 0; transform: translateY(10px); }
+}
+/* Fade-in puro (sem movimento) — para transição de ROTA e trocas frequentes:
+   navegação é ação repetida, então movimento sutil (emil). Repouso visível. */
+.motion-fade {
+  transition: opacity var(--dur-base) var(--ease-out);
+  @starting-style { opacity: 0; }
 }
 /* Entrada com mola (overshoot sutil) — para elementos-herói/destaque. */
 .motion-enter-spring {

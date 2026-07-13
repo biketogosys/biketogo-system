@@ -1,6 +1,7 @@
 import { useAuth } from "@/_core/hooks/useAuth";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { CSSProperties } from "react";
+import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from "./DashboardLayoutSkeleton";
 import { AppSidebar } from "./AppSidebar";
 import { SiteHeader } from "./SiteHeader";
@@ -12,6 +13,7 @@ export default function DashboardLayout({
   children: React.ReactNode;
 }) {
   const { loading, user } = useAuth();
+  const [location] = useLocation();
 
   if (loading) {
     return <DashboardLayoutSkeleton />;
@@ -56,7 +58,11 @@ export default function DashboardLayout({
       <SidebarInset>
         <SiteHeader />
         <main className="flex-1 p-3 md:p-4 lg:p-6 overflow-x-hidden">
-          {children}
+          {/* Transição de rota: key por location remonta → @starting-style
+              dispara o fade-in a cada navegação (repouso sempre visível). */}
+          <div key={location} className="motion-fade">
+            {children}
+          </div>
         </main>
       </SidebarInset>
     </SidebarProvider>

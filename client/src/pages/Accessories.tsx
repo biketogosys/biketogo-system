@@ -671,7 +671,7 @@ export default function Accessories() {
               Gerencie capacetes, cadeados e demais equipamentos
             </p>
           </div>
-          <Button onClick={openCreate} className="gap-1.5 h-9 text-xs md:text-sm">
+          <Button size="sm" onClick={openCreate}>
             <Plus className="w-4 h-4" />
             <span className="hidden sm:inline">Novo Acessório</span>
             <span className="sm:hidden">Novo</span>

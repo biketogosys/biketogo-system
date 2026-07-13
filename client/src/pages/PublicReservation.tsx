@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { translations, languages, type Language } from "@/lib/i18n";
 import { maskCPF, maskRG, maskCEP, maskPhone, maskDate, isValidCPF } from "@/hooks/useMask";
+import { COUNTRIES, countryOptionValue } from "@/lib/countries";
 
 // ─── Logo URL via env ─────────────────────────────────────────────────────────
 const LOGO_URL = (import.meta as any).env?.VITE_LOGO_URL as string | undefined;
@@ -530,11 +531,10 @@ export default function PublicReservation() {
             {/* Origem */}
             <Field label={lang === "pt" ? "Origem" : lang === "en" ? "Origin" : "Origen"}>
               <select className={selectBase} value={docOrigin} onChange={e => { setDocOrigin(e.target.value); }}>
-                <option value="Brasil (+55)">🇧🇷 Brasil (+55)</option>
-                <option value="Argentina (+54)">🇦🇷 Argentina (+54)</option>
-                <option value="Chile (+56)">🇨🇱 Chile (+56)</option>
-                <option value="Uruguai (+598)">🇺🇾 Uruguai (+598)</option>
-                <option value="EUA (+1)">🇺🇸 EUA (+1)</option>
+                {COUNTRIES.map(c => {
+                  const v = countryOptionValue(c);
+                  return <option key={v} value={v}>{c.flag} {c.name} (+{c.ddi})</option>;
+                })}
                 <option value="Outro">🌍 {lang === "pt" ? "Outro país" : lang === "en" ? "Other country" : "Otro país"}</option>
               </select>
             </Field>
