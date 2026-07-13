@@ -1,7 +1,6 @@
 import { Badge } from "@/components/ui/badge";
 import {
   Card,
-  CardAction,
   CardDescription,
   CardFooter,
   CardHeader,
@@ -65,16 +64,16 @@ export function SectionCards({ data, loading }: SectionCardsProps) {
       {/* Card 1 — Receita do mês */}
       <Card className="@container/card">
         <CardHeader>
-          <CardDescription>Receita do mês</CardDescription>
-          <CardTitle className="text-2xl font-semibold tabular-nums whitespace-nowrap @[250px]/card:text-3xl">
-            {fmt(receitaTotal)}
-          </CardTitle>
-          <CardAction>
-            <Badge variant="outline">
+          <div className="flex items-start justify-between gap-2">
+            <CardDescription className="min-w-0 truncate">Receita do mês</CardDescription>
+            <Badge variant="outline" className="shrink-0">
               <TrendingUpIcon />
               Aluguéis + extras
             </Badge>
-          </CardAction>
+          </div>
+          <CardTitle className="text-2xl font-semibold tabular-nums whitespace-nowrap @[250px]/card:text-3xl">
+            {fmt(receitaTotal)}
+          </CardTitle>
         </CardHeader>
         <CardFooter className="flex-col items-start gap-1.5 text-sm">
           <div className="line-clamp-1 flex gap-2 font-medium">
@@ -87,16 +86,16 @@ export function SectionCards({ data, loading }: SectionCardsProps) {
       {/* Card 2 — Aluguéis ativos */}
       <Card className="@container/card">
         <CardHeader>
-          <CardDescription>Aluguéis ativos</CardDescription>
-          <CardTitle className="text-2xl font-semibold tabular-nums whitespace-nowrap @[250px]/card:text-3xl">
-            {bikeStats.rented}
-          </CardTitle>
-          <CardAction>
-            <Badge variant="outline">
+          <div className="flex items-start justify-between gap-2">
+            <CardDescription className="min-w-0 truncate">Aluguéis ativos</CardDescription>
+            <Badge variant="outline" className="shrink-0">
               <BikeIcon />
               {frotaPct}% da frota
             </Badge>
-          </CardAction>
+          </div>
+          <CardTitle className="text-2xl font-semibold tabular-nums whitespace-nowrap @[250px]/card:text-3xl">
+            {bikeStats.rented}
+          </CardTitle>
         </CardHeader>
         <CardFooter className="flex-col items-start gap-1.5 text-sm">
           <div className="line-clamp-1 flex gap-2 font-medium">
@@ -109,16 +108,16 @@ export function SectionCards({ data, loading }: SectionCardsProps) {
       {/* Card 3 — Total de clientes */}
       <Card className="@container/card">
         <CardHeader>
-          <CardDescription>Total de clientes</CardDescription>
-          <CardTitle className="text-2xl font-semibold tabular-nums whitespace-nowrap @[250px]/card:text-3xl">
-            {clientStats.total}
-          </CardTitle>
-          <CardAction>
-            <Badge variant="outline">
+          <div className="flex items-start justify-between gap-2">
+            <CardDescription className="min-w-0 truncate">Total de clientes</CardDescription>
+            <Badge variant="outline" className="shrink-0">
               <UsersIcon />
               {clientStats.verified} verificados
             </Badge>
-          </CardAction>
+          </div>
+          <CardTitle className="text-2xl font-semibold tabular-nums whitespace-nowrap @[250px]/card:text-3xl">
+            {clientStats.total}
+          </CardTitle>
         </CardHeader>
         <CardFooter className="flex-col items-start gap-1.5 text-sm">
           <div className="line-clamp-1 flex gap-2 font-medium">
@@ -131,16 +130,16 @@ export function SectionCards({ data, loading }: SectionCardsProps) {
       {/* Card 4 — Lucro líquido */}
       <Card className="@container/card">
         <CardHeader>
-          <CardDescription>Lucro líquido</CardDescription>
-          <CardTitle className="text-2xl font-semibold tabular-nums whitespace-nowrap @[250px]/card:text-3xl">
-            {fmt(financial.lucroLiquido)}
-          </CardTitle>
-          <CardAction>
-            <Badge variant="outline">
+          <div className="flex items-start justify-between gap-2">
+            <CardDescription className="min-w-0 truncate">Lucro líquido</CardDescription>
+            <Badge variant="outline" className="shrink-0">
               <TrendingDownIcon />
               despesas {fmt(financial.despesas)}
             </Badge>
-          </CardAction>
+          </div>
+          <CardTitle className="text-2xl font-semibold tabular-nums whitespace-nowrap @[250px]/card:text-3xl">
+            {fmt(financial.lucroLiquido)}
+          </CardTitle>
         </CardHeader>
         <CardFooter className="flex-col items-start gap-1.5 text-sm">
           <div className="line-clamp-1 flex gap-2 font-medium">
