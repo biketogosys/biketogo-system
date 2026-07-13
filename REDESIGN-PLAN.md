@@ -252,8 +252,19 @@ Clientes/ClientProfile → Financeiro → Usuários/Auditoria → Configuraçõe
   labels de dano → `text-destructive`. 4 toasts com "!" limpos. **Gate:** `tsc` 0 ·
   `npm test` 61/61 · status colors verificados no DOM (dark, contraste legível) ·
   zero botão verde remanescente · zero erro de console.
-- ⬜ Bikes/Acessórios · ⬜ Clientes/ClientProfile · ⬜ Financeiro ·
-  ⬜ Usuários/Auditoria · ⬜ Configurações · ⬜ Login
+- ✅ **Bikes/Acessórios** — toasts com "!" limpos (sed em ~16 mensagens);
+  `transition-all` → específico + `active:scale-95` nos chips de filtro; card de
+  bike com `transition-[border-color,box-shadow]`; **`.motion-stagger` no grid de
+  bikes** (cascata na entrada). Cores de status (slate/red/orange p/ perdido/
+  roubado/manutenção) **mantidas** — são a exceção semântica legítima (já
+  theme-adaptive, casam com UnitStatusBadge; hovers dos botões de status espelham
+  a cor que vão setar). Botão "Novo Acessório" já padronizado (`size="sm"`).
+  Primitivas de motion ganharam `border-color` na transição (cards com hover de
+  borda não quebram sob stagger). **Gate:** `tsc` 0 · `npm test` 61/61 · card de
+  bike com `transition: opacity,transform,box-shadow,border-color` + repouso
+  opacity 1 · chips com transição específica · zero toast "!" · zero erro console.
+- ⬜ Clientes/ClientProfile · ⬜ Financeiro · ⬜ Usuários/Auditoria ·
+  ⬜ Configurações · ⬜ Login
 
 ## Fase 5 — QA final (0,5 sessão)
 `tsc` 0 · `npm test` 61 · varredura de fugitivos de cor (zero) · reduced-motion ·

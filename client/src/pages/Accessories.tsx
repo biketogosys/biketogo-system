@@ -132,12 +132,12 @@ function AccessoryUnitsPanel({ accessoryId, onClose }: { accessoryId: number; on
   };
 
   const updateMut = trpc.accessories.updateUnitStatus.useMutation({
-    onSuccess: () => { invalidate(); setEditingUnitId(null); toast.success("Unidade atualizada!"); },
+    onSuccess: () => { invalidate(); setEditingUnitId(null); toast.success("Unidade atualizada"); },
     onError: (e) => toast.error(friendlyError(e)),
   });
 
   const addUnitsMut = trpc.accessories.addUnits.useMutation({
-    onSuccess: (r) => { invalidate(); toast.success(`${r.inserted} unidade(s) adicionada(s)!`); },
+    onSuccess: (r) => { invalidate(); toast.success(`${r.inserted} unidade(s) adicionada(s)`); },
     onError: (e) => toast.error(friendlyError(e)),
   });
 
@@ -584,7 +584,7 @@ export default function Accessories() {
   const createMutation = trpc.accessories.create.useMutation({
     onSuccess: () => {
       utils.accessories.list.invalidate();
-      toast.success("Acessório cadastrado com sucesso!");
+      toast.success("Acessório cadastrado com sucesso");
       setDialogOpen(false);
       setForm(emptyForm);
     },
@@ -594,7 +594,7 @@ export default function Accessories() {
   const updateMutation = trpc.accessories.update.useMutation({
     onSuccess: () => {
       utils.accessories.list.invalidate();
-      toast.success("Acessório atualizado!");
+      toast.success("Acessório atualizado");
       setDialogOpen(false);
       setEditingId(null);
       setForm(emptyForm);
@@ -689,7 +689,7 @@ export default function Accessories() {
               <>
                 <span className="hidden sm:inline text-border">|</span>
                 {(["all", ...uniqueCategories] as string[]).map((cat) => (
-                  <button key={cat} onClick={() => { setCategoryFilter(cat); setPage(1); }} className={`px-2.5 py-1 rounded text-xs font-medium transition-all border ${categoryFilter === cat ? "bg-primary/15 border-primary/40 text-primary" : "bg-card border-border text-muted-foreground hover:text-foreground"}`}>
+                  <button key={cat} onClick={() => { setCategoryFilter(cat); setPage(1); }} className={`px-2.5 py-1 rounded text-xs font-medium transition-[color,background-color,border-color] duration-150 ease-out active:scale-95 border ${categoryFilter === cat ? "bg-primary/15 border-primary/40 text-primary" : "bg-card border-border text-muted-foreground hover:text-foreground"}`}>
                     {cat === "all" ? "Todas" : cat}
                   </button>
                 ))}

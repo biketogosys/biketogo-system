@@ -63,7 +63,7 @@ function DiscountRulesEditor({ bikeId, onClose }: { bikeId: number; onClose: () 
   }
 
   const setRules = trpc.bikes.setDiscountRules.useMutation({
-    onSuccess: () => { utils.bikes.discountRules.invalidate(); toast.success("Regras salvas!"); },
+    onSuccess: () => { utils.bikes.discountRules.invalidate(); toast.success("Regras salvas"); },
     onError: (e) => toast.error(friendlyError(e)),
   });
 
@@ -139,12 +139,12 @@ function BikeUnitsPanel({ bikeSizeId, bikeId }: { bikeSizeId: number; bikeId: nu
   };
 
   const updateMut = trpc.bikeUnits.update.useMutation({
-    onSuccess: () => { invalidateAll(); setEditingId(null); toast.success("Nº atualizado!"); },
+    onSuccess: () => { invalidateAll(); setEditingId(null); toast.success("Nº atualizado"); },
     onError: (e) => toast.error(friendlyError(e)),
   });
 
   const setStatusMut = trpc.bikeUnits.setStatus.useMutation({
-    onSuccess: () => { invalidateAll(); toast.success("Status atualizado!"); },
+    onSuccess: () => { invalidateAll(); toast.success("Status atualizado"); },
     onError: (e) => toast.error(friendlyError(e)),
   });
 
@@ -154,7 +154,7 @@ function BikeUnitsPanel({ bikeSizeId, bikeId }: { bikeSizeId: number; bikeId: nu
   });
 
   const addMut = trpc.bikeUnits.add.useMutation({
-    onSuccess: () => { invalidateAll(); setNewNumero(""); toast.success("Unidade adicionada!"); },
+    onSuccess: () => { invalidateAll(); setNewNumero(""); toast.success("Unidade adicionada"); },
     onError: (e) => toast.error(friendlyError(e)),
   });
 
@@ -316,15 +316,15 @@ function BikeSizesTab({ bikeId }: { bikeId: number }) {
   };
 
   const addMut = trpc.bikes.addSize.useMutation({
-    onSuccess: () => { utils.bikes.listSizes.invalidate(); setTamanho(""); setObs(""); toast.success("Tamanho adicionado!"); },
+    onSuccess: () => { utils.bikes.listSizes.invalidate(); setTamanho(""); setObs(""); toast.success("Tamanho adicionado"); },
     onError: (e) => toast.error(friendlyError(e)),
   });
   const updateMut = trpc.bikes.updateSize.useMutation({
-    onSuccess: () => { utils.bikes.listSizes.invalidate(); setEditId(null); toast.success("Tamanho atualizado!"); },
+    onSuccess: () => { utils.bikes.listSizes.invalidate(); setEditId(null); toast.success("Tamanho atualizado"); },
     onError: (e) => toast.error(friendlyError(e)),
   });
   const deleteMut = trpc.bikes.deleteSize.useMutation({
-    onSuccess: () => { utils.bikes.listSizes.invalidate(); toast.success("Tamanho removido!"); },
+    onSuccess: () => { utils.bikes.listSizes.invalidate(); toast.success("Tamanho removido"); },
     onError: (e) => toast.error(friendlyError(e)),
   });
 
@@ -472,7 +472,7 @@ function BikePhotoUpload({ bikeId, currentUrl, onUploaded }: { bikeId: number; c
   const fileRef = useRef<HTMLInputElement>(null);
   const [sizeWarning, setSizeWarning] = useState(false);
   const uploadMut = trpc.bikes.uploadBikePhoto.useMutation({
-    onSuccess: (data) => { onUploaded(data.url); toast.success("Foto atualizada!"); },
+    onSuccess: (data) => { onUploaded(data.url); toast.success("Foto atualizada"); },
     onError: (e) => toast.error(friendlyError(e)),
   });
 
@@ -540,7 +540,7 @@ function BikeFormDialog({ bike, onClose, onSuccess }: { bike: any | null; onClos
     onError: (e) => toast.error(friendlyError(e)),
   });
   const updateMut = trpc.bikes.update.useMutation({
-    onSuccess: () => { toast.success("Bicicleta atualizada!"); onSuccess(); },
+    onSuccess: () => { toast.success("Bicicleta atualizada"); onSuccess(); },
     onError: (e) => toast.error(friendlyError(e)),
   });
 
@@ -657,7 +657,7 @@ export default function Bikes() {
   const totalPages = bikesResult?.totalPages ?? 1;
 
   const deleteMutation = trpc.bikes.delete.useMutation({
-    onSuccess: () => { utils.bikes.list.invalidate(); toast.success("Bicicleta removida!"); },
+    onSuccess: () => { utils.bikes.list.invalidate(); toast.success("Bicicleta removida"); },
     onError: (e) => toast.error(friendlyError(e)),
   });
 
@@ -695,7 +695,7 @@ export default function Bikes() {
             <button
               key={String(c)}
               onClick={() => { setCategoryFilter(c); setPage(1); }}
-              className={`px-2.5 py-1 rounded text-xs font-medium transition-all border ${
+              className={`px-2.5 py-1 rounded text-xs font-medium transition-[color,background-color,border-color] duration-150 ease-out active:scale-95 border ${
                 categoryFilter === c
                   ? "bg-primary/15 border-primary/40 text-primary"
                   : "bg-card border-border text-muted-foreground hover:text-foreground"
@@ -740,11 +740,11 @@ export default function Bikes() {
       ) : (
         <>
           {/* Card grid — hierárquico (modelo → tamanhos → unidades via dialog) */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="motion-stagger grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {bikes.map((bike: any) => (
               <Card
                 key={bike.id}
-                className="group border border-border bg-card hover:border-primary/40 hover:shadow-md transition-all duration-200 overflow-hidden"
+                className="group border border-border bg-card hover:border-primary/40 hover:shadow-md transition-[border-color,box-shadow] duration-200 ease-out overflow-hidden"
               >
                 {/* Foto / placeholder */}
                 <div className="relative w-full bg-muted border-b border-border" style={{ aspectRatio: "16/9" }}>

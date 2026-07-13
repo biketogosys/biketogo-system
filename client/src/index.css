@@ -497,7 +497,8 @@
 .motion-enter {
   transition: opacity var(--dur-slow) var(--ease-out),
               transform var(--dur-slow) var(--ease-out),
-              box-shadow var(--dur-base) var(--ease-out);
+              box-shadow var(--dur-base) var(--ease-out),
+              border-color var(--dur-base) var(--ease-out);
   @starting-style { opacity: 0; transform: translateY(10px); }
 }
 /* Fade-in puro (sem movimento) — para transição de ROTA e trocas frequentes:
@@ -510,7 +511,8 @@
 .motion-enter-spring {
   transition: opacity var(--dur-slow) var(--ease-out),
               transform var(--dur-slower) var(--ease-spring),
-              box-shadow var(--dur-base) var(--ease-out);
+              box-shadow var(--dur-base) var(--ease-out),
+              border-color var(--dur-base) var(--ease-out);
   @starting-style { opacity: 0; transform: translateY(12px); }
 }
 /* Entrada por escala (scale-in) — de 0.96, nunca de scale(0) (emil). */
@@ -525,7 +527,8 @@
 .motion-stagger > * {
   transition: opacity var(--dur-slow) var(--ease-out),
               transform var(--dur-slow) var(--ease-out),
-              box-shadow var(--dur-base) var(--ease-out);
+              box-shadow var(--dur-base) var(--ease-out),
+              border-color var(--dur-base) var(--ease-out);
   @starting-style { opacity: 0; transform: translateY(10px); }
 }
 .motion-stagger > *:nth-child(1) { transition-delay: 0.02s; }
