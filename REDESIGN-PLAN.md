@@ -219,13 +219,29 @@ border+shadow padrão), `table`, `badge`, `skeleton`, `tabs`, `sonner` (toasts).
 > cascata rodar aqui; verifiquei o mecanismo (correto + à prova de falha). Em
 > browser real roda. Recomendo o Matheus abrir `dev:local` e conferir a olho.
 
-## Fase 4 — Rework tela a tela (2–3 sessões)
+## Fase 4 — Rework tela a tela (2–3 sessões) — ⏳ EM ANDAMENTO
 **Skills:** todas
 
 Aplicar primitivos polidos + motion + correções de layout, uma tela por vez, com
 verificação visual a cada uma (nunca quebrar função). Ordem por impacto:
 `/reservar` (cara pública) → Dashboard → Contratos → Bikes/Acessórios →
 Clientes/ClientProfile → Financeiro → Usuários/Auditoria → Configurações → Login.
+
+### Progresso
+- ✅ **`/reservar` (PublicReservation)** — polish targeted (sem rewrite; a tela já
+  fora tokenizada no R9, zero fugitivo de cor). `transition-all` → transições
+  específicas + `active:scale` (press) em TODOS os botões (nav, tema, idioma,
+  CTAs, upload, remover-imagem); CTAs âmbar ganharam `shadow-sm` tintada +
+  `ease-out`; **motion de entrada** (`.motion-enter`) nos 5 cards de step (entrada
+  perceptível a cada passo) + `.motion-enter-spring` no ícone de sucesso; copy:
+  removido "!" das 3 mensagens de sucesso (pt/en/es). **Gate:** `tsc` 0 ·
+  `npm test` 61/61 · verificado no DOM (Continuar com press+shadow+ease-out; step
+  card com transição opacity/transform/box-shadow e **repouso opacity 1**; 11
+  campos do step 0 intactos; zero "!"; zero erro de console). Motion não deu pra
+  *ver* rodar (relógio da preview congelado) — mecanismo verificado + à prova de
+  falha. **Aguardando revisão do Matheus antes da próxima tela (Dashboard).**
+- ⬜ Dashboard · ⬜ Contratos · ⬜ Bikes/Acessórios · ⬜ Clientes/ClientProfile ·
+  ⬜ Financeiro · ⬜ Usuários/Auditoria · ⬜ Configurações · ⬜ Login
 
 ## Fase 5 — QA final (0,5 sessão)
 `tsc` 0 · `npm test` 61 · varredura de fugitivos de cor (zero) · reduced-motion ·
