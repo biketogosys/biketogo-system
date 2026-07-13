@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import {
-  Card, CardAction, CardDescription, CardFooter, CardHeader, CardTitle,
+  Card, CardDescription, CardFooter, CardHeader, CardTitle,
 } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -112,11 +112,11 @@ function CategoryManagerDialog({
   };
 
   const createExpenseCat = trpc.financial.createExpenseCategory.useMutation({
-    onSuccess: () => { toast.success("Categoria criada!"); invalidate(); setNewName(""); },
+    onSuccess: () => { toast.success("Categoria criada"); invalidate(); setNewName(""); },
     onError: (e) => toast.error(friendlyError(e)),
   });
   const createRevenueCat = trpc.financial.createRevenueCategory.useMutation({
-    onSuccess: () => { toast.success("Categoria criada!"); invalidate(); setNewName(""); },
+    onSuccess: () => { toast.success("Categoria criada"); invalidate(); setNewName(""); },
     onError: (e) => toast.error(friendlyError(e)),
   });
   const deleteExpenseCat = trpc.financial.deleteExpenseCategory.useMutation({
@@ -230,19 +230,19 @@ function TransactionDialog({
   }));
 
   const createExpense = trpc.financial.createExpense.useMutation({
-    onSuccess: () => { toast.success("Despesa registrada!"); onSuccess(); },
+    onSuccess: () => { toast.success("Despesa registrada"); onSuccess(); },
     onError: (e) => toast.error(friendlyError(e)),
   });
   const updateExpense = trpc.financial.updateExpense.useMutation({
-    onSuccess: () => { toast.success("Despesa atualizada!"); onSuccess(); },
+    onSuccess: () => { toast.success("Despesa atualizada"); onSuccess(); },
     onError: (e) => toast.error(friendlyError(e)),
   });
   const createRevenue = trpc.financial.createRevenue.useMutation({
-    onSuccess: () => { toast.success("Receita registrada!"); onSuccess(); },
+    onSuccess: () => { toast.success("Receita registrada"); onSuccess(); },
     onError: (e) => toast.error(friendlyError(e)),
   });
   const updateRevenue = trpc.financial.updateRevenue.useMutation({
-    onSuccess: () => { toast.success("Receita atualizada!"); onSuccess(); },
+    onSuccess: () => { toast.success("Receita atualizada"); onSuccess(); },
     onError: (e) => toast.error(friendlyError(e)),
   });
 
@@ -365,9 +365,7 @@ function FinancialKpiCards({
   loading: boolean;
 }) {
   const gridCls =
-    "grid grid-cols-1 gap-4 @xl/main:grid-cols-2 @5xl/main:grid-cols-4 " +
-    "*:data-[slot=card]:bg-gradient-to-t *:data-[slot=card]:from-primary/5 *:data-[slot=card]:to-card " +
-    "*:data-[slot=card]:shadow-xs dark:*:data-[slot=card]:bg-card";
+    "grid grid-cols-1 gap-4 @xl/main:grid-cols-2 @5xl/main:grid-cols-4";
 
   if (loading) {
     return (
@@ -389,16 +387,16 @@ function FinancialKpiCards({
     <div className={gridCls}>
       <Card className="@container/card">
         <CardHeader>
-          <CardDescription>Receita de aluguéis</CardDescription>
-          <CardTitle className="text-2xl font-semibold tabular-nums @[250px]/card:text-3xl">
-            {fmtBRL(rentalRevenue)}
-          </CardTitle>
-          <CardAction>
-            <Badge variant="outline">
+          <div className="flex items-start justify-between gap-2">
+            <CardDescription className="min-w-0 truncate">Receita de aluguéis</CardDescription>
+            <Badge variant="outline" className="shrink-0">
               <Bike />
               pagos
             </Badge>
-          </CardAction>
+          </div>
+          <CardTitle className="text-2xl font-semibold tabular-nums whitespace-nowrap @[250px]/card:text-3xl">
+            {fmtBRL(rentalRevenue)}
+          </CardTitle>
         </CardHeader>
         <CardFooter className="flex-col items-start gap-1.5 text-sm">
           <div className="text-muted-foreground">Contratos com pagamento confirmado</div>
@@ -407,16 +405,16 @@ function FinancialKpiCards({
 
       <Card className="@container/card">
         <CardHeader>
-          <CardDescription>Receitas extras</CardDescription>
-          <CardTitle className="text-2xl font-semibold tabular-nums @[250px]/card:text-3xl">
-            {fmtBRL(extraRevenue)}
-          </CardTitle>
-          <CardAction>
-            <Badge variant="outline">
+          <div className="flex items-start justify-between gap-2">
+            <CardDescription className="min-w-0 truncate">Receitas extras</CardDescription>
+            <Badge variant="outline" className="shrink-0">
               <ArrowUpRight />
               extras
             </Badge>
-          </CardAction>
+          </div>
+          <CardTitle className="text-2xl font-semibold tabular-nums whitespace-nowrap @[250px]/card:text-3xl">
+            {fmtBRL(extraRevenue)}
+          </CardTitle>
         </CardHeader>
         <CardFooter className="flex-col items-start gap-1.5 text-sm">
           <div className="text-muted-foreground">Lançamentos manuais de receita</div>
@@ -425,16 +423,16 @@ function FinancialKpiCards({
 
       <Card className="@container/card">
         <CardHeader>
-          <CardDescription>Despesas</CardDescription>
-          <CardTitle className="text-2xl font-semibold tabular-nums @[250px]/card:text-3xl">
-            {fmtBRL(totalExpenses)}
-          </CardTitle>
-          <CardAction>
-            <Badge variant="outline">
+          <div className="flex items-start justify-between gap-2">
+            <CardDescription className="min-w-0 truncate">Despesas</CardDescription>
+            <Badge variant="outline" className="shrink-0">
               <ArrowDownRight />
               saídas
             </Badge>
-          </CardAction>
+          </div>
+          <CardTitle className="text-2xl font-semibold tabular-nums whitespace-nowrap @[250px]/card:text-3xl">
+            {fmtBRL(totalExpenses)}
+          </CardTitle>
         </CardHeader>
         <CardFooter className="flex-col items-start gap-1.5 text-sm">
           <div className="text-muted-foreground">Custos lançados no período</div>
@@ -443,16 +441,16 @@ function FinancialKpiCards({
 
       <Card className="@container/card">
         <CardHeader>
-          <CardDescription>Lucro líquido</CardDescription>
-          <CardTitle className="text-2xl font-semibold tabular-nums @[250px]/card:text-3xl">
-            {fmtBRL(netProfit)}
-          </CardTitle>
-          <CardAction>
-            <Badge variant="outline">
+          <div className="flex items-start justify-between gap-2">
+            <CardDescription className="min-w-0 truncate">Lucro líquido</CardDescription>
+            <Badge variant="outline" className="shrink-0">
               {netProfit >= 0 ? <TrendingUp /> : <TrendingDown />}
               {netProfit >= 0 ? "positivo" : "negativo"}
             </Badge>
-          </CardAction>
+          </div>
+          <CardTitle className="text-2xl font-semibold tabular-nums whitespace-nowrap @[250px]/card:text-3xl">
+            {fmtBRL(netProfit)}
+          </CardTitle>
         </CardHeader>
         <CardFooter className="flex-col items-start gap-1.5 text-sm">
           <div className="text-muted-foreground">Receitas − despesas do período</div>
@@ -661,7 +659,7 @@ export default function Financial() {
     a.download = `relatorio-financeiro-${startDate}-${endDate}.csv`;
     a.click();
     URL.revokeObjectURL(url);
-    toast.success("CSV exportado!");
+    toast.success("CSV exportado");
   };
 
   const tabOptions = [

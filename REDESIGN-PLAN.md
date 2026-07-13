@@ -271,7 +271,14 @@ Clientes/ClientProfile → Financeiro → Usuários/Auditoria → Configuraçõe
   `active:scale-[0.98]`; 2 toasts com "!" limpos. **Gate:** `tsc` 0 · `npm test`
   61/61 · verificado no DOM (badges de cliente calibrados; tabs com transição
   específica+ease-out; 4 elementos `destructive` vivos) · zero erro de console.
-- ⬜ Financeiro · ⬜ Usuários/Auditoria · ⬜ Configurações · ⬜ Login
+- ✅ **Financeiro** — tinha os **mesmos 2 problemas do Dashboard** nos KPI cards
+  (R8): gradiente âmbar vazando no dark + `CardAction` espremendo o valor. Mesma
+  correção: gradiente removido, header reestruturado (badge → linha da descrição,
+  `CardTitle` largura total + `whitespace-nowrap`), import `CardAction` removido.
+  7 toasts com "!" limpos. **Gate:** `tsc` 0 · `npm test` 61/61 · verificado no
+  DOM (dark): 4 cards sem gradiente, título full-width 267px, badge na linha da
+  descrição · zero erro de console.
+- ⬜ Usuários/Auditoria · ⬜ Configurações · ⬜ Login
 
 ## Fase 5 — QA final (0,5 sessão)
 `tsc` 0 · `npm test` 61 · varredura de fugitivos de cor (zero) · reduced-motion ·
