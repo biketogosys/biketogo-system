@@ -44,11 +44,11 @@ function UserFormDialog({
   const [showPassword, setShowPassword] = useState(false);
 
   const createMutation = trpc.auth.createUser.useMutation({
-    onSuccess: () => { toast.success("Usuário criado!"); onSuccess(); },
+    onSuccess: () => { toast.success("Usuário criado"); onSuccess(); },
     onError: (e) => toast.error(friendlyError(e)),
   });
   const updateMutation = trpc.auth.updateUser.useMutation({
-    onSuccess: () => { toast.success("Usuário atualizado!"); onSuccess(); },
+    onSuccess: () => { toast.success("Usuário atualizado"); onSuccess(); },
     onError: (e) => toast.error(friendlyError(e)),
   });
 
@@ -204,7 +204,7 @@ export default function UserManagement() {
     <div className="p-6 max-w-4xl mx-auto">
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-foreground" style={{ fontFamily: "'Montserrat', sans-serif" }}>
+          <h1 className="text-2xl font-bold text-foreground">
             Gerenciar Usuários
           </h1>
           <p className="text-sm text-muted-foreground mt-0.5">

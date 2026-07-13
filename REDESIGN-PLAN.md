@@ -278,7 +278,14 @@ Clientes/ClientProfile → Financeiro → Usuários/Auditoria → Configuraçõe
   7 toasts com "!" limpos. **Gate:** `tsc` 0 · `npm test` 61/61 · verificado no
   DOM (dark): 4 cards sem gradiente, título full-width 267px, badge na linha da
   descrição · zero erro de console.
-- ⬜ Usuários/Auditoria · ⬜ Configurações · ⬜ Login
+- ✅ **Usuários/Auditoria** — `UserManagement.tsx`: removido **Montserrat inline**
+  do h1 (herda Geist global agora), 2 toasts com "!" limpos, botão "Novo usuário"
+  já a `size="sm"` (32px). `AuditLog.tsx`: removido Montserrat inline do h1; mapa
+  de cores de ação (`badgeColor`) — `blue` → `sky` (consistência com o "info" de
+  Contratos), resto (emerald/red/amber) mantido (semântico theme-adaptive). **Gate:**
+  `tsc` 0 · `npm test` 61/61 · verificado no DOM: títulos em Geist (`inlineStyle:
+  none`), badge de ação em sky, badges de usuário calibrados · zero erro console.
+- ⬜ Configurações · ⬜ Login
 
 ## Fase 5 — QA final (0,5 sessão)
 `tsc` 0 · `npm test` 61 · varredura de fugitivos de cor (zero) · reduced-motion ·

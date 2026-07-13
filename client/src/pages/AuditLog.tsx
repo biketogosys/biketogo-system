@@ -45,7 +45,7 @@ function badgeColor(acao: string) {
   if (acao.includes("restaurou")) return "bg-emerald-500/15 text-emerald-400 border-emerald-500/20";
   if (acao.includes("arquivou")) return "bg-red-500/15 text-red-400 border-red-500/20";
   if (acao.includes("encerrou")) return "bg-amber-500/15 text-amber-400 border-amber-500/20";
-  return "bg-blue-500/15 text-blue-400 border-blue-500/20";
+  return "bg-sky-500/15 text-sky-400 border-sky-500/20";
 }
 
 export default function AuditLog() {
@@ -84,7 +84,7 @@ export default function AuditLog() {
           <Shield className="w-4 h-4 text-primary" />
         </div>
         <div>
-          <h1 className="text-xl font-bold text-foreground" style={{ fontFamily: "'Montserrat', sans-serif" }}>
+          <h1 className="text-xl font-bold text-foreground">
             Auditoria
           </h1>
           <p className="text-xs text-muted-foreground">
