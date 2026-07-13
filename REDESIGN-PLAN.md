@@ -240,8 +240,20 @@ Clientes/ClientProfile → Financeiro → Usuários/Auditoria → Configuraçõe
   campos do step 0 intactos; zero "!"; zero erro de console). Motion não deu pra
   *ver* rodar (relógio da preview congelado) — mecanismo verificado + à prova de
   falha. **Aguardando revisão do Matheus antes da próxima tela (Dashboard).**
-- ⬜ Dashboard · ⬜ Contratos · ⬜ Bikes/Acessórios · ⬜ Clientes/ClientProfile ·
-  ⬜ Financeiro · ⬜ Usuários/Auditoria · ⬜ Configurações · ⬜ Login
+- ✅ **Dashboard** (via review) — removido gradiente âmbar que vazava nos KPI
+  cards (dark); `whitespace-nowrap` nos valores (negativo não quebra); route-fade
+  no shell.
+- ✅ **Contratos** — 22 fugitivos de cor tokenizados: status badges (contrato +
+  aluguel + condição) migrados pro padrão canônico do `UnitStatusBadge`
+  (`bg-<cor>-500/20 … dark:text-<cor>-400`, theme-adaptive, de-pilled p/
+  `rounded-md`); botões "confirmar/encerrar" verdes → `<Button>` default (âmbar da
+  casa) e o de devolução → `variant` destructive/default condicional; link
+  `text-blue-600` → `text-primary`; radios → `accent-primary`/`accent-destructive`;
+  labels de dano → `text-destructive`. 4 toasts com "!" limpos. **Gate:** `tsc` 0 ·
+  `npm test` 61/61 · status colors verificados no DOM (dark, contraste legível) ·
+  zero botão verde remanescente · zero erro de console.
+- ⬜ Bikes/Acessórios · ⬜ Clientes/ClientProfile · ⬜ Financeiro ·
+  ⬜ Usuários/Auditoria · ⬜ Configurações · ⬜ Login
 
 ## Fase 5 — QA final (0,5 sessão)
 `tsc` 0 · `npm test` 61 · varredura de fugitivos de cor (zero) · reduced-motion ·

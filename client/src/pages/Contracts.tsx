@@ -70,29 +70,29 @@ const contractStatusConfig: Record<
   ContractStatus,
   { label: string; variant: "default" | "secondary" | "destructive" | "outline"; cls: string }
 > = {
-  pendente: { label: "Pendente", variant: "secondary", cls: "bg-yellow-100 text-yellow-800 border-yellow-200" },
-  ativo: { label: "Ativo", variant: "default", cls: "bg-green-100 text-green-800 border-green-200" },
+  pendente: { label: "Pendente", variant: "secondary", cls: "bg-amber-500/20 text-amber-600 border-amber-500/30 dark:text-amber-400" },
+  ativo: { label: "Ativo", variant: "default", cls: "bg-emerald-500/20 text-emerald-600 border-emerald-500/30 dark:text-emerald-400" },
   parcialmente_devolvido: {
     label: "Parcialmente Devolvido",
     variant: "secondary",
-    cls: "bg-amber-100 text-amber-800 border-amber-200",
+    cls: "bg-orange-500/20 text-orange-600 border-orange-500/30 dark:text-orange-400",
   },
-  encerrado: { label: "Encerrado", variant: "outline", cls: "bg-gray-100 text-gray-600 border-gray-200" },
-  cancelado: { label: "Cancelado", variant: "destructive", cls: "bg-red-100 text-red-800 border-red-200" },
+  encerrado: { label: "Encerrado", variant: "outline", cls: "bg-slate-500/20 text-slate-500 border-slate-500/30 dark:text-slate-400" },
+  cancelado: { label: "Cancelado", variant: "destructive", cls: "bg-red-500/20 text-red-600 border-red-500/30 dark:text-red-400" },
 };
 
 const accessoryStatusConfig: Record<
   AccessoryReturnStatus,
   { label: string; icon: React.ReactNode; cls: string }
 > = {
-  ok: { label: "OK", icon: <CheckCircle2 className="h-4 w-4 text-green-500" />, cls: "text-green-700" },
+  ok: { label: "OK", icon: <CheckCircle2 className="h-4 w-4 text-emerald-500" />, cls: "text-emerald-600 dark:text-emerald-400" },
   danificado: {
     label: "Danificado",
     icon: <AlertTriangle className="h-4 w-4 text-amber-500" />,
-    cls: "text-amber-700",
+    cls: "text-amber-600 dark:text-amber-400",
   },
-  perdido: { label: "Perdido", icon: <XCircle className="h-4 w-4 text-red-500" />, cls: "text-red-700" },
-  roubado: { label: "Roubado", icon: <XCircle className="h-4 w-4 text-red-700" />, cls: "text-red-800" },
+  perdido: { label: "Perdido", icon: <XCircle className="h-4 w-4 text-slate-500" />, cls: "text-slate-500 dark:text-slate-400" },
+  roubado: { label: "Roubado", icon: <XCircle className="h-4 w-4 text-red-500" />, cls: "text-red-600 dark:text-red-400" },
 };
 
 const rentalStatusLabels: Record<string, string> = {
@@ -108,7 +108,7 @@ function ContractStatusBadge({ status }: { status: ContractStatus }) {
   const cfg = contractStatusConfig[status] ?? contractStatusConfig.ativo;
   return (
     <span
-      className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${cfg.cls}`}
+      className={`inline-flex items-center rounded-md border px-2.5 py-0.5 text-xs font-semibold ${cfg.cls}`}
     >
       {cfg.label}
     </span>
@@ -151,7 +151,7 @@ function CloseContractDialog({
         ...prev,
         [accId]: { ...prev[accId], fotoUrl: url, uploading: false },
       }));
-      toast.success("Foto enviada!");
+      toast.success("Foto enviada");
     } catch {
       toast.error("Erro ao enviar foto.");
       setAccChecklist((prev) => ({
@@ -163,7 +163,7 @@ function CloseContractDialog({
 
   const closeMutation = trpc.contracts.close.useMutation({
     onSuccess: () => {
-      toast.success("Contrato encerrado com sucesso!");
+      toast.success("Contrato encerrado");
       utils.contracts.list.invalidate();
       utils.contracts.getById.invalidate({ id: contractId });
       onClose();
@@ -186,7 +186,7 @@ function CloseContractDialog({
       <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <CheckCircle2 className="h-5 w-5 text-green-600" />
+            <CheckCircle2 className="h-5 w-5 text-emerald-500" />
             Encerrar Contrato #{contractId}
           </DialogTitle>
         </DialogHeader>
@@ -214,12 +214,12 @@ function CloseContractDialog({
                       </p>
                     </div>
                     <span
-                      className={`text-xs font-medium px-2 py-1 rounded-full ${
+                      className={`text-xs font-medium px-2 py-1 rounded-md ${
                         rental.status === "returned"
-                          ? "bg-green-100 text-green-700"
+                          ? "bg-emerald-500/20 text-emerald-600 dark:text-emerald-400"
                           : rental.status === "active"
-                          ? "bg-blue-100 text-blue-700"
-                          : "bg-gray-100 text-gray-600"
+                          ? "bg-sky-500/20 text-sky-600 dark:text-sky-400"
+                          : "bg-slate-500/20 text-slate-500 dark:text-slate-400"
                       }`}
                     >
                       {rentalStatusLabels[rental.status] ?? rental.status}
@@ -337,7 +337,7 @@ function CloseContractDialog({
                                 href={accChecklist[acc.id]!.fotoUrl}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="text-xs text-blue-600 underline truncate max-w-[180px]"
+                                className="text-xs text-primary underline underline-offset-2 truncate max-w-[180px] hover:text-primary/80 transition-colors"
                               >
                                 Ver foto
                               </a>
@@ -360,7 +360,6 @@ function CloseContractDialog({
           <Button
             onClick={handleClose}
             disabled={closeMutation.isPending}
-            className="bg-green-600 hover:bg-green-700 text-white"
           >
             {closeMutation.isPending ? (
               <Loader2 className="h-4 w-4 animate-spin mr-2" />
@@ -404,7 +403,7 @@ function ContractDetail({
 
   const confirmAllMutation = trpc.rentals.confirmAll.useMutation({
     onSuccess: (res) => {
-      toast.success(`${res.confirmed} aluguéis confirmados!`);
+      toast.success(`${res.confirmed} aluguéis confirmados`);
       utils.contracts.getById.invalidate({ id: contractId });
       utils.contracts.list.invalidate();
     },
@@ -422,7 +421,7 @@ function ContractDetail({
 
   const returnRentalMutation = trpc.rentals.returnRental.useMutation({
     onSuccess: () => {
-      toast.success("Devolução registrada!");
+      toast.success("Devolução registrada");
       utils.contracts.getById.invalidate({ id: contractId });
       utils.contracts.list.invalidate();
     },
@@ -507,7 +506,6 @@ function ContractDetail({
               )}
               <Button
                 size="sm"
-                className="bg-green-600 hover:bg-green-700 text-white disabled:opacity-50"
                 onClick={() => confirmAllMutation.mutate({ contractId })}
                 disabled={confirmAllMutation.isPending || (data.clientStatus != null && data.clientStatus !== "verified")}
                 title={data.clientStatus !== "verified" ? "Cliente precisa ser verificado antes de confirmar" : undefined}
@@ -541,7 +539,6 @@ function ContractDetail({
           {data.status !== "encerrado" && data.status !== "cancelado" && data.status !== "pendente" && (
             <Button
               size="sm"
-              className="bg-green-600 hover:bg-green-700 text-white"
               onClick={() => setCloseOpen(true)}
             >
               <CheckCircle2 className="h-4 w-4 mr-1" /> Encerrar
@@ -667,14 +664,14 @@ function ContractDetail({
                   </TableCell>
                   <TableCell>
                     <span
-                      className={`text-xs font-medium px-2 py-0.5 rounded-full ${
+                      className={`text-xs font-medium px-2 py-0.5 rounded-md ${
                         r.status === "returned"
-                          ? "bg-green-100 text-green-700"
+                          ? "bg-emerald-500/20 text-emerald-600 dark:text-emerald-400"
                           : r.status === "active"
-                          ? "bg-blue-100 text-blue-700"
+                          ? "bg-sky-500/20 text-sky-600 dark:text-sky-400"
                           : r.status === "overdue"
-                          ? "bg-red-100 text-red-700"
-                          : "bg-gray-100 text-gray-600"
+                          ? "bg-red-500/20 text-red-600 dark:text-red-400"
+                          : "bg-slate-500/20 text-slate-500 dark:text-slate-400"
                       }`}
                     >
                       {rentalStatusLabels[r.status] ?? r.status}
@@ -830,7 +827,7 @@ function ContractDetail({
                     value="ok"
                     checked={returnCondition === "ok"}
                     onChange={() => setReturnCondition("ok")}
-                    className="accent-amber-500"
+                    className="accent-primary"
                   />
                   <span className="text-sm">OK — devolver disponível</span>
                 </label>
@@ -841,15 +838,15 @@ function ContractDetail({
                     value="damaged"
                     checked={returnCondition === "damaged"}
                     onChange={() => setReturnCondition("damaged")}
-                    className="accent-red-500"
+                    className="accent-destructive"
                   />
-                  <span className="text-sm text-red-600">Danificada</span>
+                  <span className="text-sm text-destructive">Danificada</span>
                 </label>
               </div>
             </div>
             {returnCondition === "damaged" && (
               <div className="space-y-1">
-                <Label htmlFor="returnNotes">Descrição do dano <span className="text-red-500">*</span></Label>
+                <Label htmlFor="returnNotes">Descrição do dano <span className="text-destructive">*</span></Label>
                 <Textarea
                   id="returnNotes"
                   placeholder="Descreva o dano encontrado..."
@@ -863,7 +860,7 @@ function ContractDetail({
           <DialogFooter>
             <Button variant="outline" onClick={() => setReturnDialogOpen(false)}>Cancelar</Button>
             <Button
-              className={returnCondition === "damaged" ? "bg-red-600 hover:bg-red-700 text-white" : "bg-amber-500 hover:bg-amber-600 text-white"}
+              variant={returnCondition === "damaged" ? "destructive" : "default"}
               disabled={returnRentalMutation.isPending || (returnCondition === "damaged" && !returnNotes.trim())}
               onClick={() => {
                 if (!returnRentalId) return;
