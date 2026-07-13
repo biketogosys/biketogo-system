@@ -96,7 +96,7 @@ export default function ClientProfile() {
 
   const validateMutation = trpc.clients.validate.useMutation({
     onSuccess: () => {
-      toast.success("Cadastro validado!");
+      toast.success("Cadastro validado");
       utils.clients.byId.invalidate({ id: clientId });
     },
     onError: (e) => toast.error(friendlyError(e)),
@@ -231,8 +231,8 @@ export default function ClientProfile() {
 
             {/* Recusado alert */}
             {client.status === "recusado" && (
-              <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-3 mb-3">
-                <p className="text-xs text-red-400 font-medium">
+              <div className="bg-destructive/10 border border-destructive/30 rounded-lg p-3 mb-3">
+                <p className="text-xs text-destructive font-medium">
                   Recusado — {(client as any).motivoRecusa || "sem motivo informado"}
                 </p>
               </div>
@@ -255,7 +255,7 @@ export default function ClientProfile() {
               <Button
                 variant="outline"
                 onClick={() => setShowRejectDialog(true)}
-                className="w-full mb-3 text-sm border-red-500/40 text-red-400 hover:bg-red-500/10"
+                className="w-full mb-3 text-sm border-destructive/40 text-destructive hover:bg-destructive/10"
               >
                 <XCircle className="w-4 h-4 mr-2" />
                 Recusar cadastro
@@ -380,7 +380,7 @@ export default function ClientProfile() {
                 if (localNotes !== null) {
                   updateMutation.mutate(
                     { id: clientId, notes: localNotes },
-                    { onSuccess: () => { toast.success("Observações salvas!"); setLocalNotes(null); } }
+                    { onSuccess: () => { toast.success("Observações salvas"); setLocalNotes(null); } }
                   );
                 }
               }}
@@ -440,7 +440,7 @@ export default function ClientProfile() {
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-all whitespace-nowrap flex-shrink-0 ${
+                className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-[color,background-color,border-color] duration-150 ease-out active:scale-[0.98] whitespace-nowrap flex-shrink-0 ${
                   activeTab === tab.id
                     ? "bg-primary/15 text-primary border border-primary/30"
                     : "text-muted-foreground hover:text-foreground hover:bg-accent"
@@ -532,8 +532,8 @@ export default function ClientProfile() {
                         : "Não registrado"}
                     </p>
                   </div>
-                  <span className={`ml-auto text-xs px-2 py-0.5 rounded-full font-medium ${
-                    (client as any).lgpdConsent ? "bg-green-500/15 text-green-500" : "bg-muted text-muted-foreground"
+                  <span className={`ml-auto text-xs px-2 py-0.5 rounded-md font-medium ${
+                    (client as any).lgpdConsent ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400" : "bg-muted text-muted-foreground"
                   }`}>
                     {(client as any).lgpdConsent ? "Aceito" : "Pendente"}
                   </span>
@@ -735,7 +735,7 @@ export default function ClientProfile() {
                   </div>
                   {client.status === "verified" && (
                     <div className="flex items-start gap-3">
-                      <div className="w-2 h-2 rounded-full bg-green-500 mt-1.5 flex-shrink-0" />
+                      <div className="w-2 h-2 rounded-full bg-emerald-500 mt-1.5 flex-shrink-0" />
                       <div>
                         <p className="text-sm text-foreground">Cadastro validado</p>
                         <p className="text-xs text-muted-foreground">

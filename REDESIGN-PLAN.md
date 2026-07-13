@@ -263,8 +263,15 @@ Clientes/ClientProfile → Financeiro → Usuários/Auditoria → Configuraçõe
   borda não quebram sob stagger). **Gate:** `tsc` 0 · `npm test` 61/61 · card de
   bike com `transition: opacity,transform,box-shadow,border-color` + repouso
   opacity 1 · chips com transição específica · zero toast "!" · zero erro console.
-- ⬜ Clientes/ClientProfile · ⬜ Financeiro · ⬜ Usuários/Auditoria ·
-  ⬜ Configurações · ⬜ Login
+- ✅ **Clientes/ClientProfile** — `Clients.tsx` já estava limpo (zero fugitivo,
+  usa `.badge-*` calibrados da F1 + DataTable). `ClientProfile.tsx`: box/botão
+  "Recusado/Recusar" `red-500` → **tokens `destructive`**; consentimento LGPD e
+  dot de timeline `green-500` → `emerald` theme-adaptive (+ badge de-pilled p/
+  `rounded-md`); tab de navegação `transition-all` → específico + `ease-out` +
+  `active:scale-[0.98]`; 2 toasts com "!" limpos. **Gate:** `tsc` 0 · `npm test`
+  61/61 · verificado no DOM (badges de cliente calibrados; tabs com transição
+  específica+ease-out; 4 elementos `destructive` vivos) · zero erro de console.
+- ⬜ Financeiro · ⬜ Usuários/Auditoria · ⬜ Configurações · ⬜ Login
 
 ## Fase 5 — QA final (0,5 sessão)
 `tsc` 0 · `npm test` 61 · varredura de fugitivos de cor (zero) · reduced-motion ·
