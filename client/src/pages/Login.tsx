@@ -20,7 +20,7 @@ export default function Login() {
 
   const loginMutation = trpc.auth.login.useMutation({
     onSuccess: () => {
-      toast.success("Login realizado com sucesso!");
+      toast.success("Login realizado");
       meQuery.refetch();
     },
     onError: (err) => {
@@ -71,10 +71,7 @@ export default function Login() {
                 className="h-16 w-auto object-contain"
               />
             </div>
-            <h1
-              className="text-xl font-bold text-foreground tracking-tight"
-              style={{ fontFamily: "'Montserrat', sans-serif" }}
-            >
+            <h1 className="text-xl font-bold text-foreground tracking-tight">
               Sistema de Gestão
             </h1>
             <p className="text-sm text-muted-foreground mt-1.5">
@@ -100,7 +97,7 @@ export default function Login() {
                   placeholder="seu@email.com"
                   autoComplete="email"
                   autoFocus
-                  className="w-full pl-10 pr-4 py-2.5 rounded-lg bg-secondary border border-border text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-all"
+                  className="w-full pl-10 pr-4 py-2.5 rounded-lg bg-secondary border border-border text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-[color,box-shadow,border-color]"
                 />
               </div>
             </div>
@@ -117,7 +114,7 @@ export default function Login() {
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="Sua senha"
                   autoComplete="current-password"
-                  className="w-full pl-10 pr-10 py-2.5 rounded-lg bg-secondary border border-border text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-all"
+                  className="w-full pl-10 pr-10 py-2.5 rounded-lg bg-secondary border border-border text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-[color,box-shadow,border-color]"
                 />
                 <button
                   type="button"
@@ -133,7 +130,7 @@ export default function Login() {
             <button
               type="submit"
               disabled={loginMutation.isPending}
-              className="w-full py-2.5 rounded-lg font-semibold text-sm transition-all disabled:opacity-60 flex items-center justify-center gap-2 bg-primary text-primary-foreground hover:bg-primary/90"
+              className="w-full py-2.5 rounded-lg font-semibold text-sm shadow-sm transition-[transform,background-color,box-shadow] duration-150 ease-out active:scale-[0.98] disabled:opacity-60 disabled:active:scale-100 flex items-center justify-center gap-2 bg-primary text-primary-foreground hover:bg-primary/90"
             >
               {loginMutation.isPending ? (
                 <>

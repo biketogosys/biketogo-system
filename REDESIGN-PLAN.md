@@ -289,7 +289,16 @@ Clientes/ClientProfile → Financeiro → Usuários/Auditoria → Configuraçõe
   transition-all); removido Montserrat inline do h1 (→ Geist), 3 toasts com "!"
   limpos. Verificado no mobile (375px): sem overflow, inputs 44px consistentes,
   botões naturais. **Gate:** `tsc` 0 · `npm test` 61/61 · zero erro de console.
-- ⬜ Login (última tela)
+- ✅ **Login** (`Login.tsx`) — removido Montserrat inline (→ Geist); 2 inputs +
+  botão `transition-all` → específico + `ease-out`; botão "Entrar" ganhou
+  `shadow-sm` tintada + `active:scale-[0.98]` (press); 1 toast com "!" limpo.
+  Verificado no mobile (375px): card 343px cabe, inputs 44px, sem overflow.
+  **Gate:** `tsc` 0 · `npm test` 61/61 · zero erro de console.
+
+### ✅ FASE 4 COMPLETA — todas as 9 telas entregues
+Próximo: **Fase 5 (QA final)** — `tsc` 0 · `npm test` 61 · varredura de fugitivos
+(zero broken) · reduced-motion · mobile 375px em todas · a11y (foco, contraste,
+alvos). O Matheus já vem conferindo tela a tela no mobile.
 
 ### Correções de mobile pós-review (raiz comum) — FEITAS
 - **`min-height:44px` grosseiro** pegava todo `<button>` no mobile → distorcia
