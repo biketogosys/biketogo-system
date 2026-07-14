@@ -303,6 +303,17 @@
     color: inherit;
   }
 
+  /* <select> nativo: força superfície sólida do tema nas <option>. O
+     color-scheme sozinho não basta no Chrome/Windows quando o select tem
+     background custom (popup renderiza claro → texto claro fica invisível, só
+     aparece no hover). Só afeta selects nativos (/reservar); os Select shadcn
+     são divs. */
+  select option,
+  select optgroup {
+    background-color: var(--popover);
+    color: var(--popover-foreground);
+  }
+
   /* Scrollbar fina e tematizada. */
   ::-webkit-scrollbar { width: 6px; height: 6px; }
   ::-webkit-scrollbar-track { background: transparent; }
@@ -405,7 +416,13 @@
 
   /* ─── Inputs touch-friendly + dialog fullscreen no mobile ────────────── */
   @media (max-width: 767px) {
-    input, select, textarea, button { min-height: 44px; }
+    /* Alvo de toque só em campos de TEXTO/select — NÃO em button/checkbox/radio
+       (senão distorce Switch, progress-steps, ícones-botão, chips: tudo é
+       <button>; e checkbox/radio viram gigantes). */
+    input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+    select,
+    textarea,
+    [data-slot="select-trigger"] { min-height: 44px; }
     .dialog-mobile {
       width: 100vw !important;
       max-width: 100vw !important;
@@ -543,3 +560,61 @@
 .motion-stagger > *:nth-child(10){ transition-delay: 0.38s; }
 .motion-stagger > *:nth-child(11){ transition-delay: 0.42s; }
 .motion-stagger > *:nth-child(n+12){ transition-delay: 0.46s; }
+
+/* ============================================================================
+   Tabelas → cards no mobile (Fase 4)
+   ----------------------------------------------------------------------------
+   No mobile, tabela de 5–6 colunas vira scroll horizontal ("ruim de mexer").
+   Aplicar `.table-mobile-cards` no wrapper: abaixo de 768px cada <tr> vira um
+   card e cada <td> vira "rótulo: valor" (o rótulo vem de data-label na <td>).
+   Não-camada de propósito — vence as utilities de padding/borda do shadcn Table.
+   ========================================================================== */
+@media (max-width: 767px) {
+  /* O wrapper perde a própria borda/fundo/raio no mobile — senão a borda do
+     wrapper + a borda de cada card viram "borda dupla". Sobra só o card. */
+  .table-mobile-cards {
+    border: 0 !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    overflow: visible !important;
+  }
+  .table-mobile-cards table { display: block; width: 100%; }
+  .table-mobile-cards thead { display: none; }
+  .table-mobile-cards tbody { display: block; }
+  .table-mobile-cards tr {
+    display: block;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    margin-bottom: 0.625rem;
+    overflow: hidden;
+  }
+  .table-mobile-cards td {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.5rem 0.875rem;
+    border: 0;
+    text-align: right;
+    white-space: normal;
+  }
+  .table-mobile-cards td:not(:last-child) {
+    border-bottom: 1px solid color-mix(in oklch, var(--border) 60%, transparent);
+  }
+  /* Rótulo (esquerda) a partir do cabeçalho da coluna. */
+  .table-mobile-cards td[data-label]:not([data-label=""])::before {
+    content: attr(data-label);
+    font-weight: 600;
+    font-size: 0.6875rem;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+    color: var(--muted-foreground);
+    text-align: left;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  /* Célula de ações (sem rótulo): conteúdo alinhado ao fim, sem espremer. */
+  .table-mobile-cards td[data-label=""],
+  .table-mobile-cards td:not([data-label]) { justify-content: flex-end; }
+}

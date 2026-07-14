@@ -230,7 +230,7 @@ export default function UserManagement() {
           <p className="text-xs mt-1">Crie o primeiro usuário para acessar o sistema</p>
         </div>
       ) : (
-        <div className="bg-card border border-border rounded-xl overflow-hidden">
+        <div className="table-mobile-cards bg-card border border-border rounded-xl overflow-hidden">
           <table className="w-full">
             <thead>
               <tr className="border-b border-border bg-secondary/30">
@@ -247,7 +247,7 @@ export default function UserManagement() {
                   key={u.id}
                   className={`border-b border-border/50 hover:bg-accent/30 transition-colors ${idx === users.length - 1 ? "border-b-0" : ""}`}
                 >
-                  <td className="px-4 py-3 text-sm font-medium text-foreground">
+                  <td data-label="Nome" className="px-4 py-3 text-sm font-medium text-foreground">
                     <div className="flex items-center gap-2">
                       {u.role === "admin" ? (
                         <ShieldCheck className="w-4 h-4 text-primary shrink-0" />
@@ -257,21 +257,21 @@ export default function UserManagement() {
                       {u.name}
                     </div>
                   </td>
-                  <td className="px-4 py-3 text-sm text-muted-foreground">{u.email}</td>
-                  <td className="px-4 py-3">
+                  <td data-label="E-mail" className="px-4 py-3 text-sm text-muted-foreground">{u.email}</td>
+                  <td data-label="Papel" className="px-4 py-3">
                     <span className={roleConfig[u.role as AdminRole]?.cls ?? "badge-lead"}>
                       {roleConfig[u.role as AdminRole]?.label ?? u.role}
                     </span>
                   </td>
-                  <td className="px-4 py-3">
+                  <td data-label="Status" className="px-4 py-3">
                     <span className={u.active ? "badge-available" : "badge-blocked"}>
                       {u.active ? "Ativo" : "Inativo"}
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-xs text-muted-foreground">
+                  <td data-label="Último login" className="px-4 py-3 text-xs text-muted-foreground">
                     {u.lastLoginAt ? new Date(u.lastLoginAt).toLocaleString("pt-BR") : "Nunca"}
                   </td>
-                  <td className="px-4 py-3">
+                  <td data-label="" className="px-4 py-3">
                     <div className="flex gap-2">
                       <button
                         onClick={() => { setEditUser(u); setShowForm(true); }}

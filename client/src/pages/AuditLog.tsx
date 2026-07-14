@@ -159,7 +159,7 @@ export default function AuditLog() {
       </div>
 
       {/* Table */}
-      <div className="bg-card border border-border rounded-xl overflow-hidden">
+      <div className="table-mobile-cards bg-card border border-border rounded-xl overflow-hidden">
         {isLoading ? (
           <div className="p-4 space-y-3">
             {Array.from({ length: 8 }).map((_, i) => <Skeleton key={i} className="h-9 w-full" />)}
@@ -186,21 +186,21 @@ export default function AuditLog() {
                 <tbody className="divide-y divide-border">
                   {logs.map((log) => (
                     <tr key={log.id} className="hover:bg-secondary/20 transition-colors">
-                      <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">
+                      <td data-label="Data/Hora" className="px-4 py-3 text-muted-foreground whitespace-nowrap">
                         {new Date(log.criadoEm).toLocaleString("pt-BR", {
                           day: "2-digit", month: "2-digit", year: "numeric",
                           hour: "2-digit", minute: "2-digit",
                         })}
                       </td>
-                      <td className="px-4 py-3">
-                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${badgeColor(log.acao)}`}>
+                      <td data-label="Ação" className="px-4 py-3">
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium border ${badgeColor(log.acao)}`}>
                           {formatAcao(log.acao)}
                         </span>
                       </td>
-                      <td className="px-4 py-3 text-foreground">{formatTabela(log.tabela)}</td>
-                      <td className="px-4 py-3 text-muted-foreground">{log.registroId ?? "—"}</td>
-                      <td className="px-4 py-3 text-muted-foreground">{log.adminId ?? "—"}</td>
-                      <td className="px-4 py-3 text-muted-foreground font-mono text-xs">{log.ip ?? "—"}</td>
+                      <td data-label="Tabela" className="px-4 py-3 text-foreground">{formatTabela(log.tabela)}</td>
+                      <td data-label="Registro ID" className="px-4 py-3 text-muted-foreground">{log.registroId ?? "—"}</td>
+                      <td data-label="Admin ID" className="px-4 py-3 text-muted-foreground">{log.adminId ?? "—"}</td>
+                      <td data-label="IP" className="px-4 py-3 text-muted-foreground font-mono text-xs">{log.ip ?? "—"}</td>
                     </tr>
                   ))}
                 </tbody>

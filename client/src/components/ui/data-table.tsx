@@ -106,8 +106,8 @@ export function DataTable<TData>({
         </DropdownMenu>
       </div>
 
-      {/* Tabela */}
-      <div className="overflow-hidden rounded-lg border border-border">
+      {/* Tabela (vira cards empilhados no mobile via .table-mobile-cards) */}
+      <div className="table-mobile-cards overflow-hidden rounded-lg border border-border">
         <Table>
           <TableHeader className="sticky top-0 z-10 bg-muted/60">
             {table.getHeaderGroups().map((headerGroup) => (
@@ -187,14 +187,18 @@ export function DataTable<TData>({
                   data-state={row.getIsSelected() && "selected"}
                   className="hover:bg-muted/50 transition-colors"
                 >
-                  {row.getVisibleCells().map((cell) => (
-                    <TableCell key={cell.id}>
-                      {flexRender(
-                        cell.column.columnDef.cell,
-                        cell.getContext()
-                      )}
-                    </TableCell>
-                  ))}
+                  {row.getVisibleCells().map((cell) => {
+                    const header = cell.column.columnDef.header
+                    const label = typeof header === "string" ? header : ""
+                    return (
+                      <TableCell key={cell.id} data-label={label}>
+                        {flexRender(
+                          cell.column.columnDef.cell,
+                          cell.getContext()
+                        )}
+                      </TableCell>
+                    )
+                  })}
                 </TableRow>
               ))
             )}
