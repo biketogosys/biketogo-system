@@ -183,7 +183,7 @@ function CloseContractDialog({
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+      <DialogContent className="dialog-mobile max-w-2xl max-h-[80vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <CheckCircle2 className="h-5 w-5 text-emerald-500" />
@@ -812,7 +812,7 @@ function ContractDetail({
       )}
       {/* Return rental dialog */}
       <Dialog open={returnDialogOpen} onOpenChange={(v) => { if (!v) setReturnDialogOpen(false); }}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="dialog-mobile max-w-md">
           <DialogHeader>
             <DialogTitle>Devolver bike — {returnBikeLabel}</DialogTitle>
           </DialogHeader>

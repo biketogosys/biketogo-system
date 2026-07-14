@@ -143,10 +143,10 @@ function VerifiedClientAutocomplete({
                   <div className="flex items-center gap-2">
                     <span className="text-sm font-medium text-foreground truncate">{c.name}</span>
                     {c.status !== "verified" && (
-                      <span className="text-xs px-1.5 py-0.5 rounded bg-yellow-100 text-yellow-800 border border-yellow-200">Não verificado</span>
+                      <span className="text-xs px-1.5 py-0.5 rounded-md border bg-amber-500/20 text-amber-600 border-amber-500/30 dark:text-amber-400">Não verificado</span>
                     )}
                     {c.status === "verified" && (
-                      <span className="text-xs px-1.5 py-0.5 rounded bg-green-100 text-green-800 border border-green-200">Verificado</span>
+                      <span className="text-xs px-1.5 py-0.5 rounded-md border bg-emerald-500/20 text-emerald-600 border-emerald-500/30 dark:text-emerald-400">Verificado</span>
                     )}
                   </div>
                   <div className="text-xs text-muted-foreground truncate">
@@ -397,7 +397,7 @@ export function NewContractModal({
 
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!o) { handleReset(); onClose(); } }}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="dialog-mobile max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <FileText className="h-5 w-5 text-primary" />
@@ -410,12 +410,12 @@ export function NewContractModal({
           {stepLabels.map((label, i) => (
             <div key={i} className="flex items-center gap-1 flex-1">
               <div className={`flex items-center justify-center w-7 h-7 rounded-full text-xs font-bold shrink-0 ${
-                step > i + 1 ? "bg-green-500 text-white" : step === i + 1 ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
+                step > i + 1 ? "bg-emerald-500 text-white" : step === i + 1 ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
               }`}>
                 {step > i + 1 ? <Check className="w-3.5 h-3.5" /> : i + 1}
               </div>
               <span className={`text-xs truncate ${step === i + 1 ? "text-foreground font-medium" : "text-muted-foreground"}`}>{label}</span>
-              {i < stepLabels.length - 1 && <div className={`h-px flex-1 mx-1 ${step > i + 1 ? "bg-green-500" : "bg-border"}`} />}
+              {i < stepLabels.length - 1 && <div className={`h-px flex-1 mx-1 ${step > i + 1 ? "bg-emerald-500" : "bg-border"}`} />}
             </div>
           ))}
         </div>
@@ -431,13 +431,13 @@ export function NewContractModal({
               />
             </div>
             {clientId && clientStatus !== "verified" && (
-              <div className="flex items-center gap-2 p-3 rounded-md bg-yellow-50 border border-yellow-200 text-yellow-800 text-sm">
+              <div className="flex items-center gap-2 p-3 rounded-md border bg-amber-500/10 border-amber-500/30 text-amber-600 dark:text-amber-400 text-sm">
                 <AlertTriangle className="h-4 w-4 shrink-0" />
                 Este cliente ainda não foi verificado. Apenas clientes verificados podem ter contratos criados manualmente.
               </div>
             )}
             {clientId && clientStatus === "verified" && (
-              <div className="flex items-center gap-2 p-3 rounded-md bg-green-50 border border-green-200 text-green-800 text-sm">
+              <div className="flex items-center gap-2 p-3 rounded-md border bg-emerald-500/10 border-emerald-500/30 text-emerald-600 dark:text-emerald-400 text-sm">
                 <CheckCircle2 className="h-4 w-4 shrink-0" />
                 <span><strong>{clientName}</strong> selecionado(a).</span>
               </div>

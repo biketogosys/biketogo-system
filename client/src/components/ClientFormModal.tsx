@@ -259,7 +259,7 @@ export function ClientFormModal({ open, onClose, onSuccess, client }: ClientForm
           tipoDocumento: isBrazilian ? form.tipoDocumento : "passaporte",
         });
         await uploadDocs(clientId);
-        toast.success("Cliente atualizado com sucesso!");
+        toast.success("Cliente atualizado com sucesso");
         utils.clients.byId.invalidate({ id: clientId });
         utils.clients.list.invalidate();
       } else {
@@ -271,7 +271,7 @@ export function ClientFormModal({ open, onClose, onSuccess, client }: ClientForm
           status: "lead",
         });
         if (result?.id) await uploadDocs(result.id);
-        toast.success("Cliente criado com sucesso!");
+        toast.success("Cliente criado com sucesso");
         utils.clients.list.invalidate();
       }
       onSuccess();
@@ -480,7 +480,7 @@ export function ClientFormModal({ open, onClose, onSuccess, client }: ClientForm
                         </div>
                         <button type="button"
                           onClick={() => setForm((f) => ({ ...f, docFrontBase64: null, docFrontIsPdf: false }))}
-                          className="w-7 h-7 rounded-full bg-black/30 flex items-center justify-center text-white hover:bg-black/50 transition-all flex-shrink-0">
+                          className="w-7 h-7 rounded-full bg-black/30 flex items-center justify-center text-white hover:bg-black/50 transition-[background-color,transform] duration-150 ease-out active:scale-90 flex-shrink-0">
                           <X className="w-3.5 h-3.5" />
                         </button>
                       </div>
@@ -489,14 +489,14 @@ export function ClientFormModal({ open, onClose, onSuccess, client }: ClientForm
                         <img src={form.docFrontBase64} alt="Frente" className="w-full h-36 object-cover rounded-xl border border-primary/30" />
                         <button type="button"
                           onClick={() => setForm((f) => ({ ...f, docFrontBase64: null, showVerso: false, docBackBase64: null }))}
-                          className="absolute top-2 right-2 w-7 h-7 rounded-full bg-black/60 flex items-center justify-center text-white hover:bg-black/80 transition-all">
+                          className="absolute top-2 right-2 w-7 h-7 rounded-full bg-black/60 flex items-center justify-center text-white hover:bg-black/80 transition-[background-color,transform] duration-150 ease-out active:scale-90">
                           <X className="w-3.5 h-3.5" />
                         </button>
                       </div>
                     )
                   ) : (
                     <div
-                      className="border-2 border-dashed border-border rounded-xl p-6 flex flex-col items-center gap-3 cursor-pointer hover:border-primary/50 hover:bg-primary/5 transition-all"
+                      className="border-2 border-dashed border-border rounded-xl p-6 flex flex-col items-center gap-3 cursor-pointer hover:border-primary/50 hover:bg-primary/5 transition-[border-color,background-color] duration-150 ease-out"
                       onClick={() => frontRef.current?.click()}
                       onDragOver={(e) => e.preventDefault()}
                       onDrop={(e) => { e.preventDefault(); const f = e.dataTransfer.files?.[0]; if (f) handleDocPhoto("front", f); }}
@@ -525,13 +525,13 @@ export function ClientFormModal({ open, onClose, onSuccess, client }: ClientForm
                       <div className="relative">
                         <img src={form.docBackBase64} alt="Verso" className="w-full h-36 object-cover rounded-xl border border-primary/30" />
                         <button type="button" onClick={() => set("docBackBase64", null)}
-                          className="absolute top-2 right-2 w-7 h-7 rounded-full bg-black/60 flex items-center justify-center text-white hover:bg-black/80 transition-all">
+                          className="absolute top-2 right-2 w-7 h-7 rounded-full bg-black/60 flex items-center justify-center text-white hover:bg-black/80 transition-[background-color,transform] duration-150 ease-out active:scale-90">
                           <X className="w-3.5 h-3.5" />
                         </button>
                       </div>
                     ) : (
                       <div
-                        className="border-2 border-dashed border-border rounded-xl p-4 flex flex-col items-center gap-2 cursor-pointer hover:border-primary/50 hover:bg-primary/5 transition-all"
+                        className="border-2 border-dashed border-border rounded-xl p-4 flex flex-col items-center gap-2 cursor-pointer hover:border-primary/50 hover:bg-primary/5 transition-[border-color,background-color] duration-150 ease-out"
                         onClick={() => backRef.current?.click()}
                         onDragOver={(e) => e.preventDefault()}
                         onDrop={(e) => { e.preventDefault(); const f = e.dataTransfer.files?.[0]; if (f) handleDocPhoto("back", f); }}

@@ -36,7 +36,7 @@ export default function DashboardLayout({
               window.location.href = "/login";
             }}
             size="lg"
-            className="w-full shadow-lg hover:shadow-xl transition-all"
+            className="w-full shadow-lg hover:shadow-xl transition-[box-shadow,transform] duration-200 ease-out"
           >
             Fazer login
           </Button>

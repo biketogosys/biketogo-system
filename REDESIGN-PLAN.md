@@ -315,10 +315,45 @@ alvos). O Matheus já vem conferindo tela a tela no mobile.
 - **KPI cards** (Dashboard + Financeiro): gradiente âmbar removido + header
   reestruturado (título full-width, sem overflow do valor).
 
-## Fase 5 — QA final (0,5 sessão)
+## Fase 5 — QA final (0,5 sessão) — ✅ FEITA
 `tsc` 0 · `npm test` 61 · varredura de fugitivos de cor (zero) · reduced-motion ·
 mobile (375px sem overflow) · conferência visual das 11 telas · a11y (focus,
 contraste ≥ 4.5:1, alvos ≥ 44px).
+
+### O que a varredura pegou (e foi corrigido)
+A QA achou resíduos reais que as fases anteriores não tinham tocado:
+- **`NewContractModal.tsx`** (fluxo de criar contrato) — badges de status
+  (`bg-yellow-100 text-yellow-800` / `green-100`) e caixas de alerta
+  (`yellow-50`/`green-50`) em **paleta clara → invisíveis no dark**. Tokenizados
+  pro padrão theme-adaptive (amber/emerald `/20` + `dark:text-*-400`); step
+  concluído `bg-green-500` → `bg-emerald-500`.
+- **`NotFound.tsx`** — nunca redesenhada: fundo/card **branco fixo**, texto
+  `slate-*`, botão **azul** e copy **em inglês**. Reescrita: tokenizada, botão
+  âmbar (primitivo), copy PT-BR, `.motion-enter`.
+- **4 dialogs sem `dialog-mobile`** (não viravam fullscreen no mobile):
+  `NewContractModal` (form de 4 passos!), `Contracts` (encerrar + devolução),
+  `ClientProfile` (recusar). Corrigidos → fullscreen no mobile.
+- **Resíduos:** Montserrat inline (ClientProfile) → Geist; 2 toasts com "!"
+  (ClientFormModal); 9 `transition-all` (ClientFormModal, Dashboard,
+  DashboardLayout, segmented-tabs) → transições específicas + press.
+
+### Estado final
+- **Fugitivos quebrados: ZERO** no código vivo. O que sobra (`text-red-600
+  dark:text-red-400`, `bg-red-500/20 …`) é o padrão semântico theme-adaptive
+  documentado (exceção legítima).
+- **Montserrat: 0 · toasts com "!": 0.**
+- **`transition-all` restantes: 5**, todos em primitivos shadcn **não usados**
+  (accordion, input-otp, navigation-menu, progress) + o trilho interno do
+  `sidebar` (no-op). Aceitável.
+- **a11y:** focus ring visível (3px âmbar), `color-scheme` segue o tema,
+  `prefers-reduced-motion` presente no CSS compilado.
+- **Mobile 375px:** sem overflow horizontal; tabelas viram cards; inputs 44px.
+
+### ⚠️ Achado pendente de decisão do Matheus — CÓDIGO MORTO
+`client/src/pages/Home.tsx` e `client/src/pages/ComponentShowcase.tsx` **não são
+importados por ninguém** (a rota `/` usa `Dashboard`). Concentram Montserrat,
+`transition-all` e cores antigas. **Sugestão: apagar os dois** (o git guarda o
+histórico). Não removi sem aval.
 
 ---
 

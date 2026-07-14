@@ -264,7 +264,7 @@ export default function ClientProfile() {
 
             {/* Reject dialog */}
             <Dialog open={showRejectDialog} onOpenChange={setShowRejectDialog}>
-              <DialogContent>
+              <DialogContent className="dialog-mobile">
                 <DialogHeader>
                   <DialogTitle>Recusar cadastro</DialogTitle>
                 </DialogHeader>
@@ -402,7 +402,7 @@ export default function ClientProfile() {
               </div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-3 flex-wrap">
-                  <h1 className="text-xl font-bold text-foreground" style={{ fontFamily: "'Montserrat', sans-serif" }}>
+                  <h1 className="text-xl font-bold text-foreground">
                     {client.name}
                   </h1>
                   <StatusBadge status={client.status} />
