@@ -98,7 +98,7 @@ export default function Settings() {
     refetchOnWindowFocus: false,
   });
   const setManyMutation = trpc.settings.setMany.useMutation({
-    onSuccess: () => toast.success("Configurações salvas!"),
+    onSuccess: () => toast.success("Configurações salvas"),
     onError: (e) => toast.error(friendlyError(e)),
   });
 
@@ -107,7 +107,7 @@ export default function Settings() {
   const [companyLogoUrl, setCompanyLogoUrl] = useState("");
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const uploadLogoMutation = trpc.settings.uploadLogo.useMutation({
-    onSuccess: (data) => { setCompanyLogoUrl(data.url); toast.success("Logo salva com sucesso!"); },
+    onSuccess: (data) => { setCompanyLogoUrl(data.url); toast.success("Logo salva com sucesso"); },
     onError: (e) => toast.error(friendlyError(e)),
   });
   const [companyCnpj, setCompanyCnpj] = useState("");
@@ -241,7 +241,7 @@ export default function Settings() {
   return (
     <div className="p-6 max-w-3xl mx-auto">
       <div className="mb-8">
-        <h1 className="text-2xl font-bold text-foreground" style={{ fontFamily: "'Montserrat', sans-serif" }}>
+        <h1 className="text-2xl font-bold text-foreground">
           Configurações
         </h1>
         <p className="text-sm text-muted-foreground mt-0.5">
@@ -619,7 +619,7 @@ export default function Settings() {
               variant="outline"
               onClick={() => {
                 navigator.clipboard.writeText(`${window.location.origin}/reservar`);
-                toast.success("Link copiado!");
+                toast.success("Link copiado");
               }}
             >
               Copiar

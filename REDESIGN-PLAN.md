@@ -285,7 +285,26 @@ Clientes/ClientProfile → Financeiro → Usuários/Auditoria → Configuraçõe
   Contratos), resto (emerald/red/amber) mantido (semântico theme-adaptive). **Gate:**
   `tsc` 0 · `npm test` 61/61 · verificado no DOM: títulos em Geist (`inlineStyle:
   none`), badge de ação em sky, badges de usuário calibrados · zero erro console.
-- ⬜ Configurações · ⬜ Login
+- ✅ **Configurações** (`Settings.tsx`) — já limpa (zero fugitivo, zero
+  transition-all); removido Montserrat inline do h1 (→ Geist), 3 toasts com "!"
+  limpos. Verificado no mobile (375px): sem overflow, inputs 44px consistentes,
+  botões naturais. **Gate:** `tsc` 0 · `npm test` 61/61 · zero erro de console.
+- ⬜ Login (última tela)
+
+### Correções de mobile pós-review (raiz comum) — FEITAS
+- **`min-height:44px` grosseiro** pegava todo `<button>` no mobile → distorcia
+  Switch, barra de passos do `/reservar` e botões de modal. Restringido a campos
+  de texto (`input:not(checkbox/radio/range)`, `select`, `textarea`,
+  `[data-slot=select-trigger]`).
+- **Tabelas → cards no mobile** (`.table-mobile-cards`): DataTable (Clientes/
+  Contratos/Financeiro) + tabelas cruas (Usuários/Auditoria). Wrapper perde borda
+  no mobile (sem "borda dupla").
+- **`/reservar` select ilegível no dark**: `select option { background-color:
+  var(--popover) }` (color-scheme sozinho não bastava no Chrome/Windows).
+- **Switch reproporcionado** (`h-5 w-9` + `border-2`, 2px de margem).
+- **Lista de países completa** (`lib/countries.ts`, ~202 + DDI) no `/reservar`.
+- **KPI cards** (Dashboard + Financeiro): gradiente âmbar removido + header
+  reestruturado (título full-width, sem overflow do valor).
 
 ## Fase 5 — QA final (0,5 sessão)
 `tsc` 0 · `npm test` 61 · varredura de fugitivos de cor (zero) · reduced-motion ·
