@@ -151,9 +151,9 @@ async function seed(db: DevDb) {
       { bikeSizeId: urbanaM.id, numeroSistema: "URB-M-001", status: "alugado" },
       { bikeSizeId: urbanaM.id, numeroSistema: "URB-M-002", status: "disponivel" },
       { bikeSizeId: urbanaM.id, numeroSistema: "URB-M-003", status: "manutencao" },
-      { bikeSizeId: urbanaG.id, numeroSistema: "URB-G-001", status: "disponivel" },
+      { bikeSizeId: urbanaG.id, numeroSistema: "URB-G-001", status: "alugado" },
       { bikeSizeId: urbanaG.id, numeroSistema: "URB-G-002", status: "disponivel" },
-      { bikeSizeId: mtbM.id, numeroSistema: "MTB-M-001", status: "disponivel" },
+      { bikeSizeId: mtbM.id, numeroSistema: "MTB-M-001", status: "alugado" },
       { bikeSizeId: mtbM.id, numeroSistema: "MTB-M-002", status: "disponivel" },
     ])
     .returning({ id: schema.bikeUnits.id });
@@ -209,6 +209,45 @@ async function seed(db: DevDb) {
   await db.insert(schema.rentalBikeUnits).values({
     rentalId: activeRental.id,
     bikeUnitId: unitRows[0].id, // URB-M-001, marcada "alugado"
+  });
+
+  // Devolução prevista para HOJE (alimenta o painel de devoluções do dashboard)
+  const [todayContract] = await db
+    .insert(schema.contracts)
+    .values({ clientId: carla.id, status: "ativo", valorTotal: "180.00" })
+    .returning({ id: schema.contracts.id });
+  const [todayRental] = await db
+    .insert(schema.rentals)
+    .values({
+      clientId: carla.id, bikeId: urbana.id, bikeSizeId: urbanaG.id, quantity: 1,
+      startDate: isoDay(-4), endDate: isoDay(0),
+      dailyRate: "45.00", totalAmount: "180.00",
+      paymentStatus: "paid", status: "active", contractId: todayContract.id,
+    })
+    .returning({ id: schema.rentals.id });
+  await db.insert(schema.rentalBikeUnits).values({
+    rentalId: todayRental.id,
+    bikeUnitId: unitRows[3].id, // URB-G-001, marcada "alugado"
+  });
+
+  // Aluguel ATRASADO — endDate no passado com status ainda "active": o
+  // OverdueSweep do servidor marca como overdue ao subir (demo do job).
+  const [lateContract] = await db
+    .insert(schema.contracts)
+    .values({ clientId: ana.id, status: "ativo", valorTotal: "325.00" })
+    .returning({ id: schema.contracts.id });
+  const [lateRental] = await db
+    .insert(schema.rentals)
+    .values({
+      clientId: ana.id, bikeId: mtb.id, bikeSizeId: mtbM.id, quantity: 1,
+      startDate: isoDay(-7), endDate: isoDay(-2),
+      dailyRate: "65.00", totalAmount: "325.00",
+      paymentStatus: "paid", status: "active", contractId: lateContract.id,
+    })
+    .returning({ id: schema.rentals.id });
+  await db.insert(schema.rentalBikeUnits).values({
+    rentalId: lateRental.id,
+    bikeUnitId: unitRows[5].id, // MTB-M-001, marcada "alugado"
   });
 
   // Aluguel devolvido no mês passado (histórico)

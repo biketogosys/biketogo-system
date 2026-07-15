@@ -5,6 +5,7 @@ import {
   Users, Bike, FileText, DollarSign,
   AlertCircle, ArrowRight, Wrench,
   TrendingDown, Minus, ChevronDown,
+  CalendarCheck, CalendarClock,
 } from "lucide-react";
 import {
   PieChart, Pie, Cell, Tooltip, ResponsiveContainer,
@@ -57,6 +58,9 @@ function getPeriodDates(key: PeriodKey): { startDate: string; endDate: string } 
   }
 }
 
+// Data "YYYY-MM-DD" → "dd/mm" por fatiamento (Date() deslocaria o dia no fuso)
+const fmtShortDate = (d: string | null) => (d ? `${d.slice(8, 10)}/${d.slice(5, 7)}` : "—");
+
 // Paleta âmbar para o gráfico de pizza (usa tokens CSS)
 const PIE_COLORS = [
   "var(--chart-1)",
@@ -96,6 +100,13 @@ export default function Dashboard() {
     refetch: refetchBikeRevenue,
   } = trpc.dashboard.revenueByBike.useQuery(periodDates);
 
+  // Painel de devoluções (erro fica contido no card — não derruba o dashboard)
+  const {
+    data: returnsData,
+    isLoading: returnsLoading,
+    error: returnsError,
+  } = trpc.dashboard.returns.useQuery();
+
   const anyError = summaryError || weeklyError || bikeRevenueError;
 
   // ─── Error state ──────────────────────────────────────────────────────────
@@ -123,6 +134,9 @@ export default function Dashboard() {
   const clientStats = data?.clientStats ?? { total: 0, leads: 0, verified: 0, blocked: 0 };
 
   const totalBikeReceita = bikeRevenueData.reduce((acc: number, d: any) => acc + d.receita, 0);
+
+  // Atrasadas primeiro (já vêm ordenadas por endDate asc), depois as de hoje
+  const returnItems = [...(returnsData?.overdue ?? []), ...(returnsData?.dueToday ?? [])];
 
   return (
     <div className="flex flex-1 flex-col">
@@ -164,6 +178,76 @@ export default function Dashboard() {
 
           {/* ─── Section Cards (4 KPI) ───────────────────────────────────── */}
           <SectionCards data={summaryData} loading={isLoading} />
+
+          {/* ─── Devoluções (atrasadas + hoje) ───────────────────────────── */}
+          <div className="px-4 lg:px-6">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-sm font-semibold uppercase tracking-wider flex items-center gap-2">
+                  <CalendarClock className="w-4 h-4 text-primary" />
+                  Devoluções
+                  {(returnsData?.overdue.length ?? 0) > 0 && (
+                    <span className="inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-medium normal-case tracking-normal bg-red-500/20 text-red-600 border-red-500/30 dark:text-red-400">
+                      {returnsData!.overdue.length} em atraso
+                    </span>
+                  )}
+                </CardTitle>
+                <p className="text-xs text-muted-foreground">
+                  Aluguéis em atraso e com devolução prevista para hoje
+                </p>
+              </CardHeader>
+              <CardContent>
+                {returnsLoading ? (
+                  <div className="space-y-2">
+                    <Skeleton className="h-10 w-full" />
+                    <Skeleton className="h-10 w-full" />
+                  </div>
+                ) : returnsError ? (
+                  <p className="text-sm text-destructive">Erro ao carregar devoluções.</p>
+                ) : returnItems.length === 0 ? (
+                  <div className="flex items-center gap-3 text-muted-foreground py-2">
+                    <CalendarCheck className="w-5 h-5 opacity-40 shrink-0" />
+                    <p className="text-sm">Nenhuma devolução pendente para hoje.</p>
+                  </div>
+                ) : (
+                  <div className="divide-y divide-border">
+                    {returnItems.map((item) => (
+                      <div
+                        key={item.id}
+                        className="py-2.5 flex flex-col gap-1.5 sm:flex-row sm:items-center sm:gap-3"
+                      >
+                        <span
+                          className={`inline-flex w-fit items-center rounded-md border px-2 py-0.5 text-xs font-medium shrink-0 ${
+                            item.daysLate > 0
+                              ? "bg-red-500/20 text-red-600 border-red-500/30 dark:text-red-400"
+                              : "bg-amber-500/20 text-amber-600 border-amber-500/30 dark:text-amber-400"
+                          }`}
+                        >
+                          {item.daysLate > 0 ? `Atrasada ${item.daysLate}d` : "Hoje"}
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <Link
+                            href={`/clientes/${item.clientId}`}
+                            className="text-sm font-medium text-foreground hover:text-primary truncate block"
+                          >
+                            {item.clientName}
+                          </Link>
+                          <p className="text-xs text-muted-foreground truncate">
+                            {item.bikeModel}
+                            {item.tamanho ? ` · Tam. ${item.tamanho}` : ""}
+                            {(item.quantity ?? 1) > 1 ? ` · ${item.quantity}×` : ""}
+                          </p>
+                        </div>
+                        <span className="text-xs text-muted-foreground tabular-nums shrink-0">
+                          Prevista: {fmtShortDate(item.endDate)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
 
           {/* ─── Revenue Area Chart ──────────────────────────────────────── */}
           <div className="px-4 lg:px-6">

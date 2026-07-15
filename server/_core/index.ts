@@ -13,6 +13,7 @@ import { createClient, updateRental, getDb, getSetting, createAuditLog, getBikeB
 import { clients as clientsTable, rentals as rentalsTable } from "../../drizzle/schema";
 import { isNotNull, lt, and as andOp } from "drizzle-orm";
 import { notifyOwner } from "./notification";
+import { markOverdueRentals } from "../overdue";
 import {
   registerSecurityMiddlewares,
   loginRateLimiter,
@@ -263,3 +264,31 @@ setTimeout(() => {
   runArchiveCleanup();
   setInterval(runArchiveCleanup, 24 * 60 * 60 * 1000);
 }, 10_000); // aguardar 10s para o servidor estar pronto
+
+// ─── Job: marcar aluguéis vencidos como overdue (fuso America/Sao_Paulo) ────
+async function runOverdueSweep() {
+  try {
+    const db = await getDb();
+    if (!db) return;
+    const ids = await markOverdueRentals(db);
+    if (ids.length > 0) {
+      console.log(`[OverdueSweep] ${ids.length} aluguel(is) marcado(s) como overdue: ${ids.join(", ")}`);
+      await createAuditLog({
+        adminId: null,
+        acao: "overdue_automatico",
+        tabela: "rentals",
+        dadosDepois: { rentalIds: ids, total: ids.length },
+      });
+    }
+  } catch (err) {
+    console.error("[OverdueSweep] Error:", err);
+  }
+}
+
+// De hora em hora (não a cada 24h): setInterval ancora no boot do servidor —
+// com 24h um aluguel vencido à meia-noite SP só seria marcado no horário do
+// último deploy. A varredura é idempotente e custa 1 UPDATE.
+setTimeout(() => {
+  runOverdueSweep();
+  setInterval(runOverdueSweep, 60 * 60 * 1000);
+}, 15_000);

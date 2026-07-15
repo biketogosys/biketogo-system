@@ -458,7 +458,8 @@ export async function getBikeStats() {
         isNull(rentals.deletedAt),
         // all rentals rows are bike rentals (accessories live in rental_accessories)
         lte(rentals.startDate, today),
-        or(isNull(rentals.endDate), gte(rentals.endDate, today))!,
+        // overdue: endDate já passou mas a bike NÃO voltou — continua em uso
+        or(isNull(rentals.endDate), gte(rentals.endDate, today), eq(rentals.status, "overdue"))!,
       )
     );
   const rented = rentedRows.reduce((s, r) => s + (r.q ?? 1), 0);
@@ -793,7 +794,8 @@ export async function getRentalStats() {
   const now = new Date();
   const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
   const [activeResult, revenueResult] = await Promise.all([
-    db.select({ count: sql<number>`count(*)` }).from(rentals).where(and(eq(rentals.status, "active"), isNull(rentals.deletedAt))),
+    // overdue conta como ativo: o aluguel segue em curso, só está atrasado
+    db.select({ count: sql<number>`count(*)` }).from(rentals).where(and(inArray(rentals.status, ["active", "overdue"]), isNull(rentals.deletedAt))),
     db.select({ total: sql<string>`COALESCE(SUM("totalAmount"::numeric), 0)` })
       .from(rentals)
       .where(and(

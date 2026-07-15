@@ -4,6 +4,7 @@ import { z } from "zod";
 import { sanitize, sanitizeDate, sanitizeDateString, sanitizeNumeric, sanitizePhone } from "./_core/utils";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
+import { todaySaoPaulo } from "./overdue";
 import {
   // Admin Users
   getAdminUserByEmail,
@@ -2115,6 +2116,48 @@ const dashboardRouter = router({
         receita: Math.round(parseFloat(r.receita ?? "0") * 100) / 100,
       }));
     }),
+
+  // Painel de devoluções: aluguéis em atraso + os que vencem hoje (fuso SP).
+  // Independe do job de overdue — o corte é por endDate, então a lista fica
+  // correta mesmo se a varredura ainda não rodou.
+  returns: adminAuthProcedure.query(async () => {
+    const db = await getDb();
+    if (!db) return { overdue: [], dueToday: [] };
+    const { rentals: r, clients: c, bikes: b, bikeSizes: bsz } = await import("../drizzle/schema");
+    const { and: andOp, eq: eqOp, lte: lteOp, isNull: isNullOp, inArray: inArrayOp, asc: ascOp } = await import("drizzle-orm");
+    const today = todaySaoPaulo();
+    const rows = await db
+      .select({
+        id: r.id,
+        clientId: r.clientId,
+        clientName: c.name,
+        bikeModel: b.model,
+        tamanho: bsz.tamanho,
+        quantity: r.quantity,
+        endDate: r.endDate,
+        contractId: r.contractId,
+      })
+      .from(r)
+      .innerJoin(c, eqOp(r.clientId, c.id))
+      .innerJoin(b, eqOp(r.bikeId, b.id))
+      .leftJoin(bsz, eqOp(r.bikeSizeId, bsz.id))
+      .where(andOp(
+        inArrayOp(r.status, ["active", "overdue"]),
+        isNullOp(r.deletedAt),
+        isNullOp(r.returnedAt),
+        lteOp(r.endDate, today),
+      ))
+      .orderBy(ascOp(r.endDate));
+    const dayMs = 24 * 60 * 60 * 1000;
+    return {
+      overdue: rows
+        .filter((x) => x.endDate !== null && x.endDate < today)
+        .map((x) => ({ ...x, daysLate: Math.round((Date.parse(today) - Date.parse(x.endDate!)) / dayMs) })),
+      dueToday: rows
+        .filter((x) => x.endDate === today)
+        .map((x) => ({ ...x, daysLate: 0 })),
+    };
+  }),
 });
 
 // ─── Audit Logs router ────────────────────────────────────────────────────────
