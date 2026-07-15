@@ -1650,6 +1650,20 @@ const financialRouter = router({
 const settingsRouter = router({
   getAll: adminAuthProcedure.query(() => getAllSettings()),
 
+  /**
+   * Textos legais PADRÃO do contrato (Objeto + Termos), por idioma.
+   *
+   * Mesma fonte que o PDF usa como fallback (server/contract-defaults.ts).
+   * A tela de Configurações pré-preenche os campos vazios com isto — antes o
+   * PDF saía com estas cláusulas mas a tela mostrava em branco, escondendo o
+   * texto legal real. Ao salvar, o texto passa a viver no banco
+   * (company_object_<lang> / company_terms_<lang>) e vira a fonte única.
+   */
+  getContractDefaults: adminAuthProcedure.query(async () => {
+    const { DEFAULT_OBJETO, DEFAULT_TERMOS } = await import("./contract-defaults");
+    return { objeto: DEFAULT_OBJETO, termos: DEFAULT_TERMOS };
+  }),
+
   get: adminAuthProcedure
     .input(z.object({ key: z.string() }))
     .query(({ input }) => getSetting(input.key)),

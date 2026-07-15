@@ -97,6 +97,12 @@ export default function Settings() {
   const { data: settings, isLoading } = trpc.settings.getAll.useQuery(undefined, {
     refetchOnWindowFocus: false,
   });
+  // Textos legais padrão do contrato — MESMA fonte que o PDF usa como fallback.
+  // Sem isto, o campo aparecia vazio aqui enquanto o PDF saía com as cláusulas:
+  // o texto legal que ia pro documento ficava invisível e não-editável.
+  const { data: contractDefaults } = trpc.settings.getContractDefaults.useQuery(undefined, {
+    refetchOnWindowFocus: false,
+  });
   const setManyMutation = trpc.settings.setMany.useMutation({
     onSuccess: () => toast.success("Configurações salvas"),
     onError: (e) => toast.error(friendlyError(e)),
@@ -154,7 +160,9 @@ export default function Settings() {
   // ── Load settings ────────────────────────────────────────────────────────────
   const hydratedRef = useRef(false);
   useEffect(() => {
-    if (!settings) return;
+    // Espera TAMBÉM os defaults: sem eles não dá pra pré-preencher o texto legal
+    // que o PDF usa quando o banco está vazio.
+    if (!settings || !contractDefaults) return;
     if (hydratedRef.current) return;
     hydratedRef.current = true;
     const map: Record<string, string> = {};
@@ -186,10 +194,19 @@ export default function Settings() {
     const newObjeto: Record<Lang, string> = { pt: "", en: "", es: "" };
     const newClauses: Record<Lang, string[]> = { pt: [""], en: [""], es: [""] };
     for (const lang of LANGS) {
-      newObjeto[lang] = map[`company_object_${lang}`] || "";
-      const rawLang = map[`company_terms_${lang}`] || "";
-      // Migration: if pt is empty but legacy company_terms has content, use it
-      const raw = rawLang || (lang === "pt" ? (map["company_terms"] || "") : "");
+      // Ordem de precedência (a MESMA do PDF em server/pdf.ts):
+      //   1) valor por idioma no banco  → company_object_<lang> / company_terms_<lang>
+      //   2) legado (só pt)             → company_object / company_terms
+      //   3) texto PADRÃO embutido      → server/contract-defaults.ts
+      // O passo (3) é o fix: antes o campo ficava vazio aqui e o PDF saía com o
+      // default — o texto legal do contrato era invisível e não-editável.
+      const objLang = (map[`company_object_${lang}`] || "").trim();
+      const objLegacy = lang === "pt" ? (map["company_object"] || "").trim() : "";
+      newObjeto[lang] = objLang || objLegacy || contractDefaults.objeto[lang];
+
+      const termsLang = (map[`company_terms_${lang}`] || "").trim();
+      const termsLegacy = lang === "pt" ? (map["company_terms"] || "").trim() : "";
+      const raw = termsLang || termsLegacy || contractDefaults.termos[lang];
       newClauses[lang] = parseClauses(raw);
     }
     setObjeto(newObjeto);
@@ -197,7 +214,7 @@ export default function Settings() {
     setCompanyLogoUrl(map["company_logo_url"] || "");
 
 
-  }, [settings]);
+  }, [settings, contractDefaults]);
 
   // ── Section save helpers ─────────────────────────────────────────────────────
   async function saveSection(
@@ -383,7 +400,7 @@ export default function Settings() {
             />
           </div>
           <p className="text-xs text-muted-foreground mb-4">
-            Texto do Objeto do contrato e as cláusulas de Termos, editáveis por idioma. Quando vazio, o PDF usa o texto padrão embutido.
+            Texto do Objeto do contrato e as cláusulas de Termos, editáveis por idioma. Este é exatamente o texto que sai no PDF do contrato — os campos já vêm preenchidos com o padrão. Edite e salve para que o seu texto passe a valer.
           </p>
           <Tabs defaultValue="pt">
             <TabsList className="mb-4">
@@ -399,13 +416,13 @@ export default function Settings() {
                     rows={5}
                     value={objeto[lang]}
                     onChange={(e) => setObjeto((prev) => ({ ...prev, [lang]: e.target.value }))}
-                    placeholder="Deixe em branco para usar o texto padrão..."
+                    placeholder="Texto do objeto do contrato..."
                     className="bg-secondary border-border text-sm resize-y"
                   />
                 </div>
                 <div>
                   <Label className="text-xs text-muted-foreground mb-1.5 block">Termos e condições</Label>
-                  <p className="text-xs text-muted-foreground mb-3">Cada cláusula é numerada automaticamente. Deixe em branco para usar o texto padrão.</p>
+                  <p className="text-xs text-muted-foreground mb-3">Cada cláusula é numerada automaticamente no PDF. Estas são as cláusulas que saem hoje no contrato — edite, remova ou adicione as suas.</p>
                   <div className="space-y-2">
                     {clauses[lang].map((clause, i) => (
                       <div key={i} className="flex items-start gap-2">
