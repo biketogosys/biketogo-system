@@ -8,10 +8,6 @@ export const ENV = {
   forgeApiUrl: process.env.BUILT_IN_FORGE_API_URL ?? "",
   forgeApiKey: process.env.BUILT_IN_FORGE_API_KEY ?? "",
   shopifyAllowedOrigin: process.env.SHOPIFY_ALLOWED_ORIGIN ?? "",
-  // Supabase
-  supabaseUrl: process.env.SUPABASE_URL ?? "",
-  supabaseAnonKey: process.env.SUPABASE_ANON_KEY ?? "",
-  supabaseServiceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY ?? "",
   // Storage S3 (Supabase Storage é S3-compatível). Usado como fallback quando
   // o proxy do Manus (BUILT_IN_FORGE_API_*) não está configurado.
   s3Endpoint: process.env.S3_ENDPOINT ?? "",
