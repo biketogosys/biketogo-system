@@ -102,6 +102,8 @@ async function seed(db: DevDb) {
     { key: "company_name", value: "Bike To Go Floripa (DEV)" },
     { key: "archive_retention_days", value: "5" },
     { key: "whatsapp_number", value: "5548999999999" },
+    // Destinatário do e-mail de novo lead (sem RESEND_API_KEY, sai no log)
+    { key: "notification_email", value: "cassiana@dev.local" },
   ]);
 
   const clientRows = await db

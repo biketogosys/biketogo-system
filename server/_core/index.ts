@@ -12,7 +12,7 @@ import { serveStatic, setupVite } from "./vite";
 import { createClient, updateRental, getDb, getSetting, createAuditLog, getBikeById } from "../db";
 import { clients as clientsTable, rentals as rentalsTable } from "../../drizzle/schema";
 import { isNotNull, lt, and as andOp } from "drizzle-orm";
-import { notifyOwner } from "./notification";
+import { sendNewLeadEmail } from "../email";
 import { markOverdueRentals } from "../overdue";
 import {
   registerSecurityMiddlewares,
@@ -92,10 +92,14 @@ async function startServer() {
           source: "shopify",
         });
 
-        // Notify owner via built-in notification
-        await notifyOwner({
-          title: `Novo pré-cadastro: ${body.name}`,
-          content: `Cliente ${body.name} (CPF: ${body.cpf || 'N/A'}) realizou pré-cadastro pelo site. ID: #${clientId}`,
+        // Notificar o dono por e-mail (Resend) — não-fatal por construção
+        await sendNewLeadEmail({
+          clientId,
+          name: body.name || "Sem nome",
+          phone: body.phone,
+          email: body.email,
+          city: body.city,
+          source: "shopify",
         });
 
         res.json({ success: true, clientId });

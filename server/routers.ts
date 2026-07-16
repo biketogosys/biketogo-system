@@ -81,7 +81,7 @@ import {
   // Audit
   createAuditLog,
 } from "./db";
-import { notifyOwner } from "./_core/notification";
+import { escapeHtml, sendNewLeadEmail, sendOwnerEmail } from "./email";
 import { COOKIE_NAME } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
@@ -512,10 +512,10 @@ const clientsRouter = router({
       await db.update(clientsTable).set({ deletedAt: null }).where(eqOp(clientsTable.id, input.id));
       await createAuditLog({ adminId: (ctx as any).adminUser?.id ?? null, acao: "restaurou_cliente", tabela: "clients", registroId: input.id });
       const adminName = (ctx as any).adminUser?.name ?? (ctx as any).user?.name ?? "Admin";
-      await notifyOwner({
-        title: `Cliente #${input.id} restaurado`,
-        content: `O registro do cliente #${input.id} foi restaurado do arquivo por ${adminName}.`,
-      });
+      await sendOwnerEmail(
+        `Cliente #${input.id} restaurado`,
+        `<p>O registro do cliente #${input.id} foi restaurado do arquivo por ${escapeHtml(adminName)}.</p>`,
+      );
       return { success: true };
     }),
 
@@ -1922,16 +1922,15 @@ const publicApiRouter = router({
         status: "lead",
       } as any);
 
-      // Notify owner
-       try {
-        // Manus built-in notification
-        await notifyOwner({
-          title: "📋 Novo Pré-Cadastro!",
-          content: `Cliente: ${input.name}\nTelefone: ${input.phone || "N/A"}\nE-mail: ${input.email || "N/A"}\n\nVerifique em /clientes e entre em contato para combinar a locação.`,
-        });
-      } catch (err) {
-        console.warn("[submitPreRegistration] Notification error:", err);
-      }
+      // Notificar o dono por e-mail (Resend) — não-fatal por construção
+      await sendNewLeadEmail({
+        clientId,
+        name: input.name,
+        phone: input.phone,
+        email: input.email,
+        city: input.city,
+        source: "site",
+      });
 
       return { clientId, success: true, uploadToken: signUploadToken(clientId) };
     }),
@@ -2739,11 +2738,10 @@ const contractsRouter = router({
             .limit(1);
           if (clientRow?.name) clientName = clientRow.name;
         }
-        // Notify via Manus notification
-        await notifyOwner({
-          title: `⚠️ Pendência de acessório — Contrato #${input.id}`,
-          content: `Acessórios com problema ao encerrar o contrato #${input.id}:\n\n${pendentes}`,
-        }).catch(() => {});
+        await sendOwnerEmail(
+          `Pendência de acessório — Contrato #${input.id}`,
+          `<p>Acessórios com problema ao encerrar o contrato #${input.id}:</p><p>${escapeHtml(pendentes).replace(/\n/g, "<br>")}</p>`,
+        );
       }
       // Mark all active/overdue bike rentals as returned (releases stock)
       {
