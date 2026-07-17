@@ -61,7 +61,7 @@ export const translations = {
     howFoundOther: "Outro",
 
     // Contact fields
-    whatsapp: "WhatsApp",
+    whatsapp: "Telefone/WhatsApp",
     whatsappPlaceholder: "(48) 99999-9999",
     email: "E-Mail",
     emailPlaceholder: "seu@email.com",
@@ -232,7 +232,7 @@ export const translations = {
     howFoundShopify: "Website / Shopify",
     howFoundOther: "Other",
 
-    whatsapp: "WhatsApp",
+    whatsapp: "Phone/WhatsApp",
     whatsappPlaceholder: "(48) 99999-9999",
     email: "E-Mail",
     emailPlaceholder: "your@email.com",
@@ -392,7 +392,7 @@ export const translations = {
     howFoundShopify: "Sitio web / Shopify",
     howFoundOther: "Otro",
 
-    whatsapp: "WhatsApp",
+    whatsapp: "Teléfono/WhatsApp",
     whatsappPlaceholder: "(48) 99999-9999",
     email: "Correo Electrónico",
     emailPlaceholder: "tu@correo.com",

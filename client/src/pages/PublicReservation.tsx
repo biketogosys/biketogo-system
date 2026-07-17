@@ -108,6 +108,9 @@ export default function PublicReservation() {
   const inputNormal = `${inputBase} border-input focus:border-primary focus:ring-2 focus:ring-primary/20`;
   const inputError = `${inputBase} border-destructive/60 focus:border-destructive focus:ring-2 focus:ring-destructive/20`;
   const selectBase = inputNormal;
+  // Subtítulo de grupo dentro de um passo (organização do form em blocos)
+  const groupTitle = "text-[11px] font-semibold uppercase tracking-wider text-muted-foreground";
+  const groupDivider = `border-t ${sectionBorder} pt-5`;
   const navBtnSecondary = "flex items-center gap-2 px-5 py-3 rounded-xl text-sm border border-border text-muted-foreground hover:text-foreground hover:border-muted-foreground/40 transition-[color,background-color,border-color,transform] duration-150 ease-out active:scale-[0.97]";
   const langBtnBase = "border-border bg-muted";
   const langBtnInactive = "text-muted-foreground hover:text-foreground";
@@ -249,9 +252,10 @@ export default function PublicReservation() {
           errs.cpf = lang === "pt" ? "CPF inválido — verifique os dígitos" : lang === "en" ? "Invalid CPF — check the digits" : "CPF inválido — verifique los dígitos";
         }
         {
+          // RG é OPCIONAL (pedido da Cassiana, 2026-07-17) — valida só se preenchido
           const rgDigits = rg.replace(/[.\-\s]/g, "");
-          if (!rgDigits || rgDigits.length < 7) {
-            errs.rg = lang === "pt" ? "RG obrigatório (mín. 7 dígitos)" : lang === "en" ? "RG required (min. 7 digits)" : "RG obligatorio (mín. 7 dígitos)";
+          if (rgDigits && rgDigits.length < 7) {
+            errs.rg = lang === "pt" ? "RG incompleto (mín. 7 dígitos)" : lang === "en" ? "Incomplete RG (min. 7 digits)" : "RG incompleto (mín. 7 dígitos)";
           }
         }
       } else {
@@ -297,7 +301,7 @@ export default function PublicReservation() {
       const result = await submitMutation.mutateAsync({
         name: fullName,
         cpf: isBrazilian ? cpf : undefined,
-        rg: isBrazilian ? rg : undefined,
+        rg: isBrazilian && rg.trim() ? rg : undefined,
         passport: !isBrazilian ? passport : undefined,
         docOrigin,
         birthDate,
@@ -528,141 +532,140 @@ export default function PublicReservation() {
               <span className="text-primary text-sm font-bold uppercase tracking-widest flex items-center gap-2"><IdCard className="w-4 h-4 shrink-0" />{t.sectionIdentification}</span>
             </div>
 
-            {/* Origem */}
-            <Field label={lang === "pt" ? "Origem" : lang === "en" ? "Origin" : "Origen"}>
-              <select className={selectBase} value={docOrigin} onChange={e => { setDocOrigin(e.target.value); }}>
-                {COUNTRIES.map(c => {
-                  const v = countryOptionValue(c);
-                  return <option key={v} value={v}>{c.flag} {c.name} (+{c.ddi})</option>;
-                })}
-                <option value="Outro">🌍 {lang === "pt" ? "Outro país" : lang === "en" ? "Other country" : "Otro país"}</option>
-              </select>
-            </Field>
-
-            {/* Nome / Sobrenome */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <Field
-                label={lang === "pt" ? "Nome" : lang === "en" ? "First Name" : "Nombre"}
-                required
-                error={errors.firstName}
-              >
-                <input
-                  className={errors.firstName ? inputError : inputNormal}
-                  placeholder={lang === "pt" ? "Ex: Maria" : lang === "en" ? "e.g. Maria" : "Ej: María"}
-                  value={firstName}
-                  onChange={e => setFirstName(e.target.value)}
-                  maxLength={60}
-                />
-              </Field>
-              <Field
-                label={lang === "pt" ? "Sobrenome" : lang === "en" ? "Last Name" : "Apellido"}
-                required
-                error={errors.lastName}
-              >
-                <input
-                  className={errors.lastName ? inputError : inputNormal}
-                  placeholder={lang === "pt" ? "Ex: Silva" : lang === "en" ? "e.g. Silva" : "Ej: García"}
-                  value={lastName}
-                  onChange={e => setLastName(e.target.value)}
-                  maxLength={60}
-                />
-              </Field>
+            {/* ── Grupo 1: Dados pessoais ── */}
+            <div className="space-y-4">
+              <p className={groupTitle}>
+                {lang === "pt" ? "Dados pessoais" : lang === "en" ? "Personal details" : "Datos personales"}
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <Field
+                  label={lang === "pt" ? "Nome" : lang === "en" ? "First Name" : "Nombre"}
+                  required
+                  error={errors.firstName}
+                >
+                  <input
+                    className={errors.firstName ? inputError : inputNormal}
+                    placeholder={lang === "pt" ? "Ex: Maria" : lang === "en" ? "e.g. Maria" : "Ej: María"}
+                    value={firstName}
+                    onChange={e => setFirstName(e.target.value)}
+                    maxLength={60}
+                  />
+                </Field>
+                <Field
+                  label={lang === "pt" ? "Sobrenome" : lang === "en" ? "Last Name" : "Apellido"}
+                  required
+                  error={errors.lastName}
+                >
+                  <input
+                    className={errors.lastName ? inputError : inputNormal}
+                    placeholder={lang === "pt" ? "Ex: Silva" : lang === "en" ? "e.g. Silva" : "Ej: García"}
+                    value={lastName}
+                    onChange={e => setLastName(e.target.value)}
+                    maxLength={60}
+                  />
+                </Field>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <Field label={t.birthDate} required error={errors.birthDate}>
+                  <input className={errors.birthDate ? inputError : inputNormal} placeholder="DD/MM/AAAA"
+                    value={birthDate} onChange={e => setBirthDate(maskDate(e.target.value))} maxLength={10} />
+                </Field>
+                <Field label={t.gender}>
+                  <select className={selectBase} value={gender} onChange={e => setGender(e.target.value)}>
+                    <option value="">—</option>
+                    <option value="Masculino">{t.genderMale}</option>
+                    <option value="Feminino">{t.genderFemale}</option>
+                    <option value="Outro">{t.genderOther}</option>
+                    <option value="Prefiro não informar">{t.genderPreferNotToSay}</option>
+                  </select>
+                </Field>
+              </div>
             </div>
 
-            {/* CPF / RG / Passaporte */}
-            {isBrazilian && (
-              <>
-                <Field label="CPF" required error={errors.cpf}>
-                  <input className={errors.cpf ? inputError : inputNormal} placeholder="000.000.000-00"
-                    value={cpf} onChange={e => setCpf(maskCPF(e.target.value))} maxLength={14} />
+            {/* ── Grupo 2: Documento ── */}
+            <div className={`space-y-4 ${groupDivider}`}>
+              <p className={groupTitle}>
+                {lang === "pt" ? "Documento" : lang === "en" ? "ID document" : "Documento"}
+              </p>
+              <Field label={lang === "pt" ? "Origem" : lang === "en" ? "Origin" : "Origen"}>
+                <select className={selectBase} value={docOrigin} onChange={e => { setDocOrigin(e.target.value); }}>
+                  {COUNTRIES.map(c => {
+                    const v = countryOptionValue(c);
+                    return <option key={v} value={v}>{c.flag} {c.name} (+{c.ddi})</option>;
+                  })}
+                  <option value="Outro">🌍 {lang === "pt" ? "Outro país" : lang === "en" ? "Other country" : "Otro país"}</option>
+                </select>
+              </Field>
+              {isBrazilian && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <Field label="CPF" required error={errors.cpf}>
+                    <input className={errors.cpf ? inputError : inputNormal} placeholder="000.000.000-00"
+                      value={cpf} onChange={e => setCpf(maskCPF(e.target.value))} maxLength={14} />
+                  </Field>
+                  <Field label={lang === "en" ? "RG (optional)" : "RG (opcional)"} error={errors.rg}>
+                    <input className={errors.rg ? inputError : inputNormal} placeholder="00.000.000-0"
+                      value={rg} onChange={e => setRg(maskRG(e.target.value))} maxLength={12} />
+                  </Field>
+                </div>
+              )}
+              {!isBrazilian && (
+                <Field
+                  label={lang === "pt" ? "Passaporte" : lang === "en" ? "Passport" : "Pasaporte"}
+                  required
+                  error={errors.passport}
+                >
+                  <input
+                    className={errors.passport ? inputError : inputNormal}
+                    placeholder={lang === "pt" ? "Ex: AB123456" : lang === "en" ? "e.g. AB123456" : "Ej: AB123456"}
+                    value={passport}
+                    onChange={e => setPassport(e.target.value.toUpperCase())}
+                    maxLength={20}
+                  />
                 </Field>
-                <Field label="RG" required error={errors.rg}>
-                  <input className={errors.rg ? inputError : inputNormal} placeholder="00.000.000-0"
-                    value={rg} onChange={e => setRg(maskRG(e.target.value))} maxLength={12} />
-                </Field>
-              </>
-            )}
-            {!isBrazilian && (
-              <Field
-                label={lang === "pt" ? "Passaporte" : lang === "en" ? "Passport" : "Pasaporte"}
-                required
-                error={errors.passport}
-              >
-                <input
-                  className={errors.passport ? inputError : inputNormal}
-                  placeholder={lang === "pt" ? "Ex: AB123456" : lang === "en" ? "e.g. AB123456" : "Ej: AB123456"}
-                  value={passport}
-                  onChange={e => setPassport(e.target.value.toUpperCase())}
-                  maxLength={20}
-                />
-              </Field>
-            )}
-
-            {/* Data de nascimento */}
-            <Field label={t.birthDate} required error={errors.birthDate}>
-              <input className={errors.birthDate ? inputError : inputNormal} placeholder="DD/MM/AAAA"
-                value={birthDate} onChange={e => setBirthDate(maskDate(e.target.value))} maxLength={10} />
-            </Field>
-
-            {/* Gênero */}
-            <Field label={t.gender}>
-              <select className={selectBase} value={gender} onChange={e => setGender(e.target.value)}>
-                <option value="">—</option>
-                <option value="Masculino">{t.genderMale}</option>
-                <option value="Feminino">{t.genderFemale}</option>
-                <option value="Outro">{t.genderOther}</option>
-                <option value="Prefiro não informar">{t.genderPreferNotToSay}</option>
-              </select>
-            </Field>
-
-            {/* Altura / Peso */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <Field label={t.height} required error={errors.height} hint={t.heightHint}>
-                <input
-                  className={errors.height ? inputError : inputNormal}
-                  placeholder={t.heightPlaceholder}
-                  value={height}
-                  onChange={e => setHeight(maskHeight(e.target.value))}
-                />
-              </Field>
-              <Field
-                label={lang === "pt" ? "Peso (kg)" : lang === "en" ? "Weight (kg)" : "Peso (kg)"}
-                required
-                error={errors.weight}
-              >
-                <input
-                  className={errors.weight ? inputError : inputNormal}
-                  type="number" min="20" max="300" step="0.1"
-                  placeholder={lang === "pt" ? "Ex: 75.5" : "e.g. 75.5"}
-                  value={weight}
-                  onChange={e => setWeight(e.target.value)}
-                />
-              </Field>
+              )}
             </div>
 
-            {/* Frequência de pedal */}
-            <Field label={t.pedalFrequency}>
-              <select className={selectBase} value={pedalFreq} onChange={e => setPedalFreq(e.target.value)}>
-                <option value="">—</option>
-                <option value="Raramente">{t.pedalFreqRarely}</option>
-                <option value="1x por semana">{lang === "pt" ? "1x por semana" : lang === "en" ? "1x per week" : "1x por semana"}</option>
-                <option value="2-3x por semana">{lang === "pt" ? "2-3x por semana" : lang === "en" ? "2-3x per week" : "2-3x por semana"}</option>
-                <option value="4-5x por semana">{lang === "pt" ? "4-5x por semana" : lang === "en" ? "4-5x per week" : "4-5x por semana"}</option>
-                <option value="Diariamente">{t.pedalFreqDaily}</option>
-              </select>
-            </Field>
-
-            {/* Como nos encontrou */}
-            <Field label={t.howFoundUs}>
-              <select className={selectBase} value={origin} onChange={e => setOrigin(e.target.value)}>
-                <option value="">—</option>
-                <option value="Pela internet">{t.howFoundInternet}</option>
-                <option value="Instagram">{t.howFoundInstagram}</option>
-                <option value="Indicação de amigo">{t.howFoundFriend}</option>
-                <option value="Shopify">{t.howFoundShopify}</option>
-                <option value="Outro">{t.howFoundOther}</option>
-              </select>
-            </Field>
+            {/* ── Grupo 3: Pra escolhermos a bike ── */}
+            <div className={`space-y-4 ${groupDivider}`}>
+              <p className={groupTitle}>
+                {lang === "pt"
+                  ? "Para escolhermos sua bike ideal"
+                  : lang === "en" ? "So we can pick your ideal bike" : "Para elegir tu bici ideal"}
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <Field label={t.height} required error={errors.height}>
+                  <input
+                    className={errors.height ? inputError : inputNormal}
+                    placeholder={t.heightPlaceholder}
+                    value={height}
+                    onChange={e => setHeight(maskHeight(e.target.value))}
+                  />
+                </Field>
+                <Field
+                  label={lang === "pt" ? "Peso (kg)" : lang === "en" ? "Weight (kg)" : "Peso (kg)"}
+                  required
+                  error={errors.weight}
+                >
+                  <input
+                    className={errors.weight ? inputError : inputNormal}
+                    type="number" min="20" max="300" step="0.1"
+                    placeholder={lang === "pt" ? "Ex: 75.5" : "e.g. 75.5"}
+                    value={weight}
+                    onChange={e => setWeight(e.target.value)}
+                  />
+                </Field>
+              </div>
+              <Field label={t.pedalFrequency}>
+                <select className={selectBase} value={pedalFreq} onChange={e => setPedalFreq(e.target.value)}>
+                  <option value="">—</option>
+                  <option value="Raramente">{t.pedalFreqRarely}</option>
+                  <option value="1x por semana">{lang === "pt" ? "1x por semana" : lang === "en" ? "1x per week" : "1x por semana"}</option>
+                  <option value="2-3x por semana">{lang === "pt" ? "2-3x por semana" : lang === "en" ? "2-3x per week" : "2-3x por semana"}</option>
+                  <option value="4-5x por semana">{lang === "pt" ? "4-5x por semana" : lang === "en" ? "4-5x per week" : "4-5x por semana"}</option>
+                  <option value="Diariamente">{t.pedalFreqDaily}</option>
+                </select>
+              </Field>
+            </div>
           </div>
         )}
 
@@ -692,6 +695,19 @@ export default function PublicReservation() {
                   value={accommodation} onChange={e => setAccommodation(e.target.value)} />
               </Field>
             </div>
+
+            {/* Como nos encontrou — movido da Identificação (é marketing, casa
+                com Instagram e alivia o passo 1) */}
+            <Field label={t.howFoundUs}>
+              <select className={selectBase} value={origin} onChange={e => setOrigin(e.target.value)}>
+                <option value="">—</option>
+                <option value="Pela internet">{t.howFoundInternet}</option>
+                <option value="Instagram">{t.howFoundInstagram}</option>
+                <option value="Indicação de amigo">{t.howFoundFriend}</option>
+                <option value="Shopify">{t.howFoundShopify}</option>
+                <option value="Outro">{t.howFoundOther}</option>
+              </select>
+            </Field>
           </div>
         )}
 
@@ -760,19 +776,32 @@ export default function PublicReservation() {
 
 
 
-              {/* Título da seção de documento */}
+              {/* Título da seção de documento — copy da Cassiana (2026-07-17) */}
               <div>
                 <p className={`text-xs font-semibold mb-2 ${textSecondary}`}>
                   {lang === "pt"
-                    ? `Documento de identificação`
-                    : lang === "en" ? "Identification document" : "Documento de identificación"}
+                    ? "Documento de identificação oficial com foto"
+                    : lang === "en" ? "Official photo ID document" : "Documento de identificación oficial con foto"}
                 </p>
+                <p className={`text-xs font-medium ${textSecondary} mb-1`}>
+                  {lang === "pt" ? "Documentos válidos:" : lang === "en" ? "Valid documents:" : "Documentos válidos:"}
+                </p>
+                <ul className={`text-xs ${textSecondary} mb-3 leading-relaxed list-disc pl-4 space-y-0.5`}>
+                  {(lang === "pt"
+                    ? ["CNH", "RG", "CIN", "Passaporte"]
+                    : lang === "en"
+                    ? ["Driver's license (CNH)", "ID card (RG)", "National ID (CIN)", "Passport"]
+                    : ["Licencia de conducir (CNH)", "Documento de identidad (RG)", "Cédula nacional (CIN)", "Pasaporte"]
+                  ).map((d) => (
+                    <li key={d}>{d}</li>
+                  ))}
+                </ul>
                 <p className={`text-xs ${textSecondary} mb-4 leading-relaxed`}>
                   {lang === "pt"
-                    ? `Envie o PDF da sua ${isBrazilian ? "CNH digital (gov.br) ou RG" : "passaporte"} — frente, verso e QR num arquivo só — ou uma foto do documento.`
+                    ? "Envie o PDF (frente, verso e QR num arquivo só) ou uma foto do documento."
                     : lang === "en"
-                    ? `Send the PDF of your ${isBrazilian ? "digital driver's license (gov.br) or ID card" : "passport"} — front, back and QR in one file — or a photo of the document.`
-                    : `Envía el PDF de tu ${isBrazilian ? "licencia digital (gov.br) o documento de identidad" : "pasaporte"} — frente, dorso y QR en un solo archivo — o una foto del documento.`}
+                    ? "Send a PDF (front, back and QR in one file) or a photo of the document."
+                    : "Envía el PDF (frente, dorso y QR en un solo archivo) o una foto del documento."}
                 </p>
               </div>
 
@@ -985,10 +1014,10 @@ export default function PublicReservation() {
                 <Info className="w-4 h-4 text-muted-foreground mt-0.5 shrink-0" />
                 <span className={`text-xs leading-relaxed ${textSecondary}`}>
                   {lang === "pt"
-                    ? "Estrangeiro ou sem CNH digital? Envie uma foto do documento (passaporte ou RG)."
+                    ? "Estrangeiro ou sem CNH digital? Envie uma foto do documento (RG, CIN ou passaporte)."
                     : lang === "en"
-                    ? "Foreigner or no digital license? Send a photo of your document (passport or ID)."
-                    : "¿Extranjero o sin licencia digital? Envía una foto del documento (pasaporte o DNI)."}
+                    ? "Foreigner or no digital license? Send a photo of your document (ID card, national ID or passport)."
+                    : "¿Extranjero o sin licencia digital? Envía una foto del documento (RG, CIN o pasaporte)."}
                 </span>
               </div>
             </div>
