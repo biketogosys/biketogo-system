@@ -2,6 +2,7 @@ import {
   SidebarGroup,
   SidebarGroupContent,
   SidebarMenu,
+  SidebarMenuBadge,
   SidebarMenuButton,
   SidebarMenuItem,
 } from "@/components/ui/sidebar";
@@ -14,6 +15,7 @@ import {
   UserCog,
 } from "lucide-react";
 import { Link, useLocation } from "wouter";
+import { trpc } from "@/lib/trpc";
 
 const navItems = [
   { icon: LayoutDashboard, label: "Dashboard", path: "/" },
@@ -29,6 +31,13 @@ interface NavMainProps {
 
 export function NavMain({ onNewContract }: NavMainProps) {
   const [location] = useLocation();
+
+  // Leads aguardando validação — badge no item Clientes (atualiza a cada 60s
+  // e no refoco da janela; some quando zera)
+  const { data: clientStats } = trpc.clients.stats.useQuery(undefined, {
+    refetchInterval: 60_000,
+  });
+  const leads = clientStats?.leads ?? 0;
 
   return (
     <SidebarGroup>
@@ -62,6 +71,11 @@ export function NavMain({ onNewContract }: NavMainProps) {
                     <span>{item.label}</span>
                   </Link>
                 </SidebarMenuButton>
+                {item.path === "/clientes" && leads > 0 && (
+                  <SidebarMenuBadge className="bg-amber-500/20 text-amber-600 dark:text-amber-400">
+                    {leads}
+                  </SidebarMenuBadge>
+                )}
               </SidebarMenuItem>
             );
           })}

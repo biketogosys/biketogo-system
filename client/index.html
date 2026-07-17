@@ -8,6 +8,16 @@
       name="viewport"
       content="width=device-width, initial-scale=1.0, maximum-scale=1" />
     <title>Bike To Go — Sistema de Gestão</title>
+
+    <!-- PWA: instalável na home screen (sem service worker de propósito —
+         cache offline em app admin envelhece dado; ver HANDOFF Q3) -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#fefdfd" />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0b0a08" />
+    <link rel="icon" type="image/png" sizes="64x64" href="/icons/favicon-64.png" />
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="BikeTogo" />
   </head>
 
   <body>
