@@ -1,17 +1,21 @@
 import { useState, useMemo } from "react";
 import { trpc } from "@/lib/trpc";
 import { Link } from "wouter";
+import { toast } from "sonner";
 import {
   Users, Bike, FileText, DollarSign,
   AlertCircle, ArrowRight, Wrench,
   TrendingDown, Minus, ChevronDown,
-  CalendarCheck, CalendarClock,
+  CalendarCheck, CalendarClock, MessageCircle, Check,
 } from "lucide-react";
 import {
   PieChart, Pie, Cell, Tooltip, ResponsiveContainer,
 } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Button } from "@/components/ui/button";
+import { useConfirm } from "@/components/ConfirmDialog";
+import { buildWhatsappUrl } from "@/lib/whatsapp";
 import { SectionCards } from "@/components/dashboard/SectionCards";
 import { RevenueChart } from "@/components/dashboard/RevenueChart";
 
@@ -60,6 +64,19 @@ function getPeriodDates(key: PeriodKey): { startDate: string; endDate: string } 
 
 // Data "YYYY-MM-DD" → "dd/mm" por fatiamento (Date() deslocaria o dia no fuso)
 const fmtShortDate = (d: string | null) => (d ? `${d.slice(8, 10)}/${d.slice(5, 7)}` : "—");
+
+// Item do painel de devoluções → mensagem de WhatsApp pronta (lembrete/cobrança)
+function buildReturnMessage(item: {
+  clientName: string; bikeModel: string; endDate: string | null; daysLate: number;
+}): string {
+  const nome = item.clientName.split(" ")[0] || item.clientName;
+  const data = fmtShortDate(item.endDate);
+  const cabecalho = `Oi ${nome}! Aqui é da Bike To Go Floripa 🚲`;
+  if (item.daysLate > 0) {
+    return `${cabecalho}\n\nA devolução da sua ${item.bikeModel} estava prevista para ${data} e está ${item.daysLate} dia(s) em atraso. Consegue combinar com a gente o horário pra devolver? Qualquer dúvida, é só chamar por aqui!`;
+  }
+  return `${cabecalho}\n\nPassando pra lembrar que a devolução da sua ${item.bikeModel} está prevista para hoje (${data}). Consegue combinar com a gente o horário? Obrigado!`;
+}
 
 // Paleta âmbar para o gráfico de pizza (usa tokens CSS)
 const PIE_COLORS = [
@@ -137,6 +154,36 @@ export default function Dashboard() {
 
   // Atrasadas primeiro (já vêm ordenadas por endDate asc), depois as de hoje
   const returnItems = [...(returnsData?.overdue ?? []), ...(returnsData?.dueToday ?? [])];
+
+  // ─── Ações rápidas do painel de devoluções ───────────────────────────────
+  const utils = trpc.useUtils();
+  const confirmDialog = useConfirm();
+  const markReturned = trpc.dashboard.markReturned.useMutation({
+    onSuccess: () => {
+      toast.success("Devolução registrada.");
+      utils.dashboard.returns.invalidate();
+      utils.dashboard.summary.invalidate();
+    },
+    onError: (e) => toast.error(e.message || "Não foi possível registrar a devolução."),
+  });
+
+  async function handleMarkReturned(item: { id: number; clientName: string; bikeModel: string }) {
+    const ok = await confirmDialog({
+      title: "Confirmar devolução?",
+      description: `Marcar a ${item.bikeModel} de ${item.clientName} como devolvida (em bom estado). A unidade volta a ficar disponível. Para registrar dano, use a tela do contrato.`,
+      confirmText: "Marcar devolvida",
+    });
+    if (ok) markReturned.mutate({ rentalId: item.id });
+  }
+
+  function handleWhatsapp(item: typeof returnItems[number]) {
+    const url = buildWhatsappUrl(item.clientPhone, buildReturnMessage(item));
+    if (!url) {
+      toast.error("Cliente sem telefone válido cadastrado.");
+      return;
+    }
+    window.open(url, "_blank", "noopener,noreferrer");
+  }
 
   return (
     <div className="flex flex-1 flex-col">
@@ -236,11 +283,29 @@ export default function Dashboard() {
                             {item.bikeModel}
                             {item.tamanho ? ` · Tam. ${item.tamanho}` : ""}
                             {(item.quantity ?? 1) > 1 ? ` · ${item.quantity}×` : ""}
+                            {" · "}Prevista: {fmtShortDate(item.endDate)}
                           </p>
                         </div>
-                        <span className="text-xs text-muted-foreground tabular-nums shrink-0">
-                          Prevista: {fmtShortDate(item.endDate)}
-                        </span>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-8 gap-1.5"
+                            onClick={() => handleWhatsapp(item)}
+                          >
+                            <MessageCircle className="w-3.5 h-3.5" />
+                            <span className="hidden sm:inline">Lembrar</span>
+                          </Button>
+                          <Button
+                            size="sm"
+                            className="h-8 gap-1.5"
+                            disabled={markReturned.isPending}
+                            onClick={() => handleMarkReturned(item)}
+                          >
+                            <Check className="w-3.5 h-3.5" />
+                            <span className="hidden sm:inline">Devolvida</span>
+                          </Button>
+                        </div>
                       </div>
                     ))}
                   </div>

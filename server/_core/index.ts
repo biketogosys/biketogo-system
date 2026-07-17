@@ -12,7 +12,7 @@ import { serveStatic, setupVite } from "./vite";
 import { createClient, updateRental, getDb, getSetting, createAuditLog, getBikeById } from "../db";
 import { clients as clientsTable, rentals as rentalsTable } from "../../drizzle/schema";
 import { isNotNull, lt, and as andOp } from "drizzle-orm";
-import { sendNewLeadEmail } from "../email";
+import { sendNewLeadEmail, sendMorningDigest } from "../email";
 import { markOverdueRentals } from "../overdue";
 import {
   registerSecurityMiddlewares,
@@ -296,3 +296,22 @@ setTimeout(() => {
   runOverdueSweep();
   setInterval(runOverdueSweep, 60 * 60 * 1000);
 }, 15_000);
+
+// ─── Digest matinal (08:00 America/Sao_Paulo) ──────────────────────────────
+// SP é UTC-3 fixo (sem DST desde 2019), então 08:00 SP = 11:00 UTC. Agenda o
+// próximo 11:00 UTC e se reagenda após cada disparo (não usa setInterval de
+// 24h pra não acumular deriva). A guarda diária vive no sendMorningDigest.
+function msUntilNextDigest(now: Date = new Date()): number {
+  const next = new Date(now);
+  next.setUTCHours(11, 0, 0, 0);
+  if (next.getTime() <= now.getTime()) next.setUTCDate(next.getUTCDate() + 1);
+  return next.getTime() - now.getTime();
+}
+function scheduleMorningDigest() {
+  const delay = msUntilNextDigest();
+  console.log(`[Digest] Próximo envio em ~${Math.round(delay / 3.6e6)}h.`);
+  setTimeout(() => {
+    sendMorningDigest().finally(scheduleMorningDigest);
+  }, delay);
+}
+scheduleMorningDigest();

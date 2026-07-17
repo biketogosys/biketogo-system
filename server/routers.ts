@@ -4,7 +4,7 @@ import { z } from "zod";
 import { sanitize, sanitizeDate, sanitizeDateString, sanitizeNumeric, sanitizePhone } from "./_core/utils";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
-import { todaySaoPaulo } from "./overdue";
+import { getReturnsDue } from "./overdue";
 import {
   // Admin Users
   getAdminUserByEmail,
@@ -2117,46 +2117,42 @@ const dashboardRouter = router({
     }),
 
   // Painel de devoluções: aluguéis em atraso + os que vencem hoje (fuso SP).
-  // Independe do job de overdue — o corte é por endDate, então a lista fica
-  // correta mesmo se a varredura ainda não rodou.
+  // Lógica em getReturnsDue (server/overdue.ts) — fonte única, compartilhada
+  // com o digest matinal.
   returns: adminAuthProcedure.query(async () => {
     const db = await getDb();
     if (!db) return { overdue: [], dueToday: [] };
-    const { rentals: r, clients: c, bikes: b, bikeSizes: bsz } = await import("../drizzle/schema");
-    const { and: andOp, eq: eqOp, lte: lteOp, isNull: isNullOp, inArray: inArrayOp, asc: ascOp } = await import("drizzle-orm");
-    const today = todaySaoPaulo();
-    const rows = await db
-      .select({
-        id: r.id,
-        clientId: r.clientId,
-        clientName: c.name,
-        bikeModel: b.model,
-        tamanho: bsz.tamanho,
-        quantity: r.quantity,
-        endDate: r.endDate,
-        contractId: r.contractId,
-      })
-      .from(r)
-      .innerJoin(c, eqOp(r.clientId, c.id))
-      .innerJoin(b, eqOp(r.bikeId, b.id))
-      .leftJoin(bsz, eqOp(r.bikeSizeId, bsz.id))
-      .where(andOp(
-        inArrayOp(r.status, ["active", "overdue"]),
-        isNullOp(r.deletedAt),
-        isNullOp(r.returnedAt),
-        lteOp(r.endDate, today),
-      ))
-      .orderBy(ascOp(r.endDate));
-    const dayMs = 24 * 60 * 60 * 1000;
-    return {
-      overdue: rows
-        .filter((x) => x.endDate !== null && x.endDate < today)
-        .map((x) => ({ ...x, daysLate: Math.round((Date.parse(today) - Date.parse(x.endDate!)) / dayMs) })),
-      dueToday: rows
-        .filter((x) => x.endDate === today)
-        .map((x) => ({ ...x, daysLate: 0 })),
-    };
+    return getReturnsDue(db);
   }),
+
+  // Ação rápida do painel de devoluções: marcar 1 aluguel como devolvido.
+  // Devolução "sem drama" (condição ok) — bike danificada continua indo pelo
+  // fluxo detalhado de encerramento do contrato. Espelha o contract-close:
+  // returned + libera unidade + recalcula o status do contrato pai.
+  markReturned: adminAuthProcedure
+    .input(z.object({ rentalId: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      const rental = await getRentalById(input.rentalId);
+      if (!rental) throw new TRPCError({ code: "NOT_FOUND", message: "Aluguel não encontrado." });
+      if ((rental as any).returnedAt || (rental as any).status === "returned") {
+        throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Este aluguel já foi devolvido." });
+      }
+      await updateRental(input.rentalId, {
+        status: "returned",
+        returnedAt: new Date(),
+        returnCondition: "ok",
+      } as any);
+      const db = await getDb();
+      if (db) await releaseBikeUnits(db, input.rentalId);
+      if ((rental as any).contractId) await recalcContractStatus((rental as any).contractId);
+      await createAuditLog({
+        adminId: (ctx as any).adminUser?.id ?? null,
+        acao: "devolucao_rapida",
+        tabela: "rentals",
+        registroId: input.rentalId,
+      });
+      return { success: true };
+    }),
 });
 
 // ─── Audit Logs router ────────────────────────────────────────────────────────

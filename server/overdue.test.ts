@@ -8,7 +8,7 @@
 import { describe, it, expect, beforeAll } from "vitest";
 import { eq } from "drizzle-orm";
 import { createTestDb, seedBasics, makeRental } from "./test-helpers/pglite-db";
-import { markOverdueRentals, todaySaoPaulo } from "./overdue";
+import { getReturnsDue, markOverdueRentals, todaySaoPaulo } from "./overdue";
 import * as schema from "../drizzle/schema";
 
 // SP é UTC-3 o ano inteiro (DST abolido em 2019).
@@ -93,5 +93,36 @@ describe("markOverdueRentals", () => {
   it("idempotente — segunda passada não marca nada de novo", async () => {
     const again = await markOverdueRentals(db, NOW);
     expect(again).toEqual([]);
+  });
+});
+
+describe("getReturnsDue — devoluções atrasadas + de hoje", () => {
+  let db: any;
+  let clientId: number;
+  let bikeId: number;
+  let bikeSizeId: number;
+  const NOW = new Date("2026-07-20T15:00:00Z"); // hoje-SP = 2026-07-20
+
+  beforeAll(async () => {
+    db = await createTestDb();
+    const seed = await seedBasics(db);
+    clientId = seed.clientId;
+    bikeId = seed.bikeId;
+    bikeSizeId = seed.bikeSizeId;
+  });
+
+  it("separa overdue (endDate < hoje) de dueToday (endDate == hoje) e ignora futuro/devolvido", async () => {
+    const lateId = await makeRental(db, { clientId, bikeId, bikeSizeId, quantity: 1, startDate: "2026-07-10", endDate: "2026-07-18", status: "active" });
+    const todayId = await makeRental(db, { clientId, bikeId, bikeSizeId, quantity: 1, startDate: "2026-07-15", endDate: "2026-07-20", status: "active" });
+    await makeRental(db, { clientId, bikeId, bikeSizeId, quantity: 1, startDate: "2026-07-19", endDate: "2026-07-30", status: "active" }); // futuro
+    await makeRental(db, { clientId, bikeId, bikeSizeId, quantity: 1, startDate: "2026-07-01", endDate: "2026-07-05", status: "returned" }); // devolvido
+
+    const { overdue, dueToday } = await getReturnsDue(db, NOW);
+    expect(overdue.map((r) => r.id)).toEqual([lateId]);
+    expect(dueToday.map((r) => r.id)).toEqual([todayId]);
+    expect(overdue[0].daysLate).toBe(2);
+    // joins populados (nome do cliente + modelo da bike do seed)
+    expect(overdue[0].clientName).toBe("Cliente Teste");
+    expect(overdue[0].bikeModel).toBe("Modelo Teste");
   });
 });
