@@ -5,6 +5,7 @@ import { sanitize, sanitizeDate, sanitizeDateString, sanitizeNumeric, sanitizePh
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { getReturnsDue } from "./overdue";
+import { getAgenda } from "./agenda";
 import {
   // Admin Users
   getAdminUserByEmail,
@@ -2124,6 +2125,19 @@ const dashboardRouter = router({
     if (!db) return { overdue: [], dueToday: [] };
     return getReturnsDue(db);
   }),
+
+  // Agenda de Operações (F1): entregas + devoluções do intervalo [from, to].
+  // Lógica em server/agenda.ts; atrasadas vêm à parte (UI fixa no hoje).
+  agenda: adminAuthProcedure
+    .input(z.object({
+      from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+      to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return { deliveries: [], returns: [], overdue: [] };
+      return getAgenda(db, input.from, input.to);
+    }),
 
   // Ação rápida do painel de devoluções: marcar 1 aluguel como devolvido.
   // Devolução "sem drama" (condição ok) — bike danificada continua indo pelo

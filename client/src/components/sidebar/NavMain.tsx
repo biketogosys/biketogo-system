@@ -7,6 +7,7 @@ import {
   SidebarMenuItem,
 } from "@/components/ui/sidebar";
 import {
+  CalendarDays,
   CirclePlus,
   LayoutDashboard,
   Users,
@@ -19,6 +20,7 @@ import { trpc } from "@/lib/trpc";
 
 const navItems = [
   { icon: LayoutDashboard, label: "Dashboard", path: "/" },
+  { icon: CalendarDays, label: "Agenda", path: "/agenda" },
   { icon: Users, label: "Clientes", path: "/clientes" },
   { icon: Bike, label: "Bicicletas", path: "/bicicletas" },
   { icon: Package, label: "Acessórios", path: "/acessorios" },

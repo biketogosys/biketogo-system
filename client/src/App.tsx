@@ -12,6 +12,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 // /reservar baixa só o chunk público — não o bundle inteiro do admin.
 const Login = lazy(() => import("./pages/Login"));
 const Dashboard = lazy(() => import("./pages/Dashboard"));
+const Agenda = lazy(() => import("./pages/Agenda"));
 const Clients = lazy(() => import("./pages/Clients"));
 const ClientProfile = lazy(() => import("./pages/ClientProfile"));
 const Bikes = lazy(() => import("./pages/Bikes"));
@@ -74,6 +75,7 @@ function Router() {
     <Suspense fallback={<RouteFallback />}>
       <Switch>
         <Route path="/" component={() => <ProtectedRoute component={Dashboard} />} />
+        <Route path="/agenda" component={() => <ProtectedRoute component={Agenda} />} />
         <Route path="/clientes" component={() => <ProtectedRoute component={Clients} />} />
         <Route path="/clientes/:id" component={() => <ProtectedRoute component={ClientProfile} />} />
         <Route path="/bicicletas" component={() => <ProtectedRoute component={Bikes} />} />

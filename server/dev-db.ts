@@ -252,6 +252,19 @@ async function seed(db: DevDb) {
     bikeUnitId: unitRows[5].id, // MTB-M-001, marcada "alugado"
   });
 
+  // Entrega FUTURA agendada (alimenta a Agenda de Operações — F1)
+  const [futureContract] = await db
+    .insert(schema.contracts)
+    .values({ clientId: carla.id, status: "ativo", valorTotal: "225.00" })
+    .returning({ id: schema.contracts.id });
+  await db.insert(schema.rentals).values({
+    clientId: carla.id, bikeId: urbana.id, bikeSizeId: urbanaM.id, quantity: 1,
+    startDate: isoDay(2), endDate: isoDay(7),
+    deliveryDate: isoDay(2), deliveryTime: "14:00", deliveryFee: "20.00",
+    dailyRate: "45.00", totalAmount: "225.00",
+    paymentStatus: "pending", status: "active", contractId: futureContract.id,
+  });
+
   // Aluguel devolvido no mês passado (histórico)
   await db.insert(schema.rentals).values({
     clientId: carla.id, bikeId: mtb.id, bikeSizeId: mtbM.id, quantity: 1,
