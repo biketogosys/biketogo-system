@@ -1,9 +1,11 @@
 import { Separator } from "@/components/ui/separator";
 import { SidebarTrigger } from "@/components/ui/sidebar";
+import { GlobalSearch } from "@/components/GlobalSearch";
 import { useLocation } from "wouter";
 
 const menuItems = [
   { label: "Dashboard", path: "/" },
+  { label: "Agenda", path: "/agenda" },
   { label: "Clientes", path: "/clientes" },
   { label: "Bicicletas", path: "/bicicletas" },
   { label: "Acessórios", path: "/acessorios" },
@@ -28,6 +30,7 @@ export function SiteHeader() {
           className="mx-2 data-[orientation=vertical]:h-4"
         />
         <h1 className="text-base font-medium">{title}</h1>
+        <GlobalSearch />
       </div>
     </header>
   );

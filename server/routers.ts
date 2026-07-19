@@ -6,6 +6,7 @@ import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { getReturnsDue } from "./overdue";
 import { getAgenda } from "./agenda";
+import { globalSearch } from "./search";
 import {
   // Admin Users
   getAdminUserByEmail,
@@ -2125,6 +2126,15 @@ const dashboardRouter = router({
     if (!db) return { overdue: [], dueToday: [] };
     return getReturnsDue(db);
   }),
+
+  // Busca global Ctrl+K (Q1): clientes, bikes e contratos, 5 por grupo.
+  search: adminAuthProcedure
+    .input(z.object({ q: z.string().max(100) }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return { clients: [], bikes: [], contracts: [] };
+      return globalSearch(db, input.q);
+    }),
 
   // Agenda de Operações (F1): entregas + devoluções do intervalo [from, to].
   // Lógica em server/agenda.ts; atrasadas vêm à parte (UI fixa no hoje).
