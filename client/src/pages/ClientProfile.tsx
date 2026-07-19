@@ -114,11 +114,25 @@ export default function ClientProfile() {
     onError: (e) => toast.error(friendlyError(e)),
   });
 
+  // M1 — optimistic: os Switches (Bloqueado / Recebe e-mail) mexem na hora.
+  // Antes esperavam o round-trip e pareciam travados; rollback se o servidor
+  // recusar.
   const updateMutation = trpc.clients.update.useMutation({
-    onSuccess: () => {
+    onMutate: async (vars) => {
+      await utils.clients.byId.cancel({ id: clientId });
+      const prev = utils.clients.byId.getData({ id: clientId });
+      utils.clients.byId.setData({ id: clientId }, (old) =>
+        old ? { ...old, ...vars } : old,
+      );
+      return { prev };
+    },
+    onError: (e, _vars, ctx) => {
+      if (ctx?.prev) utils.clients.byId.setData({ id: clientId }, ctx.prev);
+      toast.error(friendlyError(e));
+    },
+    onSettled: () => {
       utils.clients.byId.invalidate({ id: clientId });
     },
-    onError: (e) => toast.error(friendlyError(e)),
   });
 
   const deleteDocMutation = trpc.clients.deleteDocument.useMutation({

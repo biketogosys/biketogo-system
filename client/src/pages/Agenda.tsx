@@ -14,6 +14,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { useConfirm } from "@/components/ConfirmDialog";
+import { useMarkReturned } from "@/hooks/useMarkReturned";
 import { buildWhatsappUrl } from "@/lib/whatsapp";
 
 // ─── Datas (locais — o navegador da operação está em SP) ─────────────────────
@@ -70,17 +71,8 @@ export default function Agenda() {
 
   const { data, isLoading, error } = trpc.dashboard.agenda.useQuery({ from, to });
 
-  const utils = trpc.useUtils();
   const confirmDialog = useConfirm();
-  const markReturned = trpc.dashboard.markReturned.useMutation({
-    onSuccess: () => {
-      toast.success("Devolução registrada.");
-      utils.dashboard.agenda.invalidate();
-      utils.dashboard.returns.invalidate();
-      utils.dashboard.summary.invalidate();
-    },
-    onError: (e) => toast.error(e.message || "Não foi possível registrar a devolução."),
-  });
+  const markReturned = useMarkReturned(); // optimistic (M1)
 
   async function handleReturn(item: Item) {
     const ok = await confirmDialog({
