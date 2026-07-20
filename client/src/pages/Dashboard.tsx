@@ -6,7 +6,7 @@ import {
   Users, Bike, FileText, DollarSign,
   AlertCircle, ArrowRight, Wrench,
   TrendingDown, Minus, ChevronDown,
-  CalendarCheck, CalendarClock, MessageCircle, Check,
+  CalendarCheck, CalendarClock, CalendarPlus, MessageCircle, Check,
 } from "lucide-react";
 import {
   PieChart, Pie, Cell, Tooltip, ResponsiveContainer,
@@ -16,6 +16,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { useConfirm } from "@/components/ConfirmDialog";
 import { useMarkReturned } from "@/hooks/useMarkReturned";
+import { ExtendRentalDialog, type ExtendableRental } from "@/components/ExtendRentalDialog";
 import { buildWhatsappUrl } from "@/lib/whatsapp";
 import { SectionCards } from "@/components/dashboard/SectionCards";
 import { RevenueChart } from "@/components/dashboard/RevenueChart";
@@ -159,6 +160,7 @@ export default function Dashboard() {
   // ─── Ações rápidas do painel de devoluções ───────────────────────────────
   const confirmDialog = useConfirm();
   const markReturned = useMarkReturned(); // optimistic (M1)
+  const [extending, setExtending] = useState<ExtendableRental | null>(null); // F8
 
   async function handleMarkReturned(item: { id: number; clientName: string; bikeModel: string }) {
     const ok = await confirmDialog({
@@ -288,6 +290,16 @@ export default function Dashboard() {
                           >
                             <MessageCircle className="w-3.5 h-3.5" />
                             <span className="hidden sm:inline">Lembrar</span>
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-8 gap-1.5"
+                            title="Renovar (fica mais dias)"
+                            onClick={() => setExtending(item)}
+                          >
+                            <CalendarPlus className="w-3.5 h-3.5" />
+                            <span className="sr-only">Renovar</span>
                           </Button>
                           <Button
                             size="sm"
@@ -562,6 +574,9 @@ export default function Dashboard() {
 
         </div>
       </div>
+
+      {/* F8 — renovação */}
+      <ExtendRentalDialog rental={extending} onOpenChange={(o) => !o && setExtending(null)} />
     </div>
   );
 }

@@ -7,6 +7,7 @@ import jwt from "jsonwebtoken";
 import { getReturnsDue } from "./overdue";
 import { getAgenda } from "./agenda";
 import { globalSearch } from "./search";
+import { extendRental } from "./renewal";
 import {
   // Admin Users
   getAdminUserByEmail,
@@ -978,6 +979,40 @@ const rentalsRouter = router({
       }
       // ok: nao mexe em status (unidade fica livre porque rental vira 'returned' e sai do overlap)
       return { success: true };
+    }),
+
+  // F8 — renovação: estende a devolução mantendo a mesma unidade física.
+  // Lógica em server/renewal.ts (testável isolada).
+  extend: adminAuthProcedure
+    .input(z.object({
+      rentalId: z.number(),
+      newEndDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+      let result;
+      try {
+        result = await extendRental(db, input.rentalId, input.newEndDate);
+      } catch (err: any) {
+        if (err?.message === "NOT_FOUND") {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Aluguel não encontrado." });
+        }
+        throw new TRPCError({ code: "PRECONDITION_FAILED", message: err?.message ?? "Não foi possível renovar." });
+      }
+      await createAuditLog({
+        adminId: (ctx as any).adminUser?.id ?? null,
+        acao: "renovou_aluguel",
+        tabela: "rentals",
+        registroId: input.rentalId,
+        dadosDepois: {
+          novaDevolucao: result.newEndDate,
+          diasAdicionados: result.addedDays,
+          valorExtra: result.extraAmount,
+          novoTotal: result.newTotal,
+        },
+      });
+      return result;
     }),
 
   delete: adminOnlyProcedure

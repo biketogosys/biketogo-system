@@ -21,6 +21,7 @@ export type AgendaItem = {
   bikeModel: string;
   tamanho: string | null;
   quantity: number | null;
+  dailyRate: string | null;
   contractId: number | null;
   status: string;
   daysLate: number;            // só > 0 nas atrasadas
@@ -38,6 +39,7 @@ const baseSelect = {
   bikeModel: bikes.model,
   tamanho: bikeSizes.tamanho,
   quantity: rentals.quantity,
+  dailyRate: rentals.dailyRate,
   contractId: rentals.contractId,
   status: rentals.status,
 };

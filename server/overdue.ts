@@ -49,6 +49,7 @@ export type ReturnDueItem = {
   bikeModel: string;
   tamanho: string | null;
   quantity: number | null;
+  dailyRate: string | null;
   endDate: string | null;
   contractId: number | null;
   daysLate: number;
@@ -68,6 +69,7 @@ export async function getReturnsDue(
       bikeModel: bikes.model,
       tamanho: bikeSizes.tamanho,
       quantity: rentals.quantity,
+      dailyRate: rentals.dailyRate,
       endDate: rentals.endDate,
       contractId: rentals.contractId,
     })

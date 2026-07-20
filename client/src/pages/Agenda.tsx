@@ -7,7 +7,7 @@ import { trpc } from "@/lib/trpc";
 import { Link } from "wouter";
 import { toast } from "sonner";
 import {
-  CalendarClock, CalendarDays, Check, ChevronLeft, ChevronRight,
+  CalendarClock, CalendarDays, CalendarPlus, Check, ChevronLeft, ChevronRight,
   MapPin, MessageCircle, Truck,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -15,6 +15,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { useConfirm } from "@/components/ConfirmDialog";
 import { useMarkReturned } from "@/hooks/useMarkReturned";
+import { ExtendRentalDialog, type ExtendableRental } from "@/components/ExtendRentalDialog";
 import { buildWhatsappUrl } from "@/lib/whatsapp";
 
 // ─── Datas (locais — o navegador da operação está em SP) ─────────────────────
@@ -36,6 +37,7 @@ type Item = {
   clientId: number; clientName: string; clientPhone: string | null;
   accommodation: string | null; neighborhood: string | null; city: string | null;
   bikeModel: string; tamanho: string | null; quantity: number | null;
+  dailyRate: string | null;
   contractId: number | null; status: string; daysLate: number;
 };
 
@@ -73,6 +75,7 @@ export default function Agenda() {
 
   const confirmDialog = useConfirm();
   const markReturned = useMarkReturned(); // optimistic (M1)
+  const [extending, setExtending] = useState<ExtendableRental | null>(null); // F8
 
   async function handleReturn(item: Item) {
     const ok = await confirmDialog({
@@ -154,15 +157,35 @@ export default function Agenda() {
             <span className="hidden sm:inline">{kind === "delivery" ? "Combinar" : "Lembrar"}</span>
           </Button>
           {kind === "return" && (
-            <Button
-              size="sm"
-              className="h-8 gap-1.5"
-              disabled={markReturned.isPending}
-              onClick={() => handleReturn(item)}
-            >
-              <Check className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Devolvida</span>
-            </Button>
+            <>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 gap-1.5"
+                title="Renovar (fica mais dias)"
+                // numa devolução, `day` É o endDate do aluguel
+                onClick={() => setExtending({
+                  id: item.id,
+                  clientName: item.clientName,
+                  bikeModel: item.bikeModel,
+                  endDate: item.day,
+                  quantity: item.quantity,
+                  dailyRate: item.dailyRate,
+                })}
+              >
+                <CalendarPlus className="w-3.5 h-3.5" />
+                <span className="sr-only">Renovar</span>
+              </Button>
+              <Button
+                size="sm"
+                className="h-8 gap-1.5"
+                disabled={markReturned.isPending}
+                onClick={() => handleReturn(item)}
+              >
+                <Check className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Devolvida</span>
+              </Button>
+            </>
           )}
         </div>
       </div>
@@ -246,6 +269,9 @@ export default function Agenda() {
           </div>
         )}
       </div>
+
+      {/* F8 — renovação */}
+      <ExtendRentalDialog rental={extending} onOpenChange={(o) => !o && setExtending(null)} />
     </div>
   );
 }
