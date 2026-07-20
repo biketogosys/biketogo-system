@@ -2,6 +2,7 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { CSSProperties } from "react";
 import { useLocation } from "wouter";
+import { supportsViewTransition } from "@/hooks/useViewTransitionLocation";
 import { DashboardLayoutSkeleton } from "./DashboardLayoutSkeleton";
 import { AppSidebar } from "./AppSidebar";
 import { SiteHeader } from "./SiteHeader";
@@ -14,6 +15,7 @@ export default function DashboardLayout({
 }) {
   const { loading, user } = useAuth();
   const [location] = useLocation();
+  const vtSupported = supportsViewTransition();
 
   if (loading) {
     return <DashboardLayoutSkeleton />;
@@ -58,9 +60,10 @@ export default function DashboardLayout({
       <SidebarInset>
         <SiteHeader />
         <main className="flex-1 p-3 md:p-4 lg:p-6 overflow-x-hidden">
-          {/* Transição de rota: key por location remonta → @starting-style
-              dispara o fade-in a cada navegação (repouso sempre visível). */}
-          <div key={location} className="motion-fade">
+          {/* Transição de rota: com View Transitions (M2) quem anima é o
+              navegador — o `.motion-fade` só entra como fallback, senão a
+              rota animaria duas vezes. */}
+          <div key={location} className={vtSupported ? undefined : "motion-fade"}>
             {children}
           </div>
         </main>

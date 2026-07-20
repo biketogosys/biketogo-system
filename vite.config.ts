@@ -160,6 +160,13 @@ export default defineConfig({
       "@assets": path.resolve(import.meta.dirname, "attached_assets"),
     },
   },
+  // A subpath `wouter/use-browser-location` (usada pelo hook de View
+  // Transitions) precisa ser pré-bundlada JUNTO do wouter/react — senão o
+  // otimizador do Vite gera um segundo grafo e o app quebra com
+  // "Invalid hook call" / React null.
+  optimizeDeps: {
+    include: ["wouter", "wouter/use-browser-location", "react", "react-dom"],
+  },
   envDir: path.resolve(import.meta.dirname),
   root: path.resolve(import.meta.dirname, "client"),
   publicDir: path.resolve(import.meta.dirname, "client", "public"),

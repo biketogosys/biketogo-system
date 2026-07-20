@@ -524,6 +524,41 @@
   transition: opacity var(--dur-base) var(--ease-out);
   @starting-style { opacity: 0; }
 }
+/* ─── View Transitions (M2) ────────────────────────────────────────────────
+   A navegação passa pelo useViewTransitionLocation, que embrulha o
+   navigate() em document.startViewTransition. O navegador interpola o
+   "antes/depois" do DOM inteiro (pseudo-elemento ::view-transition-*).
+   Curto de propósito (200ms): navegação é ação repetida — movimento sutil,
+   nunca protagonista (emil). Só transform/opacity = composição pura.
+   Onde não há suporte, o `.motion-fade` do DashboardLayout assume. */
+@keyframes vt-out { to { opacity: 0; } }
+@keyframes vt-in  { from { opacity: 0; transform: translateY(6px); } }
+
+::view-transition-old(root) {
+  animation: vt-out var(--dur-fast) var(--ease-out) both;
+}
+::view-transition-new(root) {
+  animation: vt-in var(--dur-base) var(--ease-out) both;
+}
+/* A sidebar e o header não devem "piscar" junto com o conteúdo: ficam de
+   fora do snapshot da raiz com nome próprio e sem animação. */
+[data-slot="sidebar-container"],
+[data-slot="sidebar"] > [data-sidebar="sidebar"] {
+  view-transition-name: app-sidebar;
+}
+::view-transition-old(app-sidebar),
+::view-transition-new(app-sidebar) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation: none !important;
+  }
+}
+
 /* Entrada com mola (overshoot sutil) — para elementos-herói/destaque. */
 .motion-enter-spring {
   transition: opacity var(--dur-slow) var(--ease-out),

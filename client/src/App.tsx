@@ -1,7 +1,8 @@
 import { lazy, Suspense } from "react";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { Route, Switch, Redirect } from "wouter";
+import { Route, Router as WouterRouter, Switch, Redirect } from "wouter";
+import { useViewTransitionLocation } from "./hooks/useViewTransitionLocation";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider, useTheme } from "./contexts/ThemeContext";
 import { useAuth } from "./_core/hooks/useAuth";
@@ -101,7 +102,10 @@ function AppInner() {
     <TooltipProvider>
       <ConfirmProvider>
         <Toaster richColors theme={theme as "light" | "dark"} />
-        <Router />
+        {/* hook custom = navegação embrulhada em View Transitions (M2) */}
+        <WouterRouter hook={useViewTransitionLocation}>
+          <Router />
+        </WouterRouter>
       </ConfirmProvider>
     </TooltipProvider>
   );
