@@ -66,6 +66,13 @@ describe("getAgenda", () => {
     expect(late?.daysLate).toBe(2);
   });
 
+  it("pending aparece em deliveries E returns (contrato criado, pagamento não confirmado)", async () => {
+    const pendente = await mk({ startDate: "2026-07-21", endDate: "2026-07-24", status: "pending" });
+    const { deliveries, returns } = await getAgenda(db, FROM, TO, NOW);
+    expect(deliveries.map((x) => x.id)).toContain(pendente);
+    expect(returns.map((x) => x.id)).toContain(pendente);
+  });
+
   it("devolvido/cancelado/deletado não aparecem em lista nenhuma", async () => {
     const devolvido = await mk({ endDate: "2026-07-24", status: "returned", returnedAt: new Date() });
     const cancelado = await mk({ endDate: "2026-07-24", status: "cancelled" });

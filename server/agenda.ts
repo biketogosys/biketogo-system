@@ -80,11 +80,14 @@ export async function getAgenda(
     ))
     .orderBy(asc(deliveryDay), asc(rentals.deliveryTime));
 
+  // "pending" entra aqui porque a entrega já mostra pendentes (contrato criado,
+  // pagamento ainda não confirmado): se a entrega aparece, a devolução do mesmo
+  // aluguel também tem de aparecer — senão a bike some da coluna de devoluções.
   const returns = await joins(
     db.select({ ...baseSelect, day: rentals.endDate }).from(rentals),
   )
     .where(and(
-      inArray(rentals.status, ["active", "overdue"]),
+      inArray(rentals.status, ["pending", "active", "overdue"]),
       isNull(rentals.deletedAt),
       isNull(rentals.returnedAt),
       gte(rentals.endDate, from),
@@ -96,7 +99,7 @@ export async function getAgenda(
     db.select({ ...baseSelect, day: rentals.endDate }).from(rentals),
   )
     .where(and(
-      inArray(rentals.status, ["active", "overdue"]),
+      inArray(rentals.status, ["pending", "active", "overdue"]),
       isNull(rentals.deletedAt),
       isNull(rentals.returnedAt),
       lt(rentals.endDate, today),

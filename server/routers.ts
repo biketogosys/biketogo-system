@@ -3011,6 +3011,10 @@ const contractsRouter = router({
           paymentStatus: "pending",
           status: "pending",
           source: "manual",
+          contractId: contract.id, // BUGFIX: sem isto o rental fica órfão (contractId NULL)
+                                    // e a bike some do detalhe do contrato E do PDF
+                                    // ("Nenhuma bicicleta vinculada"). A procedure `update`
+                                    // já ligava; o createManual esquecia. O `as any` escondia.
           notes: input.notes ?? null,
         } as any);
         rentalIds.push(rentalId);

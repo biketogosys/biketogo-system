@@ -264,9 +264,16 @@ async function fetchLogoBuffer(logoUrl: string | null): Promise<Buffer | null> {
 /** Renderiza termos numerados com número dourado */
 function renderTerms(doc: PDFKit.PDFDocument, text: string): void {
   const paragraphs = text.split(/\n{2,}/).map((p) => p.trim()).filter(Boolean);
+  const contentBottom = doc.page.height - 44; // igual à margin.bottom do documento
   for (let i = 0; i < paragraphs.length; i++) {
     const para = paragraphs[i];
     const clauseMatch = para.match(/^(\d+[.\-)\s]+)([\s\S]*)/);
+    // Mantém o número da cláusula colado à 1ª linha do texto: se não couber ao
+    // menos uma linha antes do rodapé, quebra a página ANTES de fixar o `y`.
+    // Sem isto, o número (desenhado com lineBreak:false) podia ir sozinho pra
+    // página nova e o texto — desenhado no MESMO `y` salvo, agora obsoleto —
+    // pulava pra página seguinte, deixando uma página EM BRANCO no meio.
+    if (doc.y + 16 > contentBottom) doc.addPage();
     const y = doc.y;
     if (clauseMatch) {
       doc.fillColor(GOLD).font("Helvetica-Bold").fontSize(8.5)
