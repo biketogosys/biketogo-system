@@ -172,8 +172,11 @@ async function startServer() {
   // Aplica rate limit em todas as chamadas tRPC de login
   app.use("/api/trpc/auth.login", loginRateLimiter);
 
-  // ─── Rate limiting para reservas (tRPC publicApi.submitReservation) ───────
-  app.use("/api/trpc/publicApi.submitReservation", reservarRateLimiter);
+  // ─── Rate limiting para pré-cadastro do /reservar ─────────────────────────
+  // Procedure foi renomeado submitReservation → submitPreRegistration quando a
+  // reserva online foi vetada (virou só pré-cadastro); o limiter ficou preso ao
+  // nome antigo e não disparava. Corrigido 2026-07-18.
+  app.use("/api/trpc/publicApi.submitPreRegistration", reservarRateLimiter);
 
   // ─── CORS genérico para demais rotas (não-Shopify) ────────────────────────
   app.use((req, res, next) => {

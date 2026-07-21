@@ -446,7 +446,7 @@ export default function Dashboard() {
                         <div className="flex items-center gap-3">
                           <div className="w-24 h-1.5 bg-secondary rounded-full overflow-hidden">
                             <div
-                              className="h-full rounded-full bg-primary transition-[width] duration-500 ease-out"
+                              className="h-full rounded-full bg-primary transition-[width] duration-300 ease-out"
                               style={{
                                 width: bikeStats.total > 0
                                   ? `${(item.value / bikeStats.total) * 100}%`
@@ -493,7 +493,7 @@ export default function Dashboard() {
                         <div className="flex items-center gap-3">
                           <div className="w-24 h-1.5 bg-secondary rounded-full overflow-hidden">
                             <div
-                              className="h-full rounded-full bg-primary transition-[width] duration-500 ease-out"
+                              className="h-full rounded-full bg-primary transition-[width] duration-300 ease-out"
                               style={{
                                 width: clientStats.total > 0
                                   ? `${(item.value / clientStats.total) * 100}%`

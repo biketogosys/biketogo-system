@@ -23,7 +23,7 @@ export const precadastroRateLimiter = rateLimit({
   legacyHeaders: false,
 });
 
-/** POST /reservar (tRPC publicApi.submitReservation) → 10 req/min por IP */
+/** /reservar (tRPC publicApi.submitPreRegistration) → 10 req/min por IP */
 export const reservarRateLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: 10,

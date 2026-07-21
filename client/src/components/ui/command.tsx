@@ -52,7 +52,10 @@ function CommandDialog({
         <DialogDescription>{description}</DialogDescription>
       </DialogHeader>
       <DialogContent
-        className={cn("overflow-hidden p-0", className)}
+        // Palette é keyboard-first (Ctrl+K): entrada mais rápida que um
+        // dialog comum — ação de teclado deve ser quase instantânea (emil).
+        // `!` vence o duration-200 da base do DialogContent.
+        className={cn("overflow-hidden p-0 duration-150!", className)}
         showCloseButton={showCloseButton}
       >
         <Command
