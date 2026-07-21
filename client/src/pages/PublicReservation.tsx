@@ -10,6 +10,7 @@ import {
   Loader2, ChevronRight, ChevronLeft, Check, X, Sun, Moon, Bike,
   HelpCircle, Smartphone, Download, Upload, FileText, Image as ImageIcon, Info,
   IdCard, Phone as PhoneIcon, Home as HomeIcon, ShieldCheck,
+  CheckCircle2, AlertCircle,
 } from "lucide-react";
 import { translations, languages, type Language } from "@/lib/i18n";
 import { maskCPF, maskRG, maskCEP, maskPhone, maskDate, isValidCPF } from "@/hooks/useMask";
@@ -32,17 +33,35 @@ function validateCPF(cpf: string) {
 const STATES = ["AC","AL","AP","AM","BA","CE","DF","ES","GO","MA","MT","MS","MG","PA","PB","PR","PE","PI","RJ","RN","RS","RO","RR","SC","SP","SE","TO"];
 
 // ─── Field component ───────────────────────────────────────────────────────────
-function Field({ label, required, error, hint, children }: {
-  label: string; required?: boolean; error?: string; hint?: string; children: React.ReactNode;
+// Validação on-blur: ao sair do campo, mostra erro (se inválido preenchido) ou
+// um check verde de "tudo certo". `valid`/`onBlurField`/`validLabel` chegam via
+// o helper fieldProps() do componente-pai. Borda vermelha já vem da className do
+// input (inputError); aqui só acrescentamos a verde no estado válido.
+function Field({ label, required, error, hint, valid, onBlurField, validLabel, children }: {
+  label: string; required?: boolean; error?: string; hint?: string;
+  valid?: boolean; onBlurField?: () => void; validLabel?: string;
+  children: React.ReactNode;
 }) {
+  const greenBorder = !error && valid
+    ? "[&_input]:border-emerald-500/60 [&_select]:border-emerald-500/60 [&_textarea]:border-emerald-500/60"
+    : "";
   return (
-    <div className="flex flex-col gap-1.5">
+    <div className={`flex flex-col gap-1.5 ${greenBorder}`} onBlur={onBlurField}>
       <label className="text-xs font-semibold text-muted-foreground">
         {label}{required && <span className="text-destructive ml-0.5">*</span>}
       </label>
       {children}
-      {hint && !error && <span className="text-[11px] text-muted-foreground/80">{hint}</span>}
-      {error && <span className="text-[11px] text-destructive">{error}</span>}
+      {hint && !error && !valid && <span className="text-[11px] text-muted-foreground/80">{hint}</span>}
+      {error && (
+        <span className="text-[11px] text-destructive flex items-center gap-1">
+          <AlertCircle className="w-3 h-3 shrink-0" />{error}
+        </span>
+      )}
+      {!error && valid && (
+        <span className="text-[11px] text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+          <CheckCircle2 className="w-3 h-3 shrink-0" />{validLabel ?? "OK"}
+        </span>
+      )}
     </div>
   );
 }
@@ -129,6 +148,7 @@ export default function PublicReservation() {
 
   const [step, setStep] = useState(0);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [touched, setTouched] = useState<Record<string, boolean>>({});
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
 
@@ -240,50 +260,91 @@ export default function PublicReservation() {
   };
 
   // ─── Validation ───────────────────────────────────────────────────────────────
-  const validate = (s: number): boolean => {
-    const errs: Record<string, string> = {};
-    if (s === 0) {
-      if (!firstName.trim() || firstName.trim().length < 2) errs.firstName = t.required;
-      if (!lastName.trim() || lastName.trim().length < 2) errs.lastName = t.required;
-      if (isBrazilian) {
-        if (!cpf || cpf.replace(/\D/g, "").length < 11) {
-          errs.cpf = lang === "pt" ? "CPF obrigatório (11 dígitos)" : lang === "en" ? "CPF required (11 digits)" : "CPF obligatorio (11 dígitos)";
-        } else if (!validateCPF(cpf)) {
-          errs.cpf = lang === "pt" ? "CPF inválido — verifique os dígitos" : lang === "en" ? "Invalid CPF — check the digits" : "CPF inválido — verifique los dígitos";
-        }
-        {
-          // RG é OPCIONAL (pedido da Cassiana, 2026-07-17) — valida só se preenchido
-          const rgDigits = rg.replace(/[.\-\s]/g, "");
-          if (rgDigits && rgDigits.length < 7) {
-            errs.rg = lang === "pt" ? "RG incompleto (mín. 7 dígitos)" : lang === "en" ? "Incomplete RG (min. 7 digits)" : "RG incompleto (mín. 7 dígitos)";
-          }
-        }
-      } else {
-        if (!passport.trim() || passport.trim().length < 5) errs.passport = lang === "pt" ? "Passaporte obrigatório (mínimo 5 caracteres)" : lang === "en" ? "Passport required (min. 5 characters)" : "Pasaporte obligatorio (mín. 5 caracteres)";
+  // Rótulo do check verde e valores atuais por campo (para o feedback on-blur)
+  const validLabel = lang === "pt" ? "Tudo certo" : lang === "en" ? "Looks good" : "Todo bien";
+  const fieldValues: Record<string, string> = {
+    firstName, lastName, cpf, rg, passport, birthDate, height, weight,
+    phone, email, zipCode, state: stateUF, city, street, number, neighborhood,
+  };
+
+  // ─── Fonte ÚNICA de validação: erro (ou undefined) de UM campo ──────────────
+  const fieldError = (name: string): string | undefined => {
+    switch (name) {
+      case "firstName": return (!firstName.trim() || firstName.trim().length < 2) ? t.required : undefined;
+      case "lastName": return (!lastName.trim() || lastName.trim().length < 2) ? t.required : undefined;
+      case "cpf":
+        if (!isBrazilian) return undefined;
+        if (!cpf || cpf.replace(/\D/g, "").length < 11) return lang === "pt" ? "CPF obrigatório (11 dígitos)" : lang === "en" ? "CPF required (11 digits)" : "CPF obligatorio (11 dígitos)";
+        if (!validateCPF(cpf)) return lang === "pt" ? "CPF inválido — verifique os dígitos" : lang === "en" ? "Invalid CPF — check the digits" : "CPF inválido — verifique los dígitos";
+        return undefined;
+      case "rg": {
+        // RG é OPCIONAL (Cassiana, 2026-07-17) — valida só se preenchido
+        if (!isBrazilian) return undefined;
+        const d = rg.replace(/[.\-\s]/g, "");
+        return (d && d.length < 7) ? (lang === "pt" ? "RG incompleto (mín. 7 dígitos)" : lang === "en" ? "Incomplete RG (min. 7 digits)" : "RG incompleto (mín. 7 dígitos)") : undefined;
       }
-      if (!birthDate || birthDate.length < 10) errs.birthDate = t.invalidDate;
-      if (!height || !height.trim()) errs.height = lang === "pt" ? "Altura obrigatória" : lang === "en" ? "Height required" : "Altura obligatoria";
-      if (!weight || !weight.trim()) errs.weight = lang === "pt" ? "Peso obrigatório" : lang === "en" ? "Weight required" : "Peso obligatorio";
+      case "passport": return (!isBrazilian && (!passport.trim() || passport.trim().length < 5)) ? (lang === "pt" ? "Passaporte obrigatório (mínimo 5 caracteres)" : lang === "en" ? "Passport required (min. 5 characters)" : "Pasaporte obligatorio (mín. 5 caracteres)") : undefined;
+      case "birthDate": return (!birthDate || birthDate.length < 10) ? t.invalidDate : undefined;
+      case "height": return (!height || !height.trim()) ? (lang === "pt" ? "Altura obrigatória" : lang === "en" ? "Height required" : "Altura obligatoria") : undefined;
+      case "weight": return (!weight || !weight.trim()) ? (lang === "pt" ? "Peso obrigatório" : lang === "en" ? "Weight required" : "Peso obligatorio") : undefined;
+      case "phone": return (!phone || phone.replace(/\D/g, "").length < 10) ? t.invalidPhone : undefined;
+      case "email":
+        if (!email || !email.trim()) return lang === "pt" ? "E-mail obrigatório" : lang === "en" ? "Email required" : "Correo obligatorio";
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return t.invalidEmail;
+        return undefined;
+      case "zipCode": return (!zipCode || zipCode.replace(/\D/g, "").length < 8) ? t.required : undefined;
+      case "street": return !street.trim() ? t.required : undefined;
+      case "number": return !number.trim() ? t.required : undefined;
+      case "neighborhood": return !neighborhood.trim() ? t.required : undefined;
+      case "city": return !city.trim() ? t.required : undefined;
+      case "state": return !stateUF ? t.required : undefined;
+      default: return undefined;
     }
-    if (s === 1) {
-      if (!phone || phone.replace(/\D/g,"").length < 10) errs.phone = t.invalidPhone;
-      if (!email || !email.trim()) errs.email = lang === "pt" ? "E-mail obrigatório" : lang === "en" ? "Email required" : "Correo obligatorio";
-      else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) errs.email = t.invalidEmail;
-      // accommodation is optional — no validation
-    }
-    if (s === 2) {
-      if (!zipCode || zipCode.replace(/\D/g,"").length < 8) errs.zipCode = t.required;
-      if (!street.trim()) errs.street = t.required;
-      if (!number.trim()) errs.number = t.required;
-      if (!neighborhood.trim()) errs.neighborhood = t.required;
-      if (!city.trim()) errs.city = t.required;
-      if (!stateUF) errs.state = t.required;
-    }
+  };
+
+  const STEP_FIELDS: Record<number, string[]> = {
+    0: ["firstName", "lastName", "cpf", "rg", "passport", "birthDate", "height", "weight"],
+    1: ["phone", "email"],
+    2: ["zipCode", "state", "city", "street", "number", "neighborhood"],
+  };
+
+  // Ao SAIR do campo: marca visitado e valida. "Premiar cedo, punir tarde":
+  // campo obrigatório VAZIO não vira erro no blur (só no submit) — evita
+  // repreender quem só tabulou; campo com conteúdo inválido erra na hora.
+  const handleBlur = (name: string) => {
+    setTouched((prev) => ({ ...prev, [name]: true }));
+    const hasContent = (fieldValues[name]?.trim().length ?? 0) > 0;
+    setErrors((prev) => {
+      const next = { ...prev };
+      const msg = fieldError(name);
+      if (msg && hasContent) next[name] = msg;
+      else delete next[name];
+      return next;
+    });
+  };
+
+  // Props de feedback para um Field (erro + check verde + handler de blur)
+  const fieldProps = (name: string) => ({
+    error: errors[name],
+    valid: !!touched[name] && !errors[name] && (fieldValues[name]?.trim().length ?? 0) > 0,
+    onBlurField: () => handleBlur(name),
+    validLabel,
+  });
+
+  const validate = (s: number): boolean => {
     if (s === 3) {
+      const errs: Record<string, string> = {};
       if (!docFrontBase64) errs.docFront = t.required;
       if (!lgpdConsent) errs.lgpdConsent = t.mustAcceptLgpd;
+      setErrors(errs);
+      setTouched((prev) => ({ ...prev, docFront: true, lgpdConsent: true }));
+      return Object.keys(errs).length === 0;
     }
+    const fields = STEP_FIELDS[s] ?? [];
+    const errs: Record<string, string> = {};
+    for (const f of fields) { const m = fieldError(f); if (m) errs[f] = m; }
     setErrors(errs);
+    setTouched((prev) => { const n = { ...prev }; for (const f of fields) n[f] = true; return n; });
     return Object.keys(errs).length === 0;
   };
 
@@ -541,7 +602,7 @@ export default function PublicReservation() {
                 <Field
                   label={lang === "pt" ? "Nome" : lang === "en" ? "First Name" : "Nombre"}
                   required
-                  error={errors.firstName}
+                  {...fieldProps("firstName")}
                 >
                   <input
                     className={errors.firstName ? inputError : inputNormal}
@@ -554,7 +615,7 @@ export default function PublicReservation() {
                 <Field
                   label={lang === "pt" ? "Sobrenome" : lang === "en" ? "Last Name" : "Apellido"}
                   required
-                  error={errors.lastName}
+                  {...fieldProps("lastName")}
                 >
                   <input
                     className={errors.lastName ? inputError : inputNormal}
@@ -566,7 +627,7 @@ export default function PublicReservation() {
                 </Field>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <Field label={t.birthDate} required error={errors.birthDate}>
+                <Field label={t.birthDate} required {...fieldProps("birthDate")}>
                   <input className={errors.birthDate ? inputError : inputNormal} placeholder="DD/MM/AAAA"
                     value={birthDate} onChange={e => setBirthDate(maskDate(e.target.value))} maxLength={10} />
                 </Field>
@@ -598,11 +659,11 @@ export default function PublicReservation() {
               </Field>
               {isBrazilian && (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <Field label="CPF" required error={errors.cpf}>
+                  <Field label="CPF" required {...fieldProps("cpf")}>
                     <input className={errors.cpf ? inputError : inputNormal} placeholder="000.000.000-00"
                       value={cpf} onChange={e => setCpf(maskCPF(e.target.value))} maxLength={14} />
                   </Field>
-                  <Field label={lang === "en" ? "RG (optional)" : "RG (opcional)"} error={errors.rg}>
+                  <Field label={lang === "en" ? "RG (optional)" : "RG (opcional)"} {...fieldProps("rg")}>
                     <input className={errors.rg ? inputError : inputNormal} placeholder="00.000.000-0"
                       value={rg} onChange={e => setRg(maskRG(e.target.value))} maxLength={12} />
                   </Field>
@@ -612,7 +673,7 @@ export default function PublicReservation() {
                 <Field
                   label={lang === "pt" ? "Passaporte" : lang === "en" ? "Passport" : "Pasaporte"}
                   required
-                  error={errors.passport}
+                  {...fieldProps("passport")}
                 >
                   <input
                     className={errors.passport ? inputError : inputNormal}
@@ -633,7 +694,7 @@ export default function PublicReservation() {
                   : lang === "en" ? "So we can pick your ideal bike" : "Para elegir tu bici ideal"}
               </p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <Field label={t.height} required error={errors.height}>
+                <Field label={t.height} required {...fieldProps("height")}>
                   <input
                     className={errors.height ? inputError : inputNormal}
                     placeholder={t.heightPlaceholder}
@@ -644,7 +705,7 @@ export default function PublicReservation() {
                 <Field
                   label={lang === "pt" ? "Peso (kg)" : lang === "en" ? "Weight (kg)" : "Peso (kg)"}
                   required
-                  error={errors.weight}
+                  {...fieldProps("weight")}
                 >
                   <input
                     className={errors.weight ? inputError : inputNormal}
@@ -676,11 +737,11 @@ export default function PublicReservation() {
               <span className="text-primary text-sm font-bold uppercase tracking-widest flex items-center gap-2"><PhoneIcon className="w-4 h-4 shrink-0" />{t.sectionContact}</span>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <Field label={t.whatsapp} required error={errors.phone}>
+              <Field label={t.whatsapp} required {...fieldProps("phone")}>
                 <input className={errors.phone ? inputError : inputNormal} placeholder={t.whatsappPlaceholder}
                   value={phone} onChange={e => setPhone(maskPhone(e.target.value))} />
               </Field>
-              <Field label={t.email} required error={errors.email}>
+              <Field label={t.email} required {...fieldProps("email")}>
                 <input className={errors.email ? inputError : inputNormal} placeholder={t.emailPlaceholder}
                   type="email" value={email} onChange={e => setEmail(e.target.value)} />
               </Field>
@@ -718,7 +779,7 @@ export default function PublicReservation() {
               <span className="text-primary text-sm font-bold uppercase tracking-widest flex items-center gap-2"><HomeIcon className="w-4 h-4 shrink-0" />{t.sectionAddress}</span>
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-              <Field label={t.zipCode} required error={errors.zipCode}>
+              <Field label={t.zipCode} required {...fieldProps("zipCode")}>
                 <div className="relative">
                   <input className={errors.zipCode ? inputError : inputNormal} placeholder={t.zipCodePlaceholder}
                     value={zipCode} onChange={e => {
@@ -729,25 +790,25 @@ export default function PublicReservation() {
                   {cepLoading && <Loader2 className="absolute right-3 top-3.5 w-4 h-4 animate-spin text-primary" />}
                 </div>
               </Field>
-              <Field label={t.state} required error={errors.state}>
+              <Field label={t.state} required {...fieldProps("state")}>
                 <select className={errors.state ? `${inputError} appearance-none` : selectBase} value={stateUF} onChange={e => setStateUF(e.target.value)}>
                   <option value="">{t.statePlaceholder}</option>
                   {STATES.map(s => <option key={s} value={s}>{s}</option>)}
                 </select>
               </Field>
-              <Field label={t.city} required error={errors.city}>
+              <Field label={t.city} required {...fieldProps("city")}>
                 <input className={errors.city ? inputError : inputNormal} placeholder={t.cityPlaceholder}
                   value={city} onChange={e => setCity(e.target.value)} />
               </Field>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div className="sm:col-span-2">
-                <Field label={t.street} required error={errors.street}>
+                <Field label={t.street} required {...fieldProps("street")}>
                   <input className={errors.street ? inputError : inputNormal} placeholder={t.streetPlaceholder}
                     value={street} onChange={e => setStreet(e.target.value)} />
                 </Field>
               </div>
-              <Field label={t.number} required error={errors.number}>
+              <Field label={t.number} required {...fieldProps("number")}>
                 <input className={errors.number ? inputError : inputNormal} placeholder={t.numberPlaceholder}
                   value={number} onChange={e => setNumber(e.target.value)} />
               </Field>
@@ -757,7 +818,7 @@ export default function PublicReservation() {
                 <input className={inputNormal} placeholder={t.complementPlaceholder}
                   value={complement} onChange={e => setComplement(e.target.value)} />
               </Field>
-              <Field label={t.neighborhood} required error={errors.neighborhood}>
+              <Field label={t.neighborhood} required {...fieldProps("neighborhood")}>
                 <input className={errors.neighborhood ? inputError : inputNormal} placeholder={t.neighborhoodPlaceholder}
                   value={neighborhood} onChange={e => setNeighborhood(e.target.value)} />
               </Field>
