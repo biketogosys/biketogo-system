@@ -178,11 +178,14 @@ export function NewContractModal({
   onClose,
   editPrefill,
   initialClient,
+  initialStartDate,
 }: {
   open: boolean;
   onClose: () => void;
   editPrefill?: EditPrefill;
   initialClient?: { clientId: number; clientName: string };
+  /** Data de início pré-preenchida (F1.1: clique num dia da agenda) */
+  initialStartDate?: string;
 }) {
   const isEditMode = !!editPrefill;
   const utils = trpc.useUtils();
@@ -222,7 +225,7 @@ export function NewContractModal({
   // Bike selection state
   const [selBikeId, setSelBikeId] = useState("");
   const [selBikeSizeId, setSelBikeSizeId] = useState("");
-  const [selStartDate, setSelStartDate] = useState("");
+  const [selStartDate, setSelStartDate] = useState(initialStartDate ?? "");
   const [selEndDate, setSelEndDate] = useState("");
   const [selQty, setSelQty] = useState(1);
   // BU-PICK-FRONT: unidades físicas selecionadas

@@ -7,8 +7,8 @@ import { trpc } from "@/lib/trpc";
 import { Link } from "wouter";
 import { toast } from "sonner";
 import {
-  CalendarClock, CalendarDays, CalendarPlus, Check, ChevronLeft, ChevronRight,
-  MapPin, MessageCircle, Truck,
+  CalendarClock, CalendarDays, CalendarPlus, CalendarRange, Check,
+  ChevronLeft, ChevronRight, MapPin, MessageCircle, Truck,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -16,6 +16,8 @@ import { Button } from "@/components/ui/button";
 import { useConfirm } from "@/components/ConfirmDialog";
 import { useMarkReturned } from "@/hooks/useMarkReturned";
 import { ExtendRentalDialog, type ExtendableRental } from "@/components/ExtendRentalDialog";
+import { AgendaMiniMonth, type DayDensity } from "@/components/AgendaMiniMonth";
+import { NewContractModal } from "@/components/NewContractModal";
 import { buildWhatsappUrl } from "@/lib/whatsapp";
 
 // ─── Datas (locais — o navegador da operação está em SP) ─────────────────────
@@ -77,6 +79,39 @@ export default function Agenda() {
   const markReturned = useMarkReturned(); // optimistic (M1)
   const [extending, setExtending] = useState<ExtendableRental | null>(null); // F8
 
+  // ─── F1.1: mini-mês (navegador) + criar contrato num dia ─────────────────
+  const [monthOpen, setMonthOpen] = useState(false);
+  const [monthAnchor, setMonthAnchor] = useState(today);
+  const [novoContratoEm, setNovoContratoEm] = useState<string | null>(null);
+
+  const monthRange = useMemo(() => {
+    const [y, m] = monthAnchor.split("-").map(Number);
+    const ini = toYmd(new Date(y, m - 1, 1));
+    const fim = toYmd(new Date(y, m, 0));
+    return { from: ini, to: fim };
+  }, [monthAnchor]);
+
+  // Reusa o mesmo endpoint da semana (volume da loja é baixo — agregar no
+  // servidor seria otimização prematura).
+  const { data: monthData, isLoading: monthLoading } = trpc.dashboard.agenda.useQuery(
+    monthRange,
+    { enabled: monthOpen },
+  );
+
+  const density = useMemo(() => {
+    const map = new Map<string, DayDensity>();
+    const bump = (dia: string | null, campo: keyof DayDensity) => {
+      if (!dia) return;
+      const atual = map.get(dia) ?? { deliveries: 0, returns: 0, overdue: 0 };
+      atual[campo] += 1;
+      map.set(dia, atual);
+    };
+    for (const it of (monthData?.deliveries ?? []) as Item[]) bump(it.day, "deliveries");
+    for (const it of (monthData?.returns ?? []) as Item[]) bump(it.day, "returns");
+    for (const it of (monthData?.overdue ?? []) as Item[]) bump(it.day, "overdue");
+    return map;
+  }, [monthData]);
+
   async function handleReturn(item: Item) {
     const ok = await confirmDialog({
       title: "Confirmar devolução?",
@@ -109,6 +144,11 @@ export default function Agenda() {
   // ─── Linha de item (entrega ou devolução) ─────────────────────────────────
   const ItemRow = ({ item, kind }: { item: Item; kind: "delivery" | "return" }) => {
     const late = kind === "return" && item.daysLate > 0;
+    // Entrega em dia passado de um aluguel ativo = já saiu. Sem `deliveredAt`
+    // no domínio, a data é a melhor evidência — e chamar de "Entrega" com CTA
+    // de "Combinar" num dia que já passou seria mentira (o mini-mês do F1.1
+    // tornou isso visível, porque dá pra navegar pro passado).
+    const entregue = kind === "delivery" && item.day < today;
     const loc = locationOf(item);
     return (
       <div className="py-2.5 flex flex-col gap-1.5 sm:flex-row sm:items-center sm:gap-3">
@@ -116,6 +156,8 @@ export default function Agenda() {
           className={`inline-flex w-fit items-center gap-1 rounded-md border px-2 py-0.5 text-xs font-medium shrink-0 ${
             late
               ? "bg-red-500/20 text-red-600 border-red-500/30 dark:text-red-400"
+              : entregue
+              ? "bg-slate-500/20 text-slate-600 border-slate-500/30 dark:text-slate-400"
               : kind === "delivery"
               ? "bg-sky-500/20 text-sky-600 border-sky-500/30 dark:text-sky-400"
               : "bg-amber-500/20 text-amber-600 border-amber-500/30 dark:text-amber-400"
@@ -124,6 +166,8 @@ export default function Agenda() {
           {kind === "delivery" ? <Truck className="w-3 h-3" /> : <CalendarClock className="w-3 h-3" />}
           {late
             ? `Atrasada ${item.daysLate}d`
+            : entregue
+            ? "Entregue"
             : kind === "delivery"
             ? `Entrega${item.deliveryTime ? ` ${item.deliveryTime}` : ""}`
             : "Devolução"}
@@ -154,7 +198,9 @@ export default function Agenda() {
             onClick={() => handleWhatsapp(item, kind)}
           >
             <MessageCircle className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">{kind === "delivery" ? "Combinar" : "Lembrar"}</span>
+            <span className="hidden sm:inline">
+              {entregue ? "Mensagem" : kind === "delivery" ? "Combinar" : "Lembrar"}
+            </span>
           </Button>
           {kind === "return" && (
             <>
@@ -207,6 +253,15 @@ export default function Agenda() {
             </p>
           </div>
           <div className="flex items-center gap-1.5">
+            <Button
+              variant={monthOpen ? "default" : "outline"}
+              size="sm"
+              className="h-8 gap-1.5"
+              onClick={() => { setMonthAnchor(from); setMonthOpen((v) => !v); }}
+            >
+              <CalendarRange className="w-4 h-4" />
+              <span className="hidden sm:inline">Mês</span>
+            </Button>
             <Button variant="outline" size="sm" className="h-8 px-2" aria-label="Semana anterior"
               onClick={() => setFrom(addDays(from, -7))}>
               <ChevronLeft className="w-4 h-4" />
@@ -222,6 +277,24 @@ export default function Agenda() {
             </Button>
           </div>
         </div>
+
+        {/* F1.1 — mini-mês como navegador */}
+        {monthOpen && (
+          <AgendaMiniMonth
+            anchor={monthAnchor}
+            today={today}
+            weekFrom={from}
+            weekTo={to}
+            density={density}
+            loading={monthLoading}
+            onPickDay={(d) => setFrom(d)}
+            onNewContract={(d) => setNovoContratoEm(d)}
+            onMonthShift={(delta) => {
+              const [y, m] = monthAnchor.split("-").map(Number);
+              setMonthAnchor(toYmd(new Date(y, m - 1 + delta, 1)));
+            }}
+          />
+        )}
 
         {error ? (
           <p className="text-sm text-destructive">Erro ao carregar a agenda.</p>
@@ -272,6 +345,16 @@ export default function Agenda() {
 
       {/* F8 — renovação */}
       <ExtendRentalDialog rental={extending} onOpenChange={(o) => !o && setExtending(null)} />
+
+      {/* F1.1 — novo contrato a partir de um dia da agenda. Montado
+          condicionalmente pra o prefill da data valer no mount. */}
+      {novoContratoEm && (
+        <NewContractModal
+          open
+          initialStartDate={novoContratoEm}
+          onClose={() => setNovoContratoEm(null)}
+        />
+      )}
     </div>
   );
 }
