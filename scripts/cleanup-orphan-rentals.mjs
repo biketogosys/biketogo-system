@@ -41,9 +41,15 @@ if (USE_PGLITE) {
   q = async (text, params = []) => (await db.query(text, params)).rows;
   close = () => db.close();
 } else {
+  // Mesma normalização do app (server/db.ts): tira prefixo "DATABASE_URL=",
+  // aspas e senha entre colchetes [senha] que a Supabase às vezes mostra.
   let url = (process.env.DATABASE_URL || "").replace(/^DATABASE_URL=/, "").replace(/^"|"$/g, "");
+  url = url.replace(/:(?:\[)([^\]]+)(?:\])@/, (_, pass) => `:${encodeURIComponent(pass)}@`);
   if (!url) {
-    console.error("✗ DATABASE_URL não definido. Rode com --pglite para testar no banco local.");
+    console.error("✗ DATABASE_URL não definido no ambiente.");
+    console.error("  → No Railway:  railway run node scripts/cleanup-orphan-rentals.mjs");
+    console.error("  → Local:       defina DATABASE_URL (URL do Session pooler do Supabase) e rode de novo");
+    console.error("  → Teste local: node scripts/cleanup-orphan-rentals.mjs --pglite");
     process.exit(1);
   }
   const postgres = (await import("postgres")).default;
