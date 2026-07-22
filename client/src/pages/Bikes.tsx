@@ -40,6 +40,8 @@ import { Separator } from "@/components/ui/separator";
 import { useConfirm } from "@/components/ConfirmDialog";
 import { friendlyError } from "@/lib/utils";
 import { UnitStatusBadge, type BikeUnitStatus } from "@/components/UnitStatusBadge";
+import { ViewModeToggle } from "@/components/ViewModeToggle";
+import { useViewMode, type ViewMode } from "@/hooks/useViewMode";
 
 // LOTE-2: BikeStatus and statusConfig removed (bikes.status is now inert)
 type BikeCategory = "mtb" | "speed" | "gravel";
@@ -640,6 +642,130 @@ function AvailabilityPill({ disp, qtd }: { disp: number; qtd: number }) {
 }
 
 // ─── Main Bikes Page ──────────────────────────────────────────────────────────
+// Q14: card de bike em 3 modos (grade / compacto / lista). Ações iguais nos três;
+// muda só a densidade e o arranjo. Mesmo mapa de status/disponibilidade da casa.
+function BikeCard({ bike, mode, onManage, onDiscount, onDelete }: {
+  bike: any;
+  mode: ViewMode;
+  onManage: (bike: any) => void;
+  onDiscount: (id: number) => void;
+  onDelete: (bike: any) => void;
+}) {
+  const rate = bike.dailyRate
+    ? `R$ ${parseFloat(bike.dailyRate).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`
+    : null;
+  const disp = (bike as any).disponivelTotal ?? 0;
+  const qtd = (bike as any).qtdTotal ?? 0;
+  const catLabel = bike.category ? (categoryLabels[bike.category as BikeCategory] || bike.category) : null;
+
+  // ─── LISTA: uma linha por bike, densa ──────────────────────────────────────
+  if (mode === "list") {
+    return (
+      <Card className="group flex flex-row items-center gap-3 p-2.5 border border-border bg-card hover:border-primary/40 hover:shadow-sm transition-[border-color,box-shadow] duration-200 ease-out">
+        <div className="relative shrink-0 size-14 rounded-md overflow-hidden bg-muted border border-border">
+          {bike.photoUrl ? (
+            <img src={bike.photoUrl} alt={bike.model} className="w-full h-full object-cover" />
+          ) : (
+            <div className="w-full h-full flex items-center justify-center"><BikeIcon className="w-5 h-5 text-muted-foreground/25" /></div>
+          )}
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="font-semibold text-sm text-foreground leading-tight truncate">{bike.model}</p>
+          <p className="text-xs text-muted-foreground mt-0.5 truncate">
+            {bike.brand && <span>{bike.brand}</span>}
+            {bike.brand && bike.serialNumber && <span className="mx-1">·</span>}
+            {bike.serialNumber && <span className="font-mono">#{bike.serialNumber}</span>}
+          </p>
+        </div>
+        {rate && (
+          <p className="hidden md:block text-sm font-bold text-primary shrink-0 tabular-nums">
+            {rate}<span className="text-xs font-normal text-muted-foreground">/dia</span>
+          </p>
+        )}
+        <span className="shrink-0"><AvailabilityPill disp={disp} qtd={qtd} /></span>
+        <div className="flex items-center gap-1 shrink-0">
+          <Button size="sm" variant="default" className="h-8 text-xs" onClick={() => onManage(bike)}>
+            <Settings2 className="w-3.5 h-3.5 sm:mr-1" /><span className="hidden sm:inline">Gerenciar</span>
+          </Button>
+          <Button size="sm" variant="outline" className="h-8 w-8 p-0" onClick={() => onDiscount(bike.id)} title="Regras de desconto"><Percent className="w-3.5 h-3.5" /></Button>
+          <Button size="sm" variant="ghost" className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive hover:bg-destructive/10" onClick={() => onDelete(bike)} title="Remover bicicleta"><Trash2 className="w-3.5 h-3.5" /></Button>
+        </div>
+      </Card>
+    );
+  }
+
+  // ─── COMPACTO: card menor, mais por linha, foto 4:3 ────────────────────────
+  if (mode === "compact") {
+    return (
+      <Card className="group border border-border bg-card hover:border-primary/40 hover:shadow-md transition-[border-color,box-shadow] duration-200 ease-out overflow-hidden">
+        <div className="relative w-full bg-muted border-b border-border" style={{ aspectRatio: "4/3" }}>
+          {bike.photoUrl ? (
+            <img src={bike.photoUrl} alt={bike.model} className="w-full h-full object-cover" />
+          ) : (
+            <div className="w-full h-full flex items-center justify-center"><BikeIcon className="w-8 h-8 text-muted-foreground/20" /></div>
+          )}
+          <span className="absolute top-1.5 right-1.5"><AvailabilityPill disp={disp} qtd={qtd} /></span>
+        </div>
+        <CardContent className="p-2.5 space-y-0.5">
+          <p className="font-semibold text-xs text-foreground leading-tight truncate" title={bike.model}>{bike.model}</p>
+          {rate && (
+            <p className="text-xs font-bold text-primary tabular-nums">
+              {rate}<span className="font-normal text-muted-foreground">/dia</span>
+            </p>
+          )}
+        </CardContent>
+        <CardFooter className="px-2.5 pb-2.5 pt-0 flex items-center gap-1">
+          <Button size="sm" variant="default" className="flex-1 h-7 text-xs px-1.5" onClick={() => onManage(bike)}>
+            <Settings2 className="w-3 h-3 mr-1" />Gerenciar
+          </Button>
+          <Button size="sm" variant="ghost" className="h-7 w-7 p-0 shrink-0 text-muted-foreground hover:text-destructive hover:bg-destructive/10" onClick={() => onDelete(bike)} title="Remover bicicleta"><Trash2 className="w-3 h-3" /></Button>
+        </CardFooter>
+      </Card>
+    );
+  }
+
+  // ─── GRADE (padrão): foto grande 16:9 ──────────────────────────────────────
+  return (
+    <Card className="group border border-border bg-card hover:border-primary/40 hover:shadow-md transition-[border-color,box-shadow] duration-200 ease-out overflow-hidden">
+      <div className="relative w-full bg-muted border-b border-border" style={{ aspectRatio: "16/9" }}>
+        {bike.photoUrl ? (
+          <img src={bike.photoUrl} alt={bike.model} className="w-full h-full object-cover" />
+        ) : (
+          <div className="w-full h-full flex items-center justify-center"><BikeIcon className="w-10 h-10 text-muted-foreground/20" /></div>
+        )}
+        {catLabel && (
+          <span className="absolute top-2 left-2 text-[10px] px-1.5 py-0.5 rounded font-semibold uppercase bg-primary/90 text-primary-foreground">
+            {catLabel}
+          </span>
+        )}
+        <span className="absolute top-2 right-2"><AvailabilityPill disp={disp} qtd={qtd} /></span>
+      </div>
+      <CardContent className="p-4 space-y-2">
+        <div>
+          <p className="font-semibold text-sm text-foreground leading-tight">{bike.model}</p>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            {bike.brand && <span>{bike.brand}</span>}
+            {bike.brand && bike.serialNumber && <span className="mx-1">·</span>}
+            {bike.serialNumber && <span className="font-mono">#{bike.serialNumber}</span>}
+          </p>
+        </div>
+        {rate && (
+          <p className="text-sm font-bold text-primary">
+            {rate}<span className="text-xs font-normal text-muted-foreground">/dia</span>
+          </p>
+        )}
+      </CardContent>
+      <CardFooter className="px-4 pb-4 pt-0 flex items-center gap-2 border-t border-border/50 mt-2 pt-3">
+        <Button size="sm" variant="default" className="flex-1 h-8 text-xs" onClick={() => onManage(bike)}>
+          <Settings2 className="w-3.5 h-3.5 mr-1" />Gerenciar
+        </Button>
+        <Button size="sm" variant="outline" className="h-8 text-xs px-2.5" onClick={() => onDiscount(bike.id)} title="Regras de desconto"><Percent className="w-3.5 h-3.5" /></Button>
+        <Button size="sm" variant="ghost" className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive hover:bg-destructive/10" onClick={() => onDelete(bike)} title="Remover bicicleta"><Trash2 className="w-3.5 h-3.5" /></Button>
+      </CardFooter>
+    </Card>
+  );
+}
+
 export default function Bikes() {
   const confirmDialog = useConfirm();
   const utils = trpc.useUtils();
@@ -649,6 +775,7 @@ export default function Bikes() {
   const [editBike, setEditBike] = useState<any | null>(null);
   const [discountBikeId, setDiscountBikeId] = useState<number | null>(null);
   const [page, setPage] = useState(1);
+  const [viewMode, setViewMode] = useViewMode("bikes", "grid");
   const LIMIT = 20;
 
   const { data: bikesResult, isLoading } = trpc.bikes.list.useQuery({ category: categoryFilter, search: search || undefined, page, limit: LIMIT });
@@ -660,6 +787,19 @@ export default function Bikes() {
     onSuccess: () => { utils.bikes.list.invalidate(); toast.success("Bicicleta removida"); },
     onError: (e) => toast.error(friendlyError(e)),
   });
+
+  const handleDelete = async (bike: any) => {
+    if (await confirmDialog({ title: "Remover bike?", confirmText: "Remover", destructive: true }))
+      deleteMutation.mutate({ id: bike.id });
+  };
+  const handleManage = (bike: any) => { setEditBike(bike); setShowForm(true); };
+
+  // Q14: classes do container por modo de visualização
+  const containerClass = viewMode === "list"
+    ? "flex flex-col gap-2"
+    : viewMode === "compact"
+      ? "grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3"
+      : "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4";
 
   return (
     <div className="p-6 space-y-6">
@@ -713,6 +853,8 @@ export default function Bikes() {
             </button>
           )}
         </div>
+        {/* Q14: alternador de modo de visualização */}
+        <ViewModeToggle value={viewMode} onChange={setViewMode} className="sm:ml-auto" />
       </div>
 
       {/* Content */}
@@ -739,87 +881,18 @@ export default function Bikes() {
         </div>
       ) : (
         <>
-          {/* Card grid — hierárquico (modelo → tamanhos → unidades via dialog) */}
-          <div className="motion-stagger grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {/* Card grid — hierárquico (modelo → tamanhos → unidades via dialog).
+              Q14: layout (grade/compacto/lista) escolhido por viewMode. */}
+          <div className={`motion-stagger ${containerClass}`}>
             {bikes.map((bike: any) => (
-              <Card
+              <BikeCard
                 key={bike.id}
-                className="group border border-border bg-card hover:border-primary/40 hover:shadow-md transition-[border-color,box-shadow] duration-200 ease-out overflow-hidden"
-              >
-                {/* Foto / placeholder */}
-                <div className="relative w-full bg-muted border-b border-border" style={{ aspectRatio: "16/9" }}>
-                  {bike.photoUrl ? (
-                    <img src={bike.photoUrl} alt={bike.model} className="w-full h-full object-cover" />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center">
-                      <BikeIcon className="w-10 h-10 text-muted-foreground/20" />
-                    </div>
-                  )}
-                  {/* Category badge */}
-                  {bike.category && (
-                    <span className="absolute top-2 left-2 text-[10px] px-1.5 py-0.5 rounded font-semibold uppercase bg-primary/90 text-primary-foreground">
-                      {categoryLabels[bike.category as BikeCategory] || bike.category}
-                    </span>
-                  )}
-                  {/* Availability pill */}
-                  <span className="absolute top-2 right-2">
-                    <AvailabilityPill disp={(bike as any).disponivelTotal ?? 0} qtd={(bike as any).qtdTotal ?? 0} />
-                  </span>
-                </div>
-
-                <CardContent className="p-4 space-y-2">
-                  {/* Model + serial */}
-                  <div>
-                    <p className="font-semibold text-sm text-foreground leading-tight">{bike.model}</p>
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                      {bike.brand && <span>{bike.brand}</span>}
-                      {bike.brand && bike.serialNumber && <span className="mx-1">·</span>}
-                      {bike.serialNumber && <span className="font-mono">#{bike.serialNumber}</span>}
-                    </p>
-                  </div>
-
-                  {/* Daily rate */}
-                  {bike.dailyRate && (
-                    <p className="text-sm font-bold text-primary">
-                      R$ {parseFloat(bike.dailyRate).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
-                      <span className="text-xs font-normal text-muted-foreground">/dia</span>
-                    </p>
-                  )}
-                </CardContent>
-
-                <CardFooter className="px-4 pb-4 pt-0 flex items-center gap-2 border-t border-border/50 mt-2 pt-3">
-                  <Button
-                    size="sm"
-                    variant="default"
-                    className="flex-1 h-8 text-xs"
-                    onClick={() => { setEditBike(bike); setShowForm(true); }}
-                  >
-                    <Settings2 className="w-3.5 h-3.5 mr-1" />
-                    Gerenciar
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="h-8 text-xs px-2.5"
-                    onClick={() => setDiscountBikeId(bike.id)}
-                    title="Regras de desconto"
-                  >
-                    <Percent className="w-3.5 h-3.5" />
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
-                    onClick={async () => {
-                      if (await confirmDialog({ title: "Remover bike?", confirmText: "Remover", destructive: true }))
-                        deleteMutation.mutate({ id: bike.id });
-                    }}
-                    title="Remover bicicleta"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </Button>
-                </CardFooter>
-              </Card>
+                bike={bike}
+                mode={viewMode}
+                onManage={handleManage}
+                onDiscount={setDiscountBikeId}
+                onDelete={handleDelete}
+              />
             ))}
           </div>
 
