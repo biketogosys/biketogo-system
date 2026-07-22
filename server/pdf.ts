@@ -52,6 +52,7 @@ export interface ContractPdfData {
     tamanho?: string | null;
     dailyRate?: string | null;
     quantity?: number | null;
+    discountPercent?: string | null;
   }>;
   accessories: Array<{
     accessoryName?: string | null;
@@ -461,8 +462,8 @@ export async function generateContractPdf(
         { k: "modelo", x: 60,  w: 124, t: L.colModelo,    a: "left"  as const },
         { k: "tam",    x: 184, w: 26,  t: L.colTam,       a: "left"   as const },
         { k: "qtd",    x: 210, w: 24,  t: L.colQtd,       a: "center" as const },
-        { k: "sis",    x: 234, w: 64,  t: L.colSis,       a: "left"   as const },
-        { k: "per",    x: 298, w: 116, t: L.colPeriodo,   a: "left"  as const },
+        { k: "sis",    x: 234, w: 80,  t: L.colSis,       a: "left"   as const },
+        { k: "per",    x: 314, w: 100, t: L.colPeriodo,   a: "left"  as const },
         { k: "diaria", x: 414, w: 56,  t: L.colDiaria,    a: "right" as const },
         { k: "sub",    x: 470, w: 85,  t: L.colSubtotal,  a: "right" as const },
       ];
@@ -475,12 +476,28 @@ export async function generateContractPdf(
       );
       y += 18;
 
+      const modeloCol = cols.find((c) => c.k === "modelo")!;
+      const subCol = cols.find((c) => c.k === "sub")!;
       data.rentals.forEach((r, i) => {
-        if (i % 2 === 0) doc.rect(M, y, CW, 16).fill(ALT);
         doc.fillColor(INK).font("Helvetica").fontSize(8);
-        const row: Record<string, string> = {
+        const modeloTxt = [r.bikeModel, r.bikeBrand].filter(Boolean).join(" ") || "—";
+        // Altura do modelo QUEBRANDO dentro da coluna (antes estourava numa linha
+        // só e invadia as colunas vizinhas — bug Cassiana 2026-07-22).
+        const modelH = doc.heightOfString(modeloTxt, { width: modeloCol.w - 8 });
+        const pct = r.discountPercent ? parseFloat(String(r.discountPercent)) : 0;
+        const hasDiscount = !isNaN(pct) && pct > 0;
+        const rowH = Math.max(16, Math.ceil(Math.max(modelH, 11)) + (hasDiscount ? 9 : 0) + 5);
+
+        // Quebra de página se a linha não couber acima do rodapé
+        if (y + rowH > CONTENT_BOTTOM) { doc.addPage(); y = M; }
+
+        if (i % 2 === 0) doc.rect(M, y, CW, rowH).fill(ALT);
+        doc.fillColor(INK).font("Helvetica").fontSize(8);
+        // Modelo com quebra
+        doc.text(modeloTxt, modeloCol.x + 4, y + 3.5, { width: modeloCol.w - 8 });
+        // Demais colunas em 1 linha (alinhadas ao topo da linha)
+        const single: Record<string, string> = {
           n:      String(i + 1),
-          modelo: [r.bikeModel, r.bikeBrand].filter(Boolean).join(" ") || "—",
           tam:    r.tamanho || "—",
           qtd:    String(r.quantity ?? 1),
           sis:    r.bikeUnitNumeros || r.bikeSerialNumber || "—",
@@ -488,10 +505,16 @@ export async function generateContractPdf(
           diaria: formatCurrency(r.dailyRate),
           sub:    calcSubtotal(r),
         };
-        cols.forEach((c) =>
-          doc.text(row[c.k], c.x + 4, y + 4.5, { width: c.w - 8, align: c.a, lineBreak: false })
+        cols.filter((c) => c.k !== "modelo").forEach((c) =>
+          doc.text(single[c.k], c.x + 4, y + 3.5, { width: c.w - 8, align: c.a, lineBreak: false })
         );
-        y += 16;
+        // Desconto aplicado, logo abaixo do subtotal
+        if (hasDiscount) {
+          doc.fillColor(GOLD).font("Helvetica").fontSize(6.5)
+            .text(`desconto de ${pct % 1 === 0 ? pct.toFixed(0) : pct}% aplicado`, subCol.x + 4, y + 15, { width: subCol.w - 8, align: "right", lineBreak: false });
+          doc.fillColor(INK).font("Helvetica").fontSize(8);
+        }
+        y += rowH;
       });
 
       if (data.rentals.length === 0) {

@@ -1,5 +1,5 @@
 import { trpc } from "@/lib/trpc";
-import { NewContractModal } from "@/components/NewContractModal";
+import { NewContractModal, PAYMENT_METHODS } from "@/components/NewContractModal";
 import { usePageParam } from "@/hooks/usePageParam";
 import { useState, useMemo, useEffect } from "react";
 import { toast } from "sonner";
@@ -429,9 +429,14 @@ function ContractDetail({
     onError: (e) => toast.error(friendlyError(e, "Erro ao devolver.")),
   });
 
+  // Forma de pagamento escolhida na hora de RECEBER (devolução) — Cassiana 2026-07-22
+  const [payOpen, setPayOpen] = useState(false);
+  const [payMethod, setPayMethod] = useState("");
   const confirmPaymentMutation = trpc.contracts.confirmPayment.useMutation({
     onSuccess: (res) => {
       toast.success(`Pagamento confirmado para ${res.paid} aluguel(is). Receita registrada.`);
+      setPayOpen(false);
+      setPayMethod("");
       utils.contracts.getById.invalidate({ id: contractId });
       utils.contracts.list.invalidate();
     },
@@ -549,27 +554,78 @@ function ContractDetail({
         </div>
       </div>
 
-      {/* Payment confirmation button (presential) */}
-      {data.status === "pendente" && (
-        <div className="flex items-center gap-2 p-3 rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30">
-          <CreditCard className="h-4 w-4 text-amber-600 dark:text-amber-400 flex-shrink-0" />
-          <span className="text-sm text-amber-700 dark:text-amber-300 flex-1">
-            Pagamento presencial pendente
-          </span>
-          <Button
-            size="sm"
-            className="bg-amber-600 hover:bg-amber-700 text-white"
-            onClick={async () => {
-              if (await confirmDialog({ title: "Confirmar pagamento?", description: "A receita será registrada automaticamente.", confirmText: "Confirmar" }))
-                confirmPaymentMutation.mutate({ contractId });
-            }}
-            disabled={confirmPaymentMutation.isPending}
-          >
-            <CreditCard className="h-4 w-4 mr-1" />
-            {confirmPaymentMutation.isPending ? "Confirmando..." : "Confirmar Pagamento"}
-          </Button>
-        </div>
-      )}
+      {/* Pagamento: aparece DEPOIS de ativar (ativo/parcial/encerrado) e enquanto
+          não foi pago — a Cassiana recebe na devolução. */}
+      {(() => {
+        const rentals = (data.rentals ?? []) as any[];
+        const jaPago = rentals.length > 0 && rentals.every((r) => r.paymentStatus === "paid");
+        const podePagar = ["ativo", "parcialmente_devolvido", "encerrado"].includes(data.status);
+        if (!podePagar) return null;
+        if (jaPago) {
+          return (
+            <div className="flex items-center gap-2 p-3 rounded-lg border border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/30">
+              <CheckCircle2 className="h-4 w-4 text-emerald-600 dark:text-emerald-400 flex-shrink-0" />
+              <span className="text-sm text-emerald-700 dark:text-emerald-300">Pagamento confirmado.</span>
+            </div>
+          );
+        }
+        return (
+          <div className="flex items-center gap-2 p-3 rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30">
+            <CreditCard className="h-4 w-4 text-amber-600 dark:text-amber-400 flex-shrink-0" />
+            <span className="text-sm text-amber-700 dark:text-amber-300 flex-1">
+              A receber — confirme o pagamento ao recolher a bike.
+            </span>
+            <Button
+              size="sm"
+              className="bg-amber-600 hover:bg-amber-700 text-white"
+              onClick={() => setPayOpen(true)}
+              disabled={confirmPaymentMutation.isPending}
+            >
+              <CreditCard className="h-4 w-4 mr-1" />
+              {confirmPaymentMutation.isPending ? "Confirmando..." : "Confirmar Pagamento"}
+            </Button>
+          </div>
+        );
+      })()}
+
+      {/* Dialog de confirmação de pagamento — a forma de pagamento é escolhida
+          AQUI (na devolução/recebimento), não na criação do contrato. */}
+      <Dialog open={payOpen} onOpenChange={(o) => { if (!o) { setPayOpen(false); setPayMethod(""); } }}>
+        <DialogContent className="dialog-mobile max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <CreditCard className="h-5 w-5 text-primary" /> Confirmar Pagamento
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <p className="text-sm text-muted-foreground">
+              Total do contrato: <span className="font-semibold text-foreground">R$ {data.valorTotal ?? "—"}</span>.
+              A receita será registrada automaticamente.
+            </p>
+            <div>
+              <Label className="mb-1 block text-xs">Forma de pagamento</Label>
+              <Select value={payMethod} onValueChange={setPayMethod}>
+                <SelectTrigger className="text-sm w-full min-w-0"><SelectValue placeholder="Selecionar (opcional)" /></SelectTrigger>
+                <SelectContent>
+                  {PAYMENT_METHODS.map((p) => (
+                    <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" size="sm" onClick={() => { setPayOpen(false); setPayMethod(""); }}>Cancelar</Button>
+            <Button
+              size="sm"
+              onClick={() => confirmPaymentMutation.mutate({ contractId, paymentMethod: (payMethod || undefined) as any })}
+              disabled={confirmPaymentMutation.isPending}
+            >
+              {confirmPaymentMutation.isPending ? "Confirmando..." : "Confirmar"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* PDF download */}
       <div className="flex items-center gap-2">
@@ -797,7 +853,9 @@ function ContractDetail({
                 ? Math.max(1, Math.ceil((new Date(r.endDate).getTime() - new Date(r.startDate).getTime()) / 86400000))
                 : 1,
               totalAmount: r.totalAmount ?? "0.00",
+              discountPercent: r.discountPercent != null ? parseFloat(r.discountPercent) : undefined,
               unitIds: r.bikeUnitIds ?? [], // BU-PICK-FRONT
+              unitNumeros: r.bikeUnitNumeros ?? [], // exibição no carrinho da edição
             })),
             accessories: Object.values(
               (data.accessories ?? []).reduce((acc: any, a: any) => {

@@ -355,6 +355,30 @@ describe("C7: findAvailableBikeUnits", () => {
     expect(withExclude.map((r) => r.id)).toContain(unitIds[0]);
   });
 
+  it("excludeContractId: unidades do PROPRIO contrato voltam a aparecer (edicao de contrato)", async () => {
+    // Bug Cassiana 2026-07-22: ao EDITAR um contrato, os aluguéis dele mesmo
+    // bloqueavam suas unidades — "não tinha mais a mesma bike pra alterar".
+    const db = await createTestDb();
+    const seed = await seedBasics(db);
+    const { clientId, bikeId, bikeSizeId, unitIds } = seed;
+    // Contrato X com rental ocupando unitIds[0]
+    const [contract] = await db.insert(schema.contracts).values({ clientId, status: "pendente" }).returning({ id: schema.contracts.id });
+    const rentalA = await makeRental(db, { clientId, bikeId, bikeSizeId, quantity: 1, startDate: "2026-07-01", endDate: "2026-07-10", contractId: contract.id });
+    await assignBikeUnits(db, rentalA, bikeSizeId, 1, "2026-07-01", "2026-07-10", [unitIds[0]]);
+    // Sem exclude: bloqueada
+    const without = await findAvailableBikeUnits(db, { bikeSizeId, startDate: "2026-07-05", endDate: "2026-07-08" });
+    expect(without.map((r) => r.id)).not.toContain(unitIds[0]);
+    // Com excludeContractId: volta a aparecer
+    const withExclude = await findAvailableBikeUnits(db, { bikeSizeId, startDate: "2026-07-05", endDate: "2026-07-08", excludeContractId: contract.id });
+    expect(withExclude.map((r) => r.id)).toContain(unitIds[0]);
+    // E um rental de OUTRO contrato continua bloqueando normalmente
+    const [other] = await db.insert(schema.contracts).values({ clientId, status: "pendente" }).returning({ id: schema.contracts.id });
+    const rentalB = await makeRental(db, { clientId, bikeId, bikeSizeId, quantity: 1, startDate: "2026-07-01", endDate: "2026-07-10", contractId: other.id });
+    await assignBikeUnits(db, rentalB, bikeSizeId, 1, "2026-07-01", "2026-07-10", [unitIds[1]]);
+    const still = await findAvailableBikeUnits(db, { bikeSizeId, startDate: "2026-07-05", endDate: "2026-07-08", excludeContractId: contract.id });
+    expect(still.map((r) => r.id)).not.toContain(unitIds[1]);
+  });
+
   it("unidade presa em rental cancelado/deletado -> aparece", async () => {
     const db = await createTestDb();
     const seed = await seedBasics(db);

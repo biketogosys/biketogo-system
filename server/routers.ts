@@ -712,7 +712,14 @@ const bikesRouter = router({
 
   // ─── Bike Sizes ──────────────────────────────────────────────────────────────
   listSizes: adminAuthProcedure
-    .input(z.object({ bikeId: z.number() }))
+    .input(z.object({
+      bikeId: z.number(),
+      // Com período: breakdown POR DATA (fluxo "datas primeiro" do contrato).
+      // Sem período: disponibilidade de agora (comportamento antigo).
+      startDate: z.string().optional(),
+      endDate: z.string().optional(),
+      excludeContractId: z.number().optional(), // edição: não se auto-contar
+    }))
     .query(async ({ input }) => {
       const { getDb, getSizeBreakdowns } = await import("./db");
       const db = await getDb();
@@ -721,7 +728,9 @@ const bikesRouter = router({
       const { eq } = await import("drizzle-orm");
       const rows = await db.select().from(bikeSizes).where(eq(bikeSizes.bikeId, input.bikeId));
       const sizeIds = rows.map(r => r.id);
-      const breakdownMap = await getSizeBreakdowns(sizeIds);
+      const breakdownMap = await getSizeBreakdowns(
+        sizeIds, input.startDate, input.endDate, undefined, input.excludeContractId,
+      );
       return rows.map((s) => {
         const bd = breakdownMap.get(s.id) ?? { total: 0, alugada: 0, manutencao: 0, disponivel: 0 };
         return { ...s, total: bd.total, disponivel: bd.disponivel,
@@ -1063,14 +1072,15 @@ const rentalsRouter = router({
       for (const rental of pendingRentals) {
         await updateRental(rental.id, { status: "active" } as any);
       }
-      // Register revenue for the contract total
-      try {
-        const today = new Date().toISOString().split("T")[0];
-        const totalAmt = pendingRentals.reduce((sum, r) => sum + parseFloat(r.totalAmount || "0"), 0);
-        if (totalAmt > 0) {
-          await createRevenue({ categoryId: 1, description: `Contrato #${input.contractId} confirmado`, amount: totalAmt.toFixed(2), date: today } as any);
-        }
-      } catch (err) { console.warn("[confirmAll] Revenue error:", err); }
+      // Contrato passa a ATIVO ao confirmar a reserva — ativar NÃO depende de
+      // pagamento (fluxo Cassiana 2026-07-22). Antes o status ficava preso em
+      // "pendente" mesmo com os aluguéis ativos.
+      {
+        const { contracts: cActivate } = await import("../drizzle/schema");
+        await db.update(cActivate).set({ status: "ativo" }).where(eqOp(cActivate.id, input.contractId));
+      }
+      // Receita NÃO entra aqui — só no CONFIRMAR PAGAMENTO (recebimento na
+      // devolução). Antes registrava aqui E no pagamento → receita dobrada.
       // Mark accessory units as 'alugado' for this contract
       try {
         const { contractAccessories: caTable, accessoryUnits: auTable } = await import("../drizzle/schema");
@@ -2461,7 +2471,7 @@ async function buildContractPdfData(db: Awaited<ReturnType<typeof getDb>>, contr
   const rentalsForPdf = await db.select({
     id: rT.id, bikeId: rT.bikeId, startDate: rT.startDate, endDate: rT.endDate,
     totalAmount: rT.totalAmount, dailyRate: rT.dailyRate, bikeSizeId: rT.bikeSizeId,
-    quantity: rT.quantity, paymentMethod: rT.paymentMethod,
+    quantity: rT.quantity, paymentMethod: rT.paymentMethod, discountPercent: rT.discountPercent,
   }).from(rT).where(and(eq(rT.contractId, contractId), isNull(rT.deletedAt)));
   const rentalsWithBike = await Promise.all(rentalsForPdf.map(async (r) => {
     const [bike] = r.bikeId
@@ -2537,6 +2547,31 @@ async function recalcContractStatus(contractId: number): Promise<void> {
   const updateData: Record<string, unknown> = { status: newStatus };
   if (newStatus === "encerrado") updateData.encerradoEm = new Date();
   await db.update(contracts).set(updateData).where(eq(contracts.id, contractId));
+}
+
+// Conflitos DENTRO do mesmo payload de contrato: a mesma unidade física em duas
+// entradas com períodos sobrepostos. O app é NÃO-transacional — sem esta checagem
+// prévia o conflito só estourava no meio da gravação (assignBikeUnits) e deixava
+// o contrato pela metade. Bug exposto pela duplicação na edição (2026-07-22).
+function assertNoIntraPayloadUnitConflicts(
+  bikes: Array<{ startDate: string; endDate: string; unitIds?: number[] }>,
+): void {
+  const overlap = (a: { startDate: string; endDate: string }, b: { startDate: string; endDate: string }) =>
+    a.startDate <= b.endDate && b.startDate <= a.endDate;
+  for (let i = 0; i < bikes.length; i++) {
+    for (let j = i + 1; j < bikes.length; j++) {
+      const a = bikes[i], b = bikes[j];
+      if (!a.unitIds?.length || !b.unitIds?.length) continue;
+      if (!overlap(a, b)) continue;
+      const shared = a.unitIds.filter((u) => b.unitIds!.includes(u));
+      if (shared.length > 0) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message: `A mesma unidade física aparece em duas bikes deste contrato com períodos sobrepostos (${a.startDate} a ${a.endDate} × ${b.startDate} a ${b.endDate}). Remova a entrada duplicada.`,
+        });
+      }
+    }
+  }
 }
 
 const contractsRouter = router({
@@ -2644,9 +2679,17 @@ const contractsRouter = router({
         .leftJoin(clientsTable, eq(contracts.clientId, clientsTable.id))
         .where(eq(contracts.id, input.id));
       if (!contract) throw new TRPCError({ code: "NOT_FOUND" });
+      // BUGFIX prefill de edição (2026-07-22): faltavam bikeSizeId/tamanho/quantity/
+      // dailyRate/discountPercent — a edição pré-carregava entradas "vazias" e, ao
+      // salvar sem mexer, recriava os aluguéis SEM tamanho → perdia as unidades.
+      const { bikeSizes: bsGet } = await import("../drizzle/schema");
       const linkedRentals = await db.select({
         id: rentalsTable.id,
         bikeId: rentalsTable.bikeId,
+        bikeSizeId: rentalsTable.bikeSizeId,
+        quantity: rentalsTable.quantity,
+        dailyRate: rentalsTable.dailyRate,
+        discountPercent: rentalsTable.discountPercent,
         startDate: rentalsTable.startDate,
         endDate: rentalsTable.endDate,
         status: rentalsTable.status,
@@ -2657,16 +2700,25 @@ const contractsRouter = router({
         bikeModel: bikesTable.model,
         bikeBrand: bikesTable.brand,
         bikeSerialNumber: bikesTable.serialNumber,
+        tamanho: bsGet.tamanho,
       })
         .from(rentalsTable)
         .leftJoin(bikesTable, eq(rentalsTable.bikeId, bikesTable.id))
+        .leftJoin(bsGet, eq(rentalsTable.bikeSizeId, bsGet.id))
         .where(and(eq(rentalsTable.contractId, input.id), isNull(rentalsTable.deletedAt)));
-      // BU-PICK-BACK: enriquecer cada rental com os bikeUnitIds já ligados
-      const { rentalBikeUnits: rbuGet } = await import("../drizzle/schema");
+      // BU-PICK-BACK: enriquecer cada rental com os bikeUnitIds + números ligados
+      const { rentalBikeUnits: rbuGet, bikeUnits: buGet } = await import("../drizzle/schema");
       const { eq: eqRbuGet } = await import("drizzle-orm");
       const rentalsWithUnitIds = await Promise.all(linkedRentals.map(async (r) => {
-        const rows = await db.select({ bikeUnitId: rbuGet.bikeUnitId }).from(rbuGet).where(eqRbuGet(rbuGet.rentalId, r.id));
-        return { ...r, bikeUnitIds: rows.map((row: any) => row.bikeUnitId) };
+        const rows = await db.select({ bikeUnitId: rbuGet.bikeUnitId, numero: buGet.numeroSistema })
+          .from(rbuGet)
+          .leftJoin(buGet, eqRbuGet(buGet.id, rbuGet.bikeUnitId))
+          .where(eqRbuGet(rbuGet.rentalId, r.id));
+        return {
+          ...r,
+          bikeUnitIds: rows.map((row: any) => row.bikeUnitId),
+          bikeUnitNumeros: rows.map((row: any) => row.numero).filter(Boolean),
+        };
       }));
       const accChecklistRaw = await db.select({
         id: contractAccessories.id,
@@ -2941,6 +2993,7 @@ const contractsRouter = router({
         quantity: z.number().min(1).default(1),
         dailyRate: z.string().optional(),
         totalAmount: z.string().optional(),
+        discountPercent: z.string().optional(), // desconto progressivo aplicado (auditoria)
         unitIds: z.array(z.number()).optional(), // BU-PICK-BACK: unidades escolhidas
       })).min(1),
       accessories: z.array(z.object({
@@ -2965,15 +3018,22 @@ const contractsRouter = router({
         throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Apenas clientes verificados podem ter contratos criados manualmente." });
 
       // Validate availability for each bike size BEFORE creating anything (modelo derivado)
+      assertNoIntraPayloadUnitConflicts(input.bikes);
       {
         const { getSizeAvailability } = await import("./db");
-        for (const b of input.bikes) {
+        for (let i = 0; i < input.bikes.length; i++) {
+          const b = input.bikes[i];
           if (!b.bikeSizeId) continue;
           const available = await getSizeAvailability(b.bikeSizeId, b.startDate, b.endDate);
-          if (b.quantity > available) {
+          // Entradas ANTERIORES do próprio payload consomem o mesmo estoque quando
+          // compartilham tamanho e período — o banco ainda não as conhece.
+          const consumedInPayload = input.bikes.slice(0, i)
+            .filter((p) => p.bikeSizeId === b.bikeSizeId && p.startDate <= b.endDate && b.startDate <= p.endDate)
+            .reduce((s, p) => s + p.quantity, 0);
+          if (b.quantity + consumedInPayload > available) {
             throw new TRPCError({
               code: "PRECONDITION_FAILED",
-              message: `Quantidade indisponível para o tamanho selecionado. Disponível: ${available}.`,
+              message: `Quantidade indisponível para o tamanho selecionado no período. Disponível: ${Math.max(0, available - consumedInPayload)}.`,
             });
           }
         }
@@ -3009,6 +3069,7 @@ const contractsRouter = router({
           endDate: b.endDate,
           dailyRate: b.dailyRate ?? null,
           totalAmount: b.totalAmount ?? null,
+          discountPercent: b.discountPercent ?? null,
           paymentType: "presential",
           paymentStatus: "pending",
           paymentMethod: input.paymentMethod ?? null,
@@ -3092,6 +3153,7 @@ const contractsRouter = router({
         quantity: z.number().min(1).default(1),
         dailyRate: z.string().optional(),
         totalAmount: z.string().optional(),
+        discountPercent: z.string().optional(), // desconto progressivo aplicado (auditoria)
         unitIds: z.array(z.number()).optional(), // BU-PICK-BACK: unidades escolhidas
       })).min(1),
       accessories: z.array(z.object({
@@ -3118,15 +3180,20 @@ const contractsRouter = router({
       // ─── RAMO PENDENTE: substituição total (comportamento original) ───────────
       if (isPendente) {
         // Validate availability for each bike size, EXCLUDING current rentals of this contract
+        assertNoIntraPayloadUnitConflicts(input.bikes);
         {
           const { getSizeAvailability } = await import("./db");
-          for (const b of input.bikes) {
+          for (let i = 0; i < input.bikes.length; i++) {
+            const b = input.bikes[i];
             if (!b.bikeSizeId) continue;
             const available = await getSizeAvailability(b.bikeSizeId, b.startDate, b.endDate, undefined, input.id);
-            if (b.quantity > available) {
+            const consumedInPayload = input.bikes.slice(0, i)
+              .filter((p) => p.bikeSizeId === b.bikeSizeId && p.startDate <= b.endDate && b.startDate <= p.endDate)
+              .reduce((s, p) => s + p.quantity, 0);
+            if (b.quantity + consumedInPayload > available) {
               throw new TRPCError({
                 code: "PRECONDITION_FAILED",
-                message: `Quantidade indisponível para o tamanho selecionado. Disponível: ${available}.`,
+                message: `Quantidade indisponível para o tamanho selecionado no período. Disponível: ${Math.max(0, available - consumedInPayload)}.`,
               });
             }
           }
@@ -3167,6 +3234,7 @@ const contractsRouter = router({
             endDate: b.endDate,
             dailyRate: b.dailyRate ?? null,
             totalAmount: b.totalAmount ?? null,
+            discountPercent: b.discountPercent ?? null,
             paymentType: "presential",
             paymentStatus: "pending",
             paymentMethod: input.paymentMethod ?? null,
@@ -3296,6 +3364,42 @@ const contractsRouter = router({
         }
       }
 
+      // Reconciliar ACESSÓRIOS também no ramo ativo/parcial (bug Cassiana
+      // 2026-07-22: este ramo ignorava acessórios — editar não adicionava nem
+      // atualizava unidade/variação). Espelha a lógica do ramo pendente.
+      if (input.accessories && input.accessories.length > 0) {
+        await assertAccessoryAvailabilityForUpdate(db, input.id, input.accessories.map((a: any) => ({ accessoryId: a.accessoryId, variante: a.variante ?? null, qty: a.qty })));
+      }
+      {
+        // Limpar vínculos de preço (rental_accessories) dos aluguéis preservados,
+        // senão cada edição acumularia linhas duplicadas.
+        const { rentalAccessories: raTable } = await import("../drizzle/schema");
+        const keepRentals = await db.select({ id: rentalsTable.id })
+          .from(rentalsTable)
+          .where(and(eq(rentalsTable.contractId, input.id), isNull(rentalsTable.deletedAt)));
+        for (const r of keepRentals) await db.delete(raTable).where(eq(raTable.rentalId, r.id));
+      }
+      await releaseAccessoryUnits(db, input.id);
+      await db.delete(contractAccessories).where(eq(contractAccessories.contractId, input.id));
+      if (input.accessories && input.accessories.length > 0) {
+        const firstRow = await db.select({ id: rentalsTable.id })
+          .from(rentalsTable)
+          .where(and(eq(rentalsTable.contractId, input.id), isNull(rentalsTable.deletedAt)))
+          .limit(1);
+        const firstRentalId = firstRow[0]?.id;
+        for (const acc of input.accessories) {
+          const accessory = await getAccessoryById(acc.accessoryId);
+          if (firstRentalId) {
+            await createRentalAccessory({ rentalId: firstRentalId, accessoryId: acc.accessoryId, quantity: acc.qty, dailyRate: accessory?.dailyRate ?? null } as any);
+          }
+          for (let k = 0; k < acc.qty; k++) {
+            const unitId = await reserveOneAccessoryUnit(db, acc.accessoryId, acc.variante ?? null);
+            if (unitId == null) throw new TRPCError({ code: "PRECONDITION_FAILED", message: `Sem unidade disponível (variante: ${acc.variante ?? "—"}).` });
+            await db.insert(contractAccessories).values({ contractId: input.id, accessoryId: acc.accessoryId, qty: 1, unitId, status: "ok" });
+          }
+        }
+      }
+
       // Update contract header with new total
       await db.update(contracts)
         .set({ clientId: input.clientId, valorTotal: newTotal > 0 ? newTotal.toFixed(2) : null })
@@ -3400,37 +3504,44 @@ const contractsRouter = router({
     }),
 
   confirmPayment: adminOnlyProcedure
-    .input(z.object({ contractId: z.number() }))
+    .input(z.object({
+      contractId: z.number(),
+      // Forma de pagamento escolhida NA HORA de receber (devolução da bike) —
+      // pedido da Cassiana 2026-07-22; antes ficava (errado) na criação.
+      paymentMethod: z.enum(["pix", "credit_card", "debit_card", "cash", "other"]).optional(),
+    }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
       
-      // Get contract and verify it's in "pendente" status
+      // Novo fluxo (Cassiana 2026-07-22): o pagamento é confirmado APÓS a reserva
+      // (recebimento na devolução), então o contrato já está ativo/parcial/encerrado.
       const [contract] = await db.select()
         .from(contracts)
         .where(eq(contracts.id, input.contractId));
       if (!contract)
         throw new TRPCError({ code: "NOT_FOUND", message: "Contrato não encontrado." });
-      if (contract.status !== "pendente")
-        throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Contrato deve estar em status 'pendente' para confirmar pagamento." });
-      
-      // Get all pending rentals for this contract
+      if (!["ativo", "parcialmente_devolvido", "encerrado"].includes(contract.status ?? ""))
+        throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Confirme a reserva do contrato antes de registrar o pagamento." });
+
       const contractRentals = await db.select()
         .from(rentalsTable)
         .where(and(eq(rentalsTable.contractId, input.contractId), isNull(rentalsTable.deletedAt)));
       if (contractRentals.length === 0)
         throw new TRPCError({ code: "NOT_FOUND", message: "Nenhum aluguel encontrado para este contrato." });
-      
-      // Mark all rentals as paid and transition from pending to active
+      // Guarda anti-duplo-pagamento: se já está pago, não registra receita de novo
+      if (contractRentals.every((r) => r.paymentStatus === "paid"))
+        throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Este contrato já teve o pagamento confirmado." });
+
+      // Marca pago (não mexe no status do aluguel/contrato — já ativos; o
+      // encerramento é dirigido pelas devoluções).
       await db.update(rentalsTable)
-        .set({ paymentStatus: "paid", status: "active" })
+        .set({
+          paymentStatus: "paid",
+          ...(input.paymentMethod ? { paymentMethod: input.paymentMethod } : {}),
+        })
         .where(and(eq(rentalsTable.contractId, input.contractId), isNull(rentalsTable.deletedAt)));
-      
-      // Transition contract from "pendente" to "ativo"
-      await db.update(contracts)
-        .set({ status: "ativo" })
-        .where(eq(contracts.id, input.contractId));
-      
+
       // Register revenue in financial module
       try {
         const today = new Date().toISOString().split("T")[0];
@@ -3474,11 +3585,15 @@ const contractsRouter = router({
 // ─── findAvailableBikeUnits helper (LOTE-5: testability) ────────────────────
 export async function findAvailableBikeUnits(
   db: any,
-  opts: { bikeSizeId: number; startDate: string; endDate: string; excludeRentalId?: number },
+  opts: { bikeSizeId: number; startDate: string; endDate: string; excludeRentalId?: number; excludeContractId?: number },
 ): Promise<{ id: number; numeroSistema: string }[]> {
   const { bikeUnits } = await import("../drizzle/schema");
   const { eq, and, sql: sqlFn } = await import("drizzle-orm");
   const excludeId = opts.excludeRentalId ?? -1;
+  // excludeContractId: na EDIÇÃO de contrato os aluguéis do PRÓPRIO contrato não
+  // podem bloquear suas unidades (senão "a bike some" ao tentar alterar — bug
+  // reportado pela Cassiana em 2026-07-22).
+  const excludeContract = opts.excludeContractId ?? -1;
   const overlapCond = sqlFn`NOT EXISTS (
     SELECT 1 FROM rental_bike_units rbu
     JOIN rentals r ON r.id = rbu."rentalId"
@@ -3486,6 +3601,7 @@ export async function findAvailableBikeUnits(
       AND r.status IN ('pending','active','overdue')
       AND r."deletedAt" IS NULL
       AND r.id <> ${excludeId}
+      AND (r."contractId" IS NULL OR r."contractId" <> ${excludeContract})
       AND r."startDate" <= ${opts.endDate}
       AND (r."endDate" IS NULL OR r."endDate" >= ${opts.startDate})
   )`;
@@ -3593,6 +3709,7 @@ const bikeUnitsRouter = router({
       startDate: z.string(),
       endDate: z.string(),
       excludeRentalId: z.number().optional(),
+      excludeContractId: z.number().optional(), // edição: não se auto-bloquear
     }))
     .query(async ({ input }) => {
       const db = await (await import("./db")).getDb();

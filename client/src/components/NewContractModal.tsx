@@ -14,6 +14,7 @@ import {
   X,
   Check,
   Trash2,
+  Pencil,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -35,6 +36,13 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 
+// "YYYY-MM-DD" → "DD/MM/YYYY" (exibição no carrinho/resumo do contrato).
+function fmtDateBr(d?: string): string {
+  if (!d) return "—";
+  const [y, m, day] = d.split("-");
+  return day && m && y ? `${day}/${m}/${y}` : d;
+}
+
 // Rótulos amigáveis das categorias do catálogo (valor cru no banco → exibição).
 // Chave desconhecida cai no próprio valor (ver uso). Ajustar se surgirem novas.
 const CATEGORY_LABELS: Record<string, string> = {
@@ -46,7 +54,9 @@ const CATEGORY_LABELS: Record<string, string> = {
 
 // Formas de pagamento (valor do enum no banco → rótulo). Alinhado ao
 // paymentMethodEnum do schema (pix/credit_card/debit_card/cash/other).
-const PAYMENT_METHODS: Array<{ value: string; label: string }> = [
+// Exportado: a seleção acontece no CONFIRMAR PAGAMENTO (devolução da bike),
+// não na criação do contrato — pedido da Cassiana 2026-07-22.
+export const PAYMENT_METHODS: Array<{ value: string; label: string }> = [
   { value: "pix", label: "Pix" },
   { value: "cash", label: "Dinheiro" },
   { value: "credit_card", label: "Cartão de crédito" },
@@ -69,6 +79,7 @@ type BikeEntry = {
   dailyRate: string;
   numDays: number;
   totalAmount: string;
+  discountPercent?: number;   // desconto progressivo aplicado (exibição + auditoria)
   unitIds: number[];          // BU-PICK-FRONT: IDs das unidades físicas escolhidas
   unitNumeros?: string[];     // só para exibir no cart
 };
@@ -214,7 +225,6 @@ export function NewContractModal({
   const [clientStatus, setClientStatus] = useState("verified"); // prefill always verified
   const [bikeEntries, setBikeEntries] = useState<BikeEntry[]>([]);
   const [notes, setNotes] = useState("");
-  const [paymentMethod, setPaymentMethod] = useState<string>(""); // forma de pagamento (opcional)
   const [accSelections, setAccSelections] = useState<Record<number, Record<string, number>>>({});
   const [prefillSelections, setPrefillSelections] = useState<Record<number, Record<string, number>>>({});
 
@@ -265,35 +275,68 @@ export function NewContractModal({
     ? allBikes
     : allBikes.filter((b: any) => b.category === selCategory);
 
+  // Datas primeiro: o breakdown dos tamanhos é calculado PARA O PERÍODO escolhido
+  // (e, na edição, sem contar os aluguéis do próprio contrato).
   const { data: sizesData } = trpc.bikes.listSizes.useQuery(
-    { bikeId: Number(selBikeId) },
+    {
+      bikeId: Number(selBikeId),
+      startDate: selStartDate || undefined,
+      endDate: selEndDate || undefined,
+      excludeContractId: isEditMode && editPrefill ? editPrefill.contractId : undefined,
+    },
     { enabled: !!selBikeId && step === 2 }
   );
   const sizes = sizesData ?? [];
 
-  // BU-PICK-FRONT: buscar unidades disponíveis quando tamanho + datas estiverem preenchidos
+  // Descontos progressivos da bike selecionada (bug Cassiana 2026-07-22: as
+  // regras existiam no cadastro mas NÃO entravam no valor do contrato).
+  const { data: discountRules = [] } = trpc.bikes.discountRules.useQuery(
+    { bikeId: Number(selBikeId) },
+    { enabled: !!selBikeId && step === 2 }
+  );
+
+  // BU-PICK-FRONT: buscar unidades disponíveis quando tamanho + datas estiverem preenchidos.
+  // Em modo edição, exclui o PRÓPRIO contrato — senão os aluguéis dele bloqueiam
+  // suas unidades e "a bike some" ao tentar alterar (bug Cassiana 2026-07-22).
   const { data: availUnits = [] } = trpc.bikeUnits.available.useQuery(
-    { bikeSizeId: Number(selBikeSizeId), startDate: selStartDate, endDate: selEndDate },
+    {
+      bikeSizeId: Number(selBikeSizeId), startDate: selStartDate, endDate: selEndDate,
+      excludeContractId: isEditMode && editPrefill ? editPrefill.contractId : undefined,
+    },
     { enabled: !!(selBikeSizeId && selStartDate && selEndDate) }
   );
+  // Unidades que JÁ estão no carrinho em período sobreposto não podem ser
+  // oferecidas de novo (guarda anti-duplicação — bug da edição, 2026-07-22).
+  const cartBlockedUnitIds = new Set(
+    bikeEntries
+      .filter((e) => selStartDate && selEndDate && e.startDate <= selEndDate && selStartDate <= e.endDate)
+      .flatMap((e) => e.unitIds ?? []),
+  );
+  const pickableUnits = (availUnits as any[]).filter((u) => !cartBlockedUnitIds.has(u.id));
+
+  // "Editar" do carrinho recarrega os campos com unidades já escolhidas —
+  // este flag impede o reset abaixo de apagá-las nesse único ciclo.
+  const skipUnitResetRef = useRef(false);
+
   // BU-PICK-FRONT-FIX: zerar seleção ao trocar tamanho/datas para evitar unitIds do tamanho anterior
   useEffect(() => {
+    if (skipUnitResetRef.current) { skipUnitResetRef.current = false; return; }
     setSelUnitIds([]);
     prevAvailRef.current = [];
   }, [selBikeSizeId, selStartDate, selEndDate]);
 
-  // Pré-marcar o primeiro ao carregar (sugestão)
+  // Pré-marcar o primeiro ao carregar (sugestão) — só entre as ainda selecionáveis
   const prevAvailRef = useRef<typeof availUnits>([]);
   useEffect(() => {
     const prev = prevAvailRef.current;
-    if (availUnits.length > 0 && prev.length === 0 && selUnitIds.length === 0) {
-      setSelUnitIds([availUnits[0].id]);
+    if (pickableUnits.length > 0 && prev.length === 0 && selUnitIds.length === 0) {
+      setSelUnitIds([pickableUnits[0].id]);
     }
-    if (availUnits.length === 0 && prev.length > 0) {
+    if (pickableUnits.length === 0 && prev.length > 0) {
       setSelUnitIds([]);
     }
-    prevAvailRef.current = availUnits;
-  }, [availUnits]);
+    prevAvailRef.current = pickableUnits as typeof availUnits;
+  }, [pickableUnits.length, availUnits]);
 
   const { data: accData } = trpc.accessories.list.useQuery(
     { page: 1, limit: 100 },
@@ -310,13 +353,23 @@ export function NewContractModal({
 
   const selectedBike = bikes.find((b) => b.id === Number(selBikeId));
 
-  function calcTotal(entry: Omit<BikeEntry, "totalAmount" | "numDays">): { numDays: number; totalAmount: string } {
+  function calcTotal(
+    entry: Omit<BikeEntry, "totalAmount" | "numDays">,
+    rules: Array<{ minDays: number; discountPercent: string }> = [],
+  ): { numDays: number; totalAmount: string; discountPercent?: number } {
     if (!entry.startDate || !entry.endDate) return { numDays: 0, totalAmount: "0.00" };
     const start = new Date(entry.startDate);
     const end = new Date(entry.endDate);
     const numDays = Math.max(1, Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)));
     const rate = parseFloat(entry.dailyRate || "0");
-    return { numDays, totalAmount: (rate * numDays * entry.quantity).toFixed(2) };
+    const base = rate * numDays * entry.quantity;
+    // Desconto progressivo: vale a regra de MAIOR minDays que o período atingir
+    const rule = rules
+      .filter((r) => numDays >= r.minDays)
+      .sort((a, b) => b.minDays - a.minDays)[0];
+    const pct = rule ? parseFloat(String(rule.discountPercent)) : 0;
+    const totalAmount = (base * (1 - (isNaN(pct) ? 0 : pct) / 100)).toFixed(2);
+    return { numDays, totalAmount, discountPercent: pct > 0 ? pct : undefined };
   }
 
   function handleAddBike() {
@@ -328,6 +381,26 @@ export function NewContractModal({
     if (selBikeSizeId && selUnitIds.length === 0) {
       toast.error("Selecione ao menos uma unidade.");
       return;
+    }
+    // Guarda anti-duplicação (bug Cassiana 2026-07-22): a mesma unidade não pode
+    // entrar duas vezes no contrato com períodos sobrepostos.
+    const fmtBr = (d: string) => d.split("-").reverse().join("/");
+    const overlapEntry = (e: BikeEntry) => e.startDate <= selEndDate && selStartDate <= e.endDate;
+    const unitConflict = bikeEntries.find(
+      (e) => overlapEntry(e) && (e.unitIds ?? []).some((u) => selUnitIds.includes(u)),
+    );
+    if (unitConflict) {
+      const nums = (unitConflict.unitNumeros ?? []).join(", ") || "esta unidade";
+      toast.error(`${nums} já está neste contrato de ${fmtBr(unitConflict.startDate)} a ${fmtBr(unitConflict.endDate)}. Edite a entrada existente ou escolha outro período.`);
+      return;
+    }
+    // Modo quantidade (sem tamanho): mesma bike com período sobreposto = duplicada
+    if (!selBikeSizeId) {
+      const dup = bikeEntries.find((e) => e.bikeId === Number(selBikeId) && overlapEntry(e));
+      if (dup) {
+        toast.error(`Esta bike já está no contrato de ${fmtBr(dup.startDate)} a ${fmtBr(dup.endDate)}. Edite a entrada existente em vez de adicionar de novo.`);
+        return;
+      }
     }
     const bike = bikes.find((b) => b.id === Number(selBikeId));
     const size = sizes.find((s) => s.id === Number(selBikeSizeId));
@@ -345,13 +418,32 @@ export function NewContractModal({
       unitIds: selBikeSizeId ? selUnitIds : [],
       unitNumeros: chosenNumeros.length > 0 ? chosenNumeros : undefined,
     };
-    const { numDays, totalAmount } = calcTotal(entry);
-    setBikeEntries((prev) => [...prev, { ...entry, numDays, totalAmount }]);
+    const { numDays, totalAmount, discountPercent } = calcTotal(entry, discountRules as any[]);
+    setBikeEntries((prev) => [...prev, { ...entry, numDays, totalAmount, discountPercent }]);
     setSelBikeId(""); setSelBikeSizeId(""); setSelStartDate(""); setSelEndDate(""); setSelQty(1); setSelUnitIds([]);
   }
 
   function handleRemoveBike(idx: number) {
     setBikeEntries((prev) => prev.filter((_, i) => i !== idx));
+  }
+
+  // Editar bike do carrinho: devolve a entrada para os campos do formulário
+  // (datas, bike, tamanho, unidades) e a remove do carrinho — ajustou, re-adiciona.
+  // Antes o único caminho era "remover e adicionar de novo", que ninguém descobre
+  // sozinho — a Cassiana caiu no loop de duplicar (2026-07-22).
+  function handleEditEntry(idx: number) {
+    const b = bikeEntries[idx];
+    if (!b || b.locked) return;
+    skipUnitResetRef.current = true; // preservar as unidades da entrada no reset
+    setSelCategory("all");
+    setSelBikeId(String(b.bikeId));
+    setSelBikeSizeId(b.bikeSizeId ? String(b.bikeSizeId) : "");
+    setSelStartDate(b.startDate);
+    setSelEndDate(b.endDate);
+    setSelQty(b.quantity);
+    setSelUnitIds(b.unitIds ?? []);
+    setBikeEntries((prev) => prev.filter((_, i) => i !== idx));
+    toast.info("Bike carregada nos campos — ajuste e clique em \"Adicionar bike ao contrato\".");
   }
 
   const grandTotal = bikeEntries.reduce((s, b) => s + parseFloat(b.totalAmount), 0);
@@ -380,7 +472,7 @@ export function NewContractModal({
   function handleReset() {
     setStep(1); setClientId(""); setClientName(""); setClientStatus("");
     setBikeEntries([]); setAccSelections({}); setPrefillSelections({}); setNotes("");
-    setSelCategory("all"); setPaymentMethod("");
+    setSelCategory("all");
     setSelBikeId(""); setSelBikeSizeId(""); setSelStartDate(""); setSelEndDate(""); setSelQty(1);
   }
 
@@ -402,6 +494,7 @@ export function NewContractModal({
       quantity: b.quantity,
       dailyRate: b.dailyRate,
       totalAmount: b.totalAmount,
+      discountPercent: b.discountPercent != null ? String(b.discountPercent) : undefined,
       unitIds: b.unitIds?.length ? b.unitIds : undefined, // BU-PICK-FRONT
     }));
     const accPayload: Array<{accessoryId:number;variante?:string;qty:number}> = [];
@@ -414,7 +507,6 @@ export function NewContractModal({
         clientId: Number(clientId),
         bikes: bikePayload,
         accessories: accPayload,
-        paymentMethod: (paymentMethod || undefined) as any,
       });
     } else {
       createMutation.mutate({
@@ -422,7 +514,6 @@ export function NewContractModal({
         bikes: bikePayload,
         accessories: accPayload,
         notes: notes || undefined,
-        paymentMethod: (paymentMethod || undefined) as any,
       });
     }
   }
@@ -479,15 +570,32 @@ export function NewContractModal({
           </div>
         )}
 
-        {/* Step 2: Add bikes */}
+        {/* Step 2: Add bikes — DATAS PRIMEIRO (2026-07-22): a disponibilidade é
+            por data, então o período define o que os seletores mostram. */}
         {step === 2 && (
           <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label className="mb-1 block text-xs">Data início</Label>
+                <Input type="date" value={selStartDate} onChange={(e) => setSelStartDate(e.target.value)} className="text-sm" />
+              </div>
+              <div>
+                <Label className="mb-1 block text-xs">Data devolução</Label>
+                <Input type="date" value={selEndDate} onChange={(e) => setSelEndDate(e.target.value)} min={selStartDate} className="text-sm" />
+              </div>
+            </div>
+            {!(selStartDate && selEndDate) && (
+              <p className="text-xs text-muted-foreground">
+                Escolha o período primeiro — a disponibilidade das bikes é calculada pelas datas.
+              </p>
+            )}
             {categories.length > 0 && (
               <div className="min-w-0">
                 <Label className="mb-1 block text-xs">Categoria</Label>
                 <Select
                   value={selCategory}
                   onValueChange={(v) => { setSelCategory(v); setSelBikeId(""); setSelBikeSizeId(""); }}
+                  disabled={!(selStartDate && selEndDate)}
                 >
                   <SelectTrigger className="text-sm w-full min-w-0"><SelectValue /></SelectTrigger>
                   <SelectContent>
@@ -502,7 +610,11 @@ export function NewContractModal({
             <div className="grid grid-cols-2 gap-3">
               <div className="min-w-0">
                 <Label className="mb-1 block text-xs">Bicicleta</Label>
-                <Select value={selBikeId} onValueChange={(v) => { setSelBikeId(v); setSelBikeSizeId(""); }}>
+                <Select
+                  value={selBikeId}
+                  onValueChange={(v) => { setSelBikeId(v); setSelBikeSizeId(""); }}
+                  disabled={!(selStartDate && selEndDate)}
+                >
                   <SelectTrigger className="text-sm w-full min-w-0"><SelectValue placeholder="Selecionar bike" /></SelectTrigger>
                   <SelectContent>
                     {bikes.map((b) => (
@@ -518,31 +630,33 @@ export function NewContractModal({
                 <Select value={selBikeSizeId} onValueChange={setSelBikeSizeId} disabled={!selBikeId || sizes.length === 0}>
                   <SelectTrigger className="text-sm w-full min-w-0"><SelectValue placeholder={sizes.length === 0 ? "Sem tamanhos" : "Selecionar"} /></SelectTrigger>
                   <SelectContent>
+                    {/* Com datas escolhidas, o "disp." é DO PERÍODO (listSizes
+                        recebe as datas) — agora o número é verdadeiro. */}
                     {sizes.map((s) => (
                       <SelectItem key={s.id} value={String(s.id)}>
-                        {s.tamanho} — {s.quantidadeDisponivel} disp.
+                        {s.tamanho} — {(s as any).disponivel ?? 0} disp. no período
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
-              <div>
-                <Label className="mb-1 block text-xs">Data início</Label>
-                <Input type="date" value={selStartDate} onChange={(e) => setSelStartDate(e.target.value)} className="text-sm" />
-              </div>
-              <div>
-                <Label className="mb-1 block text-xs">Data devolução</Label>
-                <Input type="date" value={selEndDate} onChange={(e) => setSelEndDate(e.target.value)} min={selStartDate} className="text-sm" />
-              </div>
               {/* BU-PICK-FRONT: seletor de unidades físicas (substitui campo Quantidade) */}
               {selBikeSizeId && (
                 <div className="col-span-2">
                   <Label className="mb-1 block text-xs">Unidades físicas</Label>
-                  {(availUnits as any[]).length === 0 ? (
-                    <p className="text-xs text-muted-foreground py-1">Nenhuma unidade disponível no período.</p>
+                  {!(selStartDate && selEndDate) ? (
+                    // Sem datas ainda não dá pra saber — antes dizia "nenhuma
+                    // disponível", que lia como bike indisponível (bug Cassiana)
+                    <p className="text-xs text-muted-foreground py-1">Escolha as datas para ver as unidades disponíveis no período.</p>
+                  ) : pickableUnits.length === 0 ? (
+                    <p className="text-xs text-muted-foreground py-1">
+                      {(availUnits as any[]).length > 0
+                        ? "Todas as unidades deste período já estão no contrato (edite a entrada existente)."
+                        : "Nenhuma unidade disponível no período."}
+                    </p>
                   ) : (
                     <div className="flex flex-wrap gap-1.5">
-                      {(availUnits as any[]).map((u) => {
+                      {pickableUnits.map((u) => {
                         const checked = selUnitIds.includes(u.id);
                         return (
                           <button
@@ -589,15 +703,15 @@ export function NewContractModal({
                 </div>
               )}
             </div>
+            {/* BUGFIX (Cassiana 2026-07-22): o disable checava disponibilidade "AGORA"
+                (coluna sem data) — bike alugada em julho travava o botão até para um
+                período LIVRE em setembro. A verdade é por data: o seletor de unidades
+                acima + handleAddBike já barram quando não há unidade no período. */}
             <Button
               variant="outline"
               size="sm"
               onClick={handleAddBike}
               className="w-full"
-              disabled={(() => {
-                const selectedSize = sizes.find((s) => s.id === Number(selBikeSizeId));
-                return selectedSize !== undefined && selectedSize.quantidadeDisponivel === 0;
-              })()}
             >
               <Plus className="h-4 w-4 mr-1" /> Adicionar bike ao contrato
             </Button>
@@ -614,24 +728,41 @@ export function NewContractModal({
               <div className="space-y-2">
                 <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Bikes adicionadas</p>
                 {bikeEntries.map((b, i) => (
-                  <div key={i} className={`flex items-center justify-between p-2.5 rounded-md border ${
+                  <div key={i} className={`flex items-start gap-2 p-2.5 rounded-md border ${
                     b.locked ? "bg-muted/30 opacity-70" : "bg-muted/50"
                   }`}>
-                    <div className="text-sm">
-                      <span className="font-medium">{b.bikeModel}</span>
-                      {b.tamanho && <span className="text-muted-foreground"> · {b.tamanho}</span>}
-                      <span className="text-muted-foreground"> · {b.numDays}d · {b.quantity}x</span>
-                      {b.unitNumeros && b.unitNumeros.length > 0 && (
-                        <span className="text-muted-foreground"> · Nº {b.unitNumeros.join(", ")}</span>
-                      )}
-                      {b.locked && <span className="ml-1.5 text-xs text-muted-foreground">(devolvida)</span>}
+                    <div className="min-w-0 flex-1">
+                      {/* Linha 1: modelo + tamanho + selos */}
+                      <div className="flex items-center gap-1.5 flex-wrap text-sm">
+                        <span className="font-medium leading-tight">{b.bikeModel}</span>
+                        {b.tamanho && <span className="text-xs text-muted-foreground">({b.tamanho})</span>}
+                        {b.discountPercent != null && b.discountPercent > 0 && (
+                          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-500/20 text-emerald-600 border border-emerald-500/30 dark:text-emerald-400">
+                            −{b.discountPercent}%
+                          </span>
+                        )}
+                        {b.locked && <span className="text-xs text-muted-foreground">(devolvida)</span>}
+                      </div>
+                      {/* Linha 2: período + dias/qtd + unidades */}
+                      <div className="text-xs text-muted-foreground mt-0.5">
+                        <span className="tabular-nums">{fmtDateBr(b.startDate)} → {fmtDateBr(b.endDate)}</span>
+                        <span> · {b.numDays}d · {b.quantity}x</span>
+                        {b.unitNumeros && b.unitNumeros.length > 0 && (
+                          <span> · Nº {b.unitNumeros.join(", ")}</span>
+                        )}
+                      </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-medium">R$ {b.totalAmount}</span>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span className="text-sm font-semibold whitespace-nowrap tabular-nums">R$ {b.totalAmount}</span>
                       {!b.locked && (
-                        <button type="button" onClick={() => handleRemoveBike(i)} className="text-muted-foreground hover:text-destructive">
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
+                        <div className="flex items-center gap-1">
+                          <button type="button" onClick={() => handleEditEntry(i)} title="Editar datas/unidades desta bike" className="text-muted-foreground hover:text-primary p-0.5">
+                            <Pencil className="h-3.5 w-3.5" />
+                          </button>
+                          <button type="button" onClick={() => handleRemoveBike(i)} title="Remover do contrato" className="text-muted-foreground hover:text-destructive p-0.5">
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
                       )}
                     </div>
                   </div>
@@ -720,9 +851,20 @@ export function NewContractModal({
             <div>
               <p className="text-xs text-muted-foreground uppercase tracking-wide mb-2">Bikes</p>
               {bikeEntries.map((b, i) => (
-                <div key={i} className="flex justify-between text-sm py-1 border-b last:border-0">
-                  <span>{b.bikeModel}{b.tamanho ? ` (${b.tamanho})` : ""} · {b.numDays}d · {b.quantity}x{b.unitNumeros && b.unitNumeros.length > 0 ? ` · Nº ${b.unitNumeros.join(", ")}` : ""}</span>
-                  <span className="font-medium">R$ {b.totalAmount}</span>
+                <div key={i} className="flex justify-between gap-2 text-sm py-1 border-b last:border-0">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="font-medium">{b.bikeModel}</span>
+                      {b.tamanho ? <span className="text-xs text-muted-foreground">({b.tamanho})</span> : null}
+                      {b.discountPercent != null && b.discountPercent > 0 && (
+                        <span className="text-xs text-emerald-600 dark:text-emerald-400 font-semibold">−{b.discountPercent}%</span>
+                      )}
+                    </div>
+                    <div className="text-xs text-muted-foreground tabular-nums">
+                      {fmtDateBr(b.startDate)} → {fmtDateBr(b.endDate)} · {b.numDays}d · {b.quantity}x{b.unitNumeros && b.unitNumeros.length > 0 ? ` · Nº ${b.unitNumeros.join(", ")}` : ""}
+                    </div>
+                  </div>
+                  <span className="font-medium whitespace-nowrap tabular-nums">R$ {b.totalAmount}</span>
                 </div>
               ))}
             </div>
@@ -750,17 +892,8 @@ export function NewContractModal({
               <span>Total</span>
               <span className="text-primary">R$ {grandTotal.toFixed(2)}</span>
             </div>
-            <div>
-              <Label className="mb-1 block text-xs">Forma de pagamento (opcional)</Label>
-              <Select value={paymentMethod} onValueChange={setPaymentMethod}>
-                <SelectTrigger className="text-sm w-full min-w-0"><SelectValue placeholder="Selecionar forma de pagamento" /></SelectTrigger>
-                <SelectContent>
-                  {PAYMENT_METHODS.map((p) => (
-                    <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+            {/* Forma de pagamento saiu daqui de propósito: a Cassiana recebe na
+                DEVOLUÇÃO — a escolha vive no botão "Confirmar Pagamento". */}
             <div>
               <Label className="mb-1 block text-xs">Observações (opcional)</Label>
               <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Observações internas..." rows={2} className="text-sm" />

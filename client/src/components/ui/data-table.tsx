@@ -119,8 +119,10 @@ export function DataTable<TData>({
         </DropdownMenu>
       </div>
 
-      {/* Tabela (vira cards empilhados no mobile via .table-mobile-cards) */}
-      <div className="table-mobile-cards overflow-hidden rounded-lg border border-border">
+      {/* Tabela (vira cards empilhados no mobile via .table-mobile-cards).
+          overflow-x-auto: em larguras intermediárias a tabela ROLA em vez de
+          cortar colunas/ações (antes era overflow-hidden e sumia informação). */}
+      <div className="table-mobile-cards overflow-x-auto rounded-lg border border-border">
         <Table>
           <TableHeader className="sticky top-0 z-10 bg-muted/60">
             {table.getHeaderGroups().map((headerGroup) => (
