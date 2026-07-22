@@ -40,6 +40,7 @@ export interface ContractPdfData {
   clientEmail?: string | null;
   criadoEm: Date | string;
   valorTotal?: string | null;
+  paymentMethod?: string | null;
   rentals: Array<{
     bikeModel?: string | null;
     bikeBrand?: string | null;
@@ -126,6 +127,8 @@ const PDF_LABELS: Record<PdfLanguage, {
   colUnidade: string;
   totalLocacao: string;
   caucaoLabel: string;
+  formaPagamento: string;
+  pm: Record<string, string>;
   nenhumaBike: string;
   nenhumAcessorio: string;
   notaSistema: string;
@@ -153,6 +156,8 @@ const PDF_LABELS: Record<PdfLanguage, {
     colUnidade:  "Nº unidade",
     totalLocacao: "Total da locação",
     caucaoLabel:  "Caução (devolvida na entrega das bikes)",
+    formaPagamento: "Forma de pagamento",
+    pm: { pix: "Pix", cash: "Dinheiro", credit_card: "Cartão de crédito", debit_card: "Cartão de débito", stripe: "Cartão", other: "Outro" },
     nenhumaBike:  "Nenhuma bicicleta vinculada.",
     nenhumAcessorio: "Nenhum acessório vinculado.",
     notaSistema: "Nº de sistema — número de controle físico de cada bicicleta, conferido na retirada e na devolução.",
@@ -181,6 +186,8 @@ const PDF_LABELS: Record<PdfLanguage, {
     colUnidade:  "Unit no.",
     totalLocacao: "Rental total",
     caucaoLabel:  "Deposit (returned on bike delivery)",
+    formaPagamento: "Payment method",
+    pm: { pix: "Pix", cash: "Cash", credit_card: "Credit card", debit_card: "Debit card", stripe: "Card", other: "Other" },
     nenhumaBike:  "No bicycles linked.",
     nenhumAcessorio: "No accessories linked.",
     notaSistema: "System no. — physical control number of each bicycle, checked at pick-up and return.",
@@ -209,6 +216,8 @@ const PDF_LABELS: Record<PdfLanguage, {
     colUnidade:  "Nº unidad",
     totalLocacao: "Total del alquiler",
     caucaoLabel:  "Depósito (devuelto en la entrega de las bicicletas)",
+    formaPagamento: "Forma de pago",
+    pm: { pix: "Pix", cash: "Efectivo", credit_card: "Tarjeta de crédito", debit_card: "Tarjeta de débito", stripe: "Tarjeta", other: "Otro" },
     nenhumaBike:  "Ninguna bicicleta vinculada.",
     nenhumAcessorio: "Ningún accesorio vinculado.",
     notaSistema: "Nº de sistema — número de control físico de cada bicicleta, verificado en la recogida y la devolución.",
@@ -547,14 +556,23 @@ export async function generateContractPdf(
       const y2 = y + 22;
       doc.moveTo(M, y2).lineTo(RIGHT, y2).lineWidth(0.5).strokeColor(LINE).stroke();
 
-      const y3 = y2 + 7;
+      let rowY = y2 + 7;
       if (empresaCaucao && empresaCaucao.trim() !== "") {
         doc.fillColor(MUTED).font("Helvetica").fontSize(8.5)
-          .text(L.caucaoLabel, M, y3, { width: 300, lineBreak: false });
+          .text(L.caucaoLabel, M, rowY, { width: 300, lineBreak: false });
         doc.fillColor(INK).font("Helvetica").fontSize(8.5)
-          .text(empresaCaucao, M, y3, { width: CW, align: "right", lineBreak: false });
+          .text(empresaCaucao, M, rowY, { width: CW, align: "right", lineBreak: false });
+        rowY += 14;
       }
-      doc.y = y3 + 14; doc.x = M;
+      // Forma de pagamento (só quando informada no contrato)
+      if (data.paymentMethod) {
+        doc.fillColor(MUTED).font("Helvetica").fontSize(8.5)
+          .text(L.formaPagamento, M, rowY, { width: 300, lineBreak: false });
+        doc.fillColor(INK).font("Helvetica").fontSize(8.5)
+          .text(L.pm[data.paymentMethod] ?? data.paymentMethod, M, rowY, { width: CW, align: "right", lineBreak: false });
+        rowY += 14;
+      }
+      doc.y = rowY + 7; doc.x = M;
     }
     // ── 5. TERMOS E CONDIÇÕES ───────────────────────────────────────────────────
     // Termos: sempre renderiza (usa default embutido se vazio no banco)

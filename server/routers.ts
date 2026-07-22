@@ -2461,7 +2461,7 @@ async function buildContractPdfData(db: Awaited<ReturnType<typeof getDb>>, contr
   const rentalsForPdf = await db.select({
     id: rT.id, bikeId: rT.bikeId, startDate: rT.startDate, endDate: rT.endDate,
     totalAmount: rT.totalAmount, dailyRate: rT.dailyRate, bikeSizeId: rT.bikeSizeId,
-    quantity: rT.quantity,
+    quantity: rT.quantity, paymentMethod: rT.paymentMethod,
   }).from(rT).where(and(eq(rT.contractId, contractId), isNull(rT.deletedAt)));
   const rentalsWithBike = await Promise.all(rentalsForPdf.map(async (r) => {
     const [bike] = r.bikeId
@@ -2500,6 +2500,7 @@ async function buildContractPdfData(db: Awaited<ReturnType<typeof getDb>>, contr
     clientEmail: clientRow?.email ?? null,
     criadoEm: contractRow?.criadoEm ?? new Date(),
     valorTotal: contractRow?.valorTotal ?? null,
+    paymentMethod: rentalsForPdf[0]?.paymentMethod ?? null,
     rentals: rentalsWithBike,
     accessories: accWithSerial,
   };
@@ -2949,6 +2950,7 @@ const contractsRouter = router({
         unitId: z.number().optional(),
       })).optional(),
       notes: z.string().optional(),
+      paymentMethod: z.enum(["pix", "credit_card", "debit_card", "cash", "other"]).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
@@ -3009,6 +3011,7 @@ const contractsRouter = router({
           totalAmount: b.totalAmount ?? null,
           paymentType: "presential",
           paymentStatus: "pending",
+          paymentMethod: input.paymentMethod ?? null,
           status: "pending",
           source: "manual",
           contractId: contract.id, // BUGFIX: sem isto o rental fica órfão (contractId NULL)
@@ -3097,6 +3100,7 @@ const contractsRouter = router({
         variante: z.string().optional(),
         unitId: z.number().optional(),
       })).optional(),
+      paymentMethod: z.enum(["pix", "credit_card", "debit_card", "cash", "other"]).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
@@ -3165,6 +3169,7 @@ const contractsRouter = router({
             totalAmount: b.totalAmount ?? null,
             paymentType: "presential",
             paymentStatus: "pending",
+            paymentMethod: input.paymentMethod ?? null,
             status: "pending",
             source: "manual",
             contractId: input.id,
@@ -3309,6 +3314,15 @@ const contractsRouter = router({
           } as any);
         }
       } catch (err) { console.warn("[contracts.update] Revenue adjustment error:", err); }
+
+      // Propagar forma de pagamento (item: registrar forma de pagamento no contrato).
+      // Ramo ativo/parcial mantém os rentals existentes, então setamos aqui; o ramo
+      // pendente já grava no createRental ao recriar.
+      if (input.paymentMethod) {
+        await db.update(rentalsTable)
+          .set({ paymentMethod: input.paymentMethod })
+          .where(and(eq(rentalsTable.contractId, input.id), isNull(rentalsTable.deletedAt)));
+      }
 
       // Regenerate PDF (non-blocking)
       try {

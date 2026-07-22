@@ -35,6 +35,25 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 
+// Rótulos amigáveis das categorias do catálogo (valor cru no banco → exibição).
+// Chave desconhecida cai no próprio valor (ver uso). Ajustar se surgirem novas.
+const CATEGORY_LABELS: Record<string, string> = {
+  mtb: "Mountain Bike",
+  speed: "Speed / Road",
+  gravel: "Gravel",
+  urbana: "Urbana",
+};
+
+// Formas de pagamento (valor do enum no banco → rótulo). Alinhado ao
+// paymentMethodEnum do schema (pix/credit_card/debit_card/cash/other).
+const PAYMENT_METHODS: Array<{ value: string; label: string }> = [
+  { value: "pix", label: "Pix" },
+  { value: "cash", label: "Dinheiro" },
+  { value: "credit_card", label: "Cartão de crédito" },
+  { value: "debit_card", label: "Cartão de débito" },
+  { value: "other", label: "Outro" },
+];
+
 // ─── Types ──────────────────────────────────────────────────────────────────────────────────
 type BikeEntry = {
   rentalId?: number;      // present for existing rentals in ativo/parcial edit mode
@@ -195,6 +214,7 @@ export function NewContractModal({
   const [clientStatus, setClientStatus] = useState("verified"); // prefill always verified
   const [bikeEntries, setBikeEntries] = useState<BikeEntry[]>([]);
   const [notes, setNotes] = useState("");
+  const [paymentMethod, setPaymentMethod] = useState<string>(""); // forma de pagamento (opcional)
   const [accSelections, setAccSelections] = useState<Record<number, Record<string, number>>>({});
   const [prefillSelections, setPrefillSelections] = useState<Record<number, Record<string, number>>>({});
 
@@ -223,6 +243,7 @@ export function NewContractModal({
   }, [open, isEditMode]);
 
   // Bike selection state
+  const [selCategory, setSelCategory] = useState("all");
   const [selBikeId, setSelBikeId] = useState("");
   const [selBikeSizeId, setSelBikeSizeId] = useState("");
   const [selStartDate, setSelStartDate] = useState(initialStartDate ?? "");
@@ -235,7 +256,14 @@ export function NewContractModal({
     { page: 1, limit: 100 },
     { enabled: open && step === 2 }
   );
-  const bikes = bikesData?.data ?? [];
+  const allBikes = bikesData?.data ?? [];
+  // Filtro de categoria: só aparece se o catálogo tiver categorias preenchidas.
+  const categories = Array.from(
+    new Set(allBikes.map((b: any) => b.category).filter(Boolean) as string[])
+  ).sort();
+  const bikes = selCategory === "all"
+    ? allBikes
+    : allBikes.filter((b: any) => b.category === selCategory);
 
   const { data: sizesData } = trpc.bikes.listSizes.useQuery(
     { bikeId: Number(selBikeId) },
@@ -352,6 +380,7 @@ export function NewContractModal({
   function handleReset() {
     setStep(1); setClientId(""); setClientName(""); setClientStatus("");
     setBikeEntries([]); setAccSelections({}); setPrefillSelections({}); setNotes("");
+    setSelCategory("all"); setPaymentMethod("");
     setSelBikeId(""); setSelBikeSizeId(""); setSelStartDate(""); setSelEndDate(""); setSelQty(1);
   }
 
@@ -385,6 +414,7 @@ export function NewContractModal({
         clientId: Number(clientId),
         bikes: bikePayload,
         accessories: accPayload,
+        paymentMethod: (paymentMethod || undefined) as any,
       });
     } else {
       createMutation.mutate({
@@ -392,6 +422,7 @@ export function NewContractModal({
         bikes: bikePayload,
         accessories: accPayload,
         notes: notes || undefined,
+        paymentMethod: (paymentMethod || undefined) as any,
       });
     }
   }
@@ -451,11 +482,28 @@ export function NewContractModal({
         {/* Step 2: Add bikes */}
         {step === 2 && (
           <div className="space-y-4">
+            {categories.length > 0 && (
+              <div className="min-w-0">
+                <Label className="mb-1 block text-xs">Categoria</Label>
+                <Select
+                  value={selCategory}
+                  onValueChange={(v) => { setSelCategory(v); setSelBikeId(""); setSelBikeSizeId(""); }}
+                >
+                  <SelectTrigger className="text-sm w-full min-w-0"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Todas as categorias</SelectItem>
+                    {categories.map((c) => (
+                      <SelectItem key={c} value={c}>{CATEGORY_LABELS[c] ?? c}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
             <div className="grid grid-cols-2 gap-3">
-              <div>
+              <div className="min-w-0">
                 <Label className="mb-1 block text-xs">Bicicleta</Label>
                 <Select value={selBikeId} onValueChange={(v) => { setSelBikeId(v); setSelBikeSizeId(""); }}>
-                  <SelectTrigger className="text-sm"><SelectValue placeholder="Selecionar bike" /></SelectTrigger>
+                  <SelectTrigger className="text-sm w-full min-w-0"><SelectValue placeholder="Selecionar bike" /></SelectTrigger>
                   <SelectContent>
                     {bikes.map((b) => (
                       <SelectItem key={b.id} value={String(b.id)}>
@@ -465,10 +513,10 @@ export function NewContractModal({
                   </SelectContent>
                 </Select>
               </div>
-              <div>
+              <div className="min-w-0">
                 <Label className="mb-1 block text-xs">Tamanho</Label>
                 <Select value={selBikeSizeId} onValueChange={setSelBikeSizeId} disabled={!selBikeId || sizes.length === 0}>
-                  <SelectTrigger className="text-sm"><SelectValue placeholder={sizes.length === 0 ? "Sem tamanhos" : "Selecionar"} /></SelectTrigger>
+                  <SelectTrigger className="text-sm w-full min-w-0"><SelectValue placeholder={sizes.length === 0 ? "Sem tamanhos" : "Selecionar"} /></SelectTrigger>
                   <SelectContent>
                     {sizes.map((s) => (
                       <SelectItem key={s.id} value={String(s.id)}>
@@ -701,6 +749,17 @@ export function NewContractModal({
             <div className="flex justify-between font-bold text-base pt-2 border-t">
               <span>Total</span>
               <span className="text-primary">R$ {grandTotal.toFixed(2)}</span>
+            </div>
+            <div>
+              <Label className="mb-1 block text-xs">Forma de pagamento (opcional)</Label>
+              <Select value={paymentMethod} onValueChange={setPaymentMethod}>
+                <SelectTrigger className="text-sm w-full min-w-0"><SelectValue placeholder="Selecionar forma de pagamento" /></SelectTrigger>
+                <SelectContent>
+                  {PAYMENT_METHODS.map((p) => (
+                    <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div>
               <Label className="mb-1 block text-xs">Observações (opcional)</Label>

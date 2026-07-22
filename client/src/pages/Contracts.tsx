@@ -469,8 +469,8 @@ function ContractDetail({
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
+      {/* Header — empilha no mobile (senão os botões colidem com o título) */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-3">
           <Button variant="ghost" size="sm" onClick={onBack}>
             <ChevronLeft className="h-4 w-4 mr-1" /> Voltar
