@@ -11,8 +11,7 @@ import {
 import {
   ChevronLeftIcon,
   ChevronRightIcon,
-  ChevronsLeftIcon,
-  ChevronsRightIcon,
+  MoreHorizontalIcon,
   Columns3Icon,
   ArrowUpIcon,
   ArrowDownIcon,
@@ -41,6 +40,20 @@ interface DataTablePagination {
   page: number
   totalPages: number
   onPageChange: (page: number) => void
+}
+
+// Janela de páginas com reticências: 1 … (atual-1) [atual] (atual+1) … último.
+// Sempre mostra a 1ª e a última; "…" marca os buracos. (Q13)
+function getPageWindow(current: number, total: number): (number | "…")[] {
+  const delta = 1
+  const left = Math.max(2, current - delta)
+  const right = Math.min(total - 1, current + delta)
+  const pages: (number | "…")[] = [1]
+  if (left > 2) pages.push("…")
+  for (let i = left; i <= right; i++) pages.push(i)
+  if (right < total - 1) pages.push("…")
+  if (total > 1) pages.push(total)
+  return pages
 }
 
 interface DataTableProps<TData> {
@@ -206,23 +219,13 @@ export function DataTable<TData>({
         </Table>
       </div>
 
-      {/* Paginação server-side */}
+      {/* Paginação server-side — numerada com reticências (Q13) */}
       {pagination && pagination.totalPages > 1 && (
-        <div className="flex items-center justify-between px-1">
-          <p className="text-sm text-muted-foreground tabular-nums">
+        <div className="flex items-center justify-between gap-2 px-1">
+          <p className="hidden sm:block text-sm text-muted-foreground tabular-nums shrink-0">
             Página {pagination.page} de {pagination.totalPages}
           </p>
-          <div className="flex items-center gap-1">
-            <Button
-              variant="outline"
-              size="icon"
-              className="size-8"
-              onClick={() => pagination.onPageChange(1)}
-              disabled={pagination.page <= 1}
-              aria-label="Primeira página"
-            >
-              <ChevronsLeftIcon className="size-4" />
-            </Button>
+          <div className="flex items-center gap-1 ml-auto">
             <Button
               variant="outline"
               size="icon"
@@ -233,6 +236,29 @@ export function DataTable<TData>({
             >
               <ChevronLeftIcon className="size-4" />
             </Button>
+            {getPageWindow(pagination.page, pagination.totalPages).map((p, i) =>
+              p === "…" ? (
+                <span
+                  key={`ellipsis-${i}`}
+                  className="flex size-8 items-center justify-center text-muted-foreground"
+                  aria-hidden
+                >
+                  <MoreHorizontalIcon className="size-4" />
+                </span>
+              ) : (
+                <Button
+                  key={p}
+                  variant={p === pagination.page ? "default" : "ghost"}
+                  size="icon"
+                  className="size-8 tabular-nums"
+                  onClick={() => pagination.onPageChange(p)}
+                  aria-label={`Página ${p}`}
+                  aria-current={p === pagination.page ? "page" : undefined}
+                >
+                  {p}
+                </Button>
+              )
+            )}
             <Button
               variant="outline"
               size="icon"
@@ -242,16 +268,6 @@ export function DataTable<TData>({
               aria-label="Próxima página"
             >
               <ChevronRightIcon className="size-4" />
-            </Button>
-            <Button
-              variant="outline"
-              size="icon"
-              className="size-8"
-              onClick={() => pagination.onPageChange(pagination.totalPages)}
-              disabled={pagination.page >= pagination.totalPages}
-              aria-label="Última página"
-            >
-              <ChevronsRightIcon className="size-4" />
             </Button>
           </div>
         </div>

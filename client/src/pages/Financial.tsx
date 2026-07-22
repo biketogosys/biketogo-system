@@ -1,5 +1,6 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
+import { usePageParam } from "@/hooks/usePageParam";
 import { toast } from "sonner";
 import {
   Plus, Pencil, Trash2, Tag, Download, Wallet,
@@ -472,8 +473,9 @@ export default function Financial() {
   const [customStart, setCustomStart] = useState(() => getPresetDates("mes_atual").startDate);
   const [customEnd, setCustomEnd] = useState(() => getPresetDates("mes_atual").endDate);
   const [categoryFilter, setCategoryFilter] = useState<string>("todas");
-  const [expensePage, setExpensePage] = useState(1);
-  const [revenuePage, setRevenuePage] = useState(1);
+  // Q13: paginação única na URL (?page). Despesas/Receitas já resetavam juntas
+  // em toda troca de aba/filtro, então um só estado é equivalente.
+  const [page, setPage] = usePageParam();
   const [showForm, setShowForm] = useState(false);
   const [editItem, setEditItem] = useState<TxRow | null>(null);
   const [showCategories, setShowCategories] = useState(false);
@@ -517,11 +519,11 @@ export default function Financial() {
   });
 
   const { data: expensesData, isLoading: expensesLoading } = trpc.financial.expenses.useQuery(
-    listInput(expensePage),
+    listInput(page),
     { enabled: datesValid && isExpense }
   );
   const { data: revenuesData, isLoading: revenuesLoading } = trpc.financial.revenues.useQuery(
-    listInput(revenuePage),
+    listInput(page),
     { enabled: datesValid && !isExpense }
   );
 
@@ -530,8 +532,15 @@ export default function Financial() {
   const items = (currentData?.items ?? []) as TxRow[];
   const total = currentData?.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_LIMIT));
-  const currentPage = isExpense ? expensePage : revenuePage;
-  const setCurrentPage = isExpense ? setExpensePage : setRevenuePage;
+  const currentPage = page;
+  const setCurrentPage = setPage;
+
+  // Q13: corrige ?page fora do intervalo. Só quando a query JÁ retornou
+  // (currentData definido) — senão o total transitório 0 resetaria a cada refetch.
+  const loadedTotalPages = currentData ? Math.max(1, Math.ceil((currentData.total ?? 0) / PAGE_LIMIT)) : undefined;
+  useEffect(() => {
+    if (loadedTotalPages && page > loadedTotalPages) setPage(loadedTotalPages);
+  }, [loadedTotalPages, page, setPage]);
 
   // ─── Mutations ─────────────────────────────────────────────────────────────
   const invalidateTx = () => {
@@ -694,8 +703,7 @@ export default function Financial() {
       <div className="flex flex-wrap items-center gap-2">
         <Select value={period} onValueChange={(v) => {
           setPeriod(v as PeriodKey);
-          setExpensePage(1);
-          setRevenuePage(1);
+          setPage(1);
         }}>
           <SelectTrigger className="w-44 h-9 text-sm">
             <SelectValue placeholder="Período" />
@@ -711,7 +719,7 @@ export default function Financial() {
             <Input
               type="date"
               value={customStart}
-              onChange={(e) => { setCustomStart(e.target.value); setExpensePage(1); setRevenuePage(1); }}
+              onChange={(e) => { setCustomStart(e.target.value); setPage(1); }}
               className="h-9 w-38 text-sm"
               aria-label="Data início"
             />
@@ -719,7 +727,7 @@ export default function Financial() {
             <Input
               type="date"
               value={customEnd}
-              onChange={(e) => { setCustomEnd(e.target.value); setExpensePage(1); setRevenuePage(1); }}
+              onChange={(e) => { setCustomEnd(e.target.value); setPage(1); }}
               className="h-9 w-38 text-sm"
               aria-label="Data fim"
             />
@@ -740,15 +748,14 @@ export default function Financial() {
           onValueChange={(v) => {
             setTab(v as typeof tab);
             setCategoryFilter("todas");
-            setExpensePage(1);
-            setRevenuePage(1);
+            setPage(1);
           }}
           options={tabOptions}
         />
         <div className="flex items-center gap-2">
           <Select
             value={categoryFilter}
-            onValueChange={(v) => { setCategoryFilter(v); setExpensePage(1); setRevenuePage(1); }}
+            onValueChange={(v) => { setCategoryFilter(v); setPage(1); }}
           >
             <SelectTrigger className="w-44 h-9 text-sm">
               <SelectValue placeholder="Categoria" />

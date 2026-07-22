@@ -1,5 +1,6 @@
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useMemo, useEffect } from "react";
 import { Link } from "wouter";
+import { usePageParam } from "@/hooks/usePageParam";
 import {
   Search, Plus, User, Trash2, RotateCcw, Eye, EyeOff,
 } from "lucide-react";
@@ -56,8 +57,9 @@ export default function Clients() {
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<Status>(undefined);
   const [showNew, setShowNew] = useState(false);
-  const [page, setPage] = useState(1);
-  const [archivedPage, setArchivedPage] = useState(1);
+  // Q13: paginação única na URL (?page). As views ativos/arquivados têm queries
+  // exclusivas e a troca de view reseta para 1, então um só estado é equivalente.
+  const [page, setPage] = usePageParam();
   const [view, setView] = useState<"ativos" | "arquivados">("ativos");
   const utils = trpc.useUtils();
   const limit = 20;
@@ -89,7 +91,7 @@ export default function Clients() {
   }, { enabled: view === "ativos" });
 
   const { data: archivedData, isLoading: archivedLoading } = trpc.clients.listArchived.useQuery({
-    page: archivedPage,
+    page,
     limit,
   }, { enabled: view === "arquivados" });
 
@@ -267,8 +269,15 @@ export default function Clients() {
   const isLoadingCurrent = view === "arquivados" ? archivedLoading : isLoading;
   const currentData = view === "arquivados" ? archivedClients : clients;
   const currentTotalPages = view === "arquivados" ? archivedTotalPages : totalPages;
-  const currentPage = view === "arquivados" ? archivedPage : page;
-  const setCurrentPage = view === "arquivados" ? setArchivedPage : setPage;
+  const currentPage = page;
+  const setCurrentPage = setPage;
+
+  // Q13: corrige ?page fora do intervalo. Usa o totalPages CRU da query (undefined
+  // durante o load) — nunca o default 1, senão o clamp resetaria a cada refetch.
+  const loadedTotalPages = view === "arquivados" ? archivedData?.totalPages : data?.totalPages;
+  useEffect(() => {
+    if (loadedTotalPages && page > loadedTotalPages) setPage(loadedTotalPages);
+  }, [loadedTotalPages, page, setPage]);
 
   return (
     <div className="p-6 space-y-6">
@@ -323,7 +332,7 @@ export default function Clients() {
       {/* SegmentedTabs */}
       <SegmentedTabs
         value={view}
-        onValueChange={(v) => { setView(v as typeof view); setPage(1); setArchivedPage(1); }}
+        onValueChange={(v) => { setView(v as typeof view); setPage(1); }}
         options={tabOptions}
       />
 

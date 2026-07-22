@@ -1,5 +1,6 @@
 import { trpc } from "@/lib/trpc";
 import { NewContractModal } from "@/components/NewContractModal";
+import { usePageParam } from "@/hooks/usePageParam";
 import { useState, useMemo, useEffect } from "react";
 import { toast } from "sonner";
 import {
@@ -884,7 +885,7 @@ function ContractDetail({
 export default function Contracts() {
   const confirmDialog = useConfirm();
   const [selectedId, setSelectedId] = useState<number | null>(null);
-  const [page, setPage] = useState(1);
+  const [page, setPage] = usePageParam();
   const [view, setView] = useState<"ativos" | "arquivados" | "excluidos">("ativos");
   const [newContractOpen, setNewContractOpen] = useState(false);
   const limit = 20;
@@ -941,6 +942,13 @@ export default function Contracts() {
   const total = view === "excluidos" ? deletedTotal : activeTotal;
   const totalPages = view === "excluidos" ? deletedTotalPages : activeTotalPages;
   const isLoadingCurrent = view === "excluidos" ? deletedLoading : isLoading;
+
+  // Q13: corrige ?page fora do intervalo. Usa o totalPages CRU da query (undefined
+  // durante o load) — nunca o default 1, senão o clamp resetaria a cada refetch.
+  const loadedTotalPages = view === "excluidos" ? deletedData?.totalPages : data?.totalPages;
+  useEffect(() => {
+    if (loadedTotalPages && page > loadedTotalPages) setPage(loadedTotalPages);
+  }, [loadedTotalPages, page, setPage]);
 
   // ─── Column definitions ──────────────────────────────────────────────────────
   type ContractRow = (typeof items)[number];
