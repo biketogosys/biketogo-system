@@ -82,7 +82,7 @@ function UserFormDialog({
 
   return (
     <Dialog open onOpenChange={(v) => { if (!v) onClose(); }}>
-      <DialogContent className="max-w-md dialog-mobile">
+      <DialogContent className="sm:max-w-md dialog-mobile">
         <DialogHeader>
           <DialogTitle className="text-base">
             {user ? "Editar Usuário" : "Novo Usuário"}

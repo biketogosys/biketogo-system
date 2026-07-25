@@ -127,9 +127,10 @@ export default function PublicReservation() {
   const inputNormal = `${inputBase} border-input focus:border-primary focus:ring-2 focus:ring-primary/20`;
   const inputError = `${inputBase} border-destructive/60 focus:border-destructive focus:ring-2 focus:ring-destructive/20`;
   const selectBase = inputNormal;
-  // Subtítulo de grupo dentro de um passo (organização do form em blocos)
-  const groupTitle = "text-[11px] font-semibold uppercase tracking-wider text-muted-foreground";
-  const groupDivider = `border-t ${sectionBorder} pt-5`;
+  // Subtítulo de grupo dentro de um passo (organização do form em blocos).
+  // Definição em index.css — o admin (cadastro manual) usa as mesmas classes.
+  const groupTitle = "form-group-title";
+  const groupDivider = "form-group-divider";
   const navBtnSecondary = "flex items-center gap-2 px-5 py-3 rounded-xl text-sm border border-border text-muted-foreground hover:text-foreground hover:border-muted-foreground/40 transition-[color,background-color,border-color,transform] duration-150 ease-out active:scale-[0.97]";
   const langBtnBase = "border-border bg-muted";
   const langBtnInactive = "text-muted-foreground hover:text-foreground";

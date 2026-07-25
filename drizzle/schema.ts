@@ -293,6 +293,14 @@ export const revenues = pgTable("revenues", {
   description: text("description"),
   amount: numeric("amount", { precision: 10, scale: 2 }).notNull(),
   date: date("date").notNull(),
+  // Detalhamento opcional do lançamento. Para pagamento de contrato dividido em
+  // várias formas (Cassiana 2026-07-24): 1 receita com o total + o breakdown por
+  // forma aqui, em vez de N linhas soltas no Financeiro. A tela expande pra ver.
+  meta: jsonb("meta").$type<{
+    kind: "contract_payment";
+    contractId: number;
+    breakdown: Array<{ method: string; amount: string }>;
+  }>(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().notNull(),
 }, (t) => [

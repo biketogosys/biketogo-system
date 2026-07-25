@@ -414,6 +414,31 @@
   /* ─── Safe area (notch iOS) ──────────────────────────────────────────── */
   .safe-area-bottom { padding-bottom: env(safe-area-inset-bottom, 0px); }
 
+  /* ─── Modal com abas/etapas: altura ESTÁVEL ──────────────────────────────
+     O DialogContent é centrado por translate(-50%,-50%): altura automática faz
+     ele mudar de TAMANHO e de POSIÇÃO a cada troca de aba/etapa (o conteúdo
+     "salta" debaixo do cursor). Altura fixa + corpo interno rolável mata o
+     salto. Usar junto de: p-0 gap-0 flex flex-col overflow-hidden, header/footer
+     shrink-0 e o corpo em flex-1 overflow-y-auto.
+     No mobile o .dialog-mobile (fullscreen, !important) sobrescreve. */
+  .dialog-steps { height: min(88dvh, 38rem); }
+
+  /* ─── Grupos dentro de um passo/aba de formulário ────────────────────────
+     Nasceu no /reservar (subtítulo + separador quebrando "muita informação de
+     uma vez") e virou padrão da casa. */
+  .form-group-title {
+    font-size: 0.6875rem;
+    line-height: 1rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--muted-foreground);
+  }
+  .form-group-divider {
+    border-top: 1px solid var(--border);
+    padding-top: 1.25rem;
+  }
+
   /* ─── Inputs touch-friendly + dialog fullscreen no mobile ────────────── */
   @media (max-width: 767px) {
     /* Alvo de toque só em campos de TEXTO/select — NÃO em button/checkbox/radio

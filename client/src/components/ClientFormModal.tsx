@@ -189,8 +189,8 @@ export function ClientFormModal({ open, onClose, onSuccess, client }: ClientForm
     if (!form.email.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) return fail("contato", "E-mail obrigatório e válido");
     // Telefone é exigido só na criação (não travar edição de registro legado sem telefone)
     if (!isEdit && !form.phone.trim()) return fail("contato", "Telefone obrigatório");
-    if (!form.height.trim()) return fail("perfil", "Altura obrigatória");
-    if (!String(form.weight).trim()) return fail("perfil", "Peso obrigatório");
+    if (!form.height.trim()) return fail("identificacao", "Altura obrigatória");
+    if (!String(form.weight).trim()) return fail("identificacao", "Peso obrigatório");
     if (isBrazilian && form.nacionalidade === "brasileiro" || (isEdit && isBrazilian)) {
       if (!form.cpf || form.cpf.replace(/\D/g, "").length < 11) return fail("identificacao", "CPF obrigatório (11 dígitos)");
       if (!isValidCPF(form.cpf)) return fail("identificacao", "CPF inválido — verifique os dígitos");
@@ -200,7 +200,7 @@ export function ClientFormModal({ open, onClose, onSuccess, client }: ClientForm
     if (form.nacionalidade === "estrangeiro" && !isEdit) {
       if (!form.numeroPassaporte.trim() || form.numeroPassaporte.trim().length < 5) return fail("identificacao", "Passaporte obrigatório (mínimo 5 caracteres)");
     }
-    if (!form.lgpdConsent) return fail("lgpd", "Você precisa aceitar os termos de privacidade para continuar.");
+    if (!form.lgpdConsent) return fail("documentos", "Você precisa aceitar os termos de privacidade para continuar.");
     return true;
   };
 
@@ -286,28 +286,30 @@ export function ClientFormModal({ open, onClose, onSuccess, client }: ClientForm
   const inputCls = "bg-secondary border-border text-sm";
   const labelCls = "text-xs text-muted-foreground mb-1.5 block";
   const isPending = createMutation.isPending || updateMutation.isPending || docUploading;
-  const canSave = form.lgpdConsent && !isPending;
+  // O aceite LGPD agora vive dentro da aba Documentos: botão desabilitado sem
+  // explicação viraria beco sem saída — o validate() leva pra aba e explica.
+  const canSave = !isPending;
 
   return (
     <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
-      <DialogContent className="max-w-2xl max-h-[95vh] p-0 gap-0 flex flex-col overflow-hidden dialog-mobile">
+      <DialogContent className="sm:max-w-2xl dialog-steps p-0 gap-0 flex flex-col overflow-hidden dialog-mobile">
         <DialogHeader className="px-5 py-4 border-b border-border flex-shrink-0">
           <DialogTitle className="text-base">{isEdit ? "Editar Cliente" : "Novo Cliente"}</DialogTitle>
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="flex flex-col flex-1 overflow-hidden">
           <Tabs value={activeTab} onValueChange={setActiveTab} className="flex flex-col flex-1 overflow-hidden">
-            <div className="flex-shrink-0 mx-5 mt-4 overflow-x-auto">
-              <TabsList className="flex w-max min-w-full h-auto gap-0.5">
+            {/* Mesmas 4 etapas do /reservar, na mesma ordem — quem preenche o
+                cadastro manual segue o mesmo roteiro do pré-cadastro público. */}
+            <div className="flex-shrink-0 mx-5 mt-4">
+              <TabsList className="grid w-full grid-cols-4 h-auto gap-0.5">
                 {[
-                  { value: "identificacao", label: "1. ID" },
-                  { value: "contato", label: "2. Contato" },
-                  { value: "endereco", label: "3. Endereço" },
-                  { value: "documento", label: "4. Docs" },
-                  { value: "perfil", label: "5. Perfil" },
-                  { value: "lgpd", label: "6. LGPD" },
+                  { value: "identificacao", label: "Identificação" },
+                  { value: "contato", label: "Contato" },
+                  { value: "endereco", label: "Endereço" },
+                  { value: "documentos", label: "Documentos" },
                 ].map((tab) => (
-                  <TabsTrigger key={tab.value} value={tab.value} className="text-xs px-2 py-1.5 flex-1 min-w-[60px]">
+                  <TabsTrigger key={tab.value} value={tab.value} className="text-xs px-1 py-1.5 min-w-0">
                     {tab.label}
                   </TabsTrigger>
                 ))}
@@ -315,102 +317,162 @@ export function ClientFormModal({ open, onClose, onSuccess, client }: ClientForm
             </div>
 
             <div className="flex-1 overflow-y-auto px-5 py-4">
-              {/* ── Aba 1: Identificação ── */}
-              <TabsContent value="identificacao" className="mt-0 space-y-4">
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <Label className={labelCls}>Nome *</Label>
-                    <Input value={form.firstName} onChange={(e) => set("firstName", e.target.value)} placeholder="João" className={inputCls} />
-                  </div>
-                  <div>
-                    <Label className={labelCls}>Sobrenome *</Label>
-                    <Input value={form.lastName} onChange={(e) => set("lastName", e.target.value)} placeholder="Silva" className={inputCls} />
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <Label className={labelCls}>Data de nascimento</Label>
-                    <Input value={form.birthDate} onChange={(e) => set("birthDate", maskDate(e.target.value))} placeholder="DD/MM/AAAA" className={inputCls} maxLength={10} />
-                  </div>
-                  <div>
-                    <Label className={labelCls}>Gênero</Label>
-                    <Select value={form.gender} onValueChange={(v) => set("gender", v)}>
-                      <SelectTrigger className={inputCls}><SelectValue placeholder="--" /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="Masculino">Masculino</SelectItem>
-                        <SelectItem value="Feminino">Feminino</SelectItem>
-                        <SelectItem value="Outro">Outro</SelectItem>
-                        <SelectItem value="Prefiro nao informar">Prefiro não informar</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-                <div>
-                  <Label className={labelCls}>Nacionalidade</Label>
-                  <Select value={form.nacionalidade} onValueChange={(v) => set("nacionalidade", v as "brasileiro" | "estrangeiro")}>
-                    <SelectTrigger className={inputCls}><SelectValue placeholder="Selecionar..." /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="brasileiro">Brasileiro</SelectItem>
-                      <SelectItem value="estrangeiro">Estrangeiro</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                {form.nacionalidade !== "estrangeiro" ? (
+              {/* ── Aba 1: Identificação (dados pessoais · documento · bike ideal) ── */}
+              <TabsContent value="identificacao" className="mt-0 space-y-5">
+                <div className="space-y-4">
+                  <p className="form-group-title">Dados pessoais</p>
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <Label className={labelCls}>
-                        CPF *
-                        {form.cpf.replace(/\D/g, "").length === 11 && (
-                          isValidCPF(form.cpf)
-                            ? <CheckCircle2 className="inline w-3 h-3 ml-1 text-emerald-500" />
-                            : <AlertCircle className="inline w-3 h-3 ml-1 text-destructive" />
-                        )}
-                      </Label>
-                      <Input value={form.cpf} onChange={(e) => set("cpf", maskCPF(e.target.value))} placeholder="000.000.000-00" className={inputCls} maxLength={14} />
+                      <Label className={labelCls}>Nome *</Label>
+                      <Input value={form.firstName} onChange={(e) => set("firstName", e.target.value)} placeholder="João" className={inputCls} />
                     </div>
                     <div>
-                      <Label className={labelCls}>RG *</Label>
-                      <Input value={form.rg} onChange={(e) => set("rg", maskRG(e.target.value))} placeholder="00.000.000-0" className={inputCls} maxLength={12} />
+                      <Label className={labelCls}>Sobrenome *</Label>
+                      <Input value={form.lastName} onChange={(e) => set("lastName", e.target.value)} placeholder="Silva" className={inputCls} />
                     </div>
                   </div>
-                ) : (
-                  <div>
-                    <Label className={labelCls}>Número do Passaporte *</Label>
-                    <Input value={form.numeroPassaporte} onChange={(e) => { set("numeroPassaporte", e.target.value.toUpperCase()); set("tipoDocumento", "passaporte"); }} placeholder="AB123456" className={inputCls} maxLength={50} />
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <Label className={labelCls}>Data de nascimento</Label>
+                      <Input value={form.birthDate} onChange={(e) => set("birthDate", maskDate(e.target.value))} placeholder="DD/MM/AAAA" className={inputCls} maxLength={10} />
+                    </div>
+                    <div>
+                      <Label className={labelCls}>Gênero</Label>
+                      <Select value={form.gender} onValueChange={(v) => set("gender", v)}>
+                        <SelectTrigger className={`${inputCls} w-full`}><SelectValue placeholder="--" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="Masculino">Masculino</SelectItem>
+                          <SelectItem value="Feminino">Feminino</SelectItem>
+                          <SelectItem value="Outro">Outro</SelectItem>
+                          <SelectItem value="Prefiro nao informar">Prefiro não informar</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
                   </div>
-                )}
-              </TabsContent>
+                </div>
 
-              {/* ── Aba 2: Contato ── */}
-              <TabsContent value="contato" className="mt-0 space-y-4">
-                <div>
-                  <Label className={labelCls}>WhatsApp {!isEdit && "*"}</Label>
-                  <div className="flex gap-2">
-                    <Select value={form.ddi} onValueChange={(v) => set("ddi", v)}>
-                      <SelectTrigger className={`${inputCls} w-44 flex-shrink-0`}>
-                        <SelectValue />
-                      </SelectTrigger>
+                <div className="space-y-4 form-group-divider">
+                  <p className="form-group-title">Documento</p>
+                  <div>
+                    <Label className={labelCls}>Nacionalidade</Label>
+                    <Select value={form.nacionalidade} onValueChange={(v) => set("nacionalidade", v as "brasileiro" | "estrangeiro")}>
+                      <SelectTrigger className={`${inputCls} w-full`}><SelectValue placeholder="Selecionar..." /></SelectTrigger>
                       <SelectContent>
-                        {DDI_LIST.map((d) => (
-                          <SelectItem key={d.code} value={d.code}>{d.label}</SelectItem>
-                        ))}
+                        <SelectItem value="brasileiro">Brasileiro</SelectItem>
+                        <SelectItem value="estrangeiro">Estrangeiro</SelectItem>
                       </SelectContent>
                     </Select>
-                    <Input
-                      value={form.phone}
-                      onChange={(e) => set("phone", form.ddi === "+55" ? maskPhone(e.target.value) : e.target.value)}
-                      placeholder={form.ddi === "+55" ? "(48) 9 9999-9999" : "Número"}
-                      className={`${inputCls} flex-1`}
-                    />
+                  </div>
+                  {form.nacionalidade !== "estrangeiro" ? (
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <Label className={labelCls}>
+                          CPF *
+                          {form.cpf.replace(/\D/g, "").length === 11 && (
+                            isValidCPF(form.cpf)
+                              ? <CheckCircle2 className="inline w-3 h-3 ml-1 text-emerald-500" />
+                              : <AlertCircle className="inline w-3 h-3 ml-1 text-destructive" />
+                          )}
+                        </Label>
+                        <Input value={form.cpf} onChange={(e) => set("cpf", maskCPF(e.target.value))} placeholder="000.000.000-00" className={inputCls} maxLength={14} />
+                      </div>
+                      <div>
+                        <Label className={labelCls}>RG *</Label>
+                        <Input value={form.rg} onChange={(e) => set("rg", maskRG(e.target.value))} placeholder="00.000.000-0" className={inputCls} maxLength={12} />
+                      </div>
+                    </div>
+                  ) : (
+                    <div>
+                      <Label className={labelCls}>Número do Passaporte *</Label>
+                      <Input value={form.numeroPassaporte} onChange={(e) => { set("numeroPassaporte", e.target.value.toUpperCase()); set("tipoDocumento", "passaporte"); }} placeholder="AB123456" className={inputCls} maxLength={50} />
+                    </div>
+                  )}
+                </div>
+
+                <div className="space-y-4 form-group-divider">
+                  <p className="form-group-title">Para escolher a bike ideal</p>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <Label className={labelCls}>Altura (m) *</Label>
+                      <Input value={form.height} onChange={(e) => set("height", e.target.value)} placeholder="1.75" className={inputCls} />
+                    </div>
+                    <div>
+                      <Label className={labelCls}>Peso (kg) *</Label>
+                      <Input type="number" min="20" max="300" step="0.1" value={form.weight} onChange={(e) => set("weight", e.target.value)} placeholder="75" className={inputCls} />
+                    </div>
+                  </div>
+                  <div>
+                    <Label className={labelCls}>Experiência em ciclismo</Label>
+                    <Select value={form.pedalFrequency} onValueChange={(v) => set("pedalFrequency", v)}>
+                      <SelectTrigger className={`${inputCls} w-full`}><SelectValue placeholder="--" /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Raramente">Raramente</SelectItem>
+                        <SelectItem value="1x por semana">1x por semana</SelectItem>
+                        <SelectItem value="2-3x por semana">2-3x por semana</SelectItem>
+                        <SelectItem value="4-5x por semana">4-5x por semana</SelectItem>
+                        <SelectItem value="Diariamente">Diariamente</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
                 </div>
-                <div>
-                  <Label className={labelCls}>E-mail *</Label>
-                  <Input type="email" value={form.email} onChange={(e) => set("email", e.target.value)} placeholder="joao@email.com" className={inputCls} />
+              </TabsContent>
+
+              {/* ── Aba 2: Contato (+ hospedagem e "como nos encontrou", igual ao /reservar) ── */}
+              <TabsContent value="contato" className="mt-0 space-y-5">
+                <div className="space-y-4">
+                  <p className="form-group-title">Como falamos com o cliente</p>
+                  <div>
+                    <Label className={labelCls}>Telefone/WhatsApp {!isEdit && "*"}</Label>
+                    <div className="flex gap-2">
+                      <Select value={form.ddi} onValueChange={(v) => set("ddi", v)}>
+                        <SelectTrigger className={`${inputCls} w-44 flex-shrink-0`}>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {DDI_LIST.map((d) => (
+                            <SelectItem key={d.code} value={d.code}>{d.label}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <Input
+                        value={form.phone}
+                        onChange={(e) => set("phone", form.ddi === "+55" ? maskPhone(e.target.value) : e.target.value)}
+                        placeholder={form.ddi === "+55" ? "(48) 9 9999-9999" : "Número"}
+                        className={`${inputCls} flex-1`}
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <Label className={labelCls}>E-mail *</Label>
+                    <Input type="email" value={form.email} onChange={(e) => set("email", e.target.value)} placeholder="joao@email.com" className={inputCls} />
+                  </div>
                 </div>
-                <div>
-                  <Label className={labelCls}>Instagram</Label>
-                  <Input value={form.instagram} onChange={(e) => set("instagram", e.target.value)} placeholder="@usuario" className={inputCls} />
+
+                <div className="space-y-4 form-group-divider">
+                  <p className="form-group-title">Entrega e origem</p>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <Label className={labelCls}>Instagram</Label>
+                      <Input value={form.instagram} onChange={(e) => set("instagram", e.target.value)} placeholder="@usuario" className={inputCls} />
+                    </div>
+                    <div>
+                      <Label className={labelCls}>Hospedagem / Acomodação</Label>
+                      <Input value={form.accommodation} onChange={(e) => set("accommodation", e.target.value)} placeholder="Hotel, pousada..." className={inputCls} />
+                    </div>
+                  </div>
+                  <div>
+                    <Label className={labelCls}>Como nos encontrou</Label>
+                    <Select value={form.origin} onValueChange={(v) => set("origin", v)}>
+                      <SelectTrigger className={`${inputCls} w-full`}><SelectValue placeholder="--" /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Pela internet">Pela internet</SelectItem>
+                        <SelectItem value="Instagram">Instagram</SelectItem>
+                        <SelectItem value="Indicacao de amigo">Indicação de amigo</SelectItem>
+                        <SelectItem value="Shopify">Shopify</SelectItem>
+                        <SelectItem value="Outro">Outro</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </div>
               </TabsContent>
 
@@ -459,9 +521,10 @@ export function ClientFormModal({ open, onClose, onSuccess, client }: ClientForm
                 </div>
               </TabsContent>
 
-              {/* ── Aba 4: Documentos ── */}
-              <TabsContent value="documento" className="mt-0 space-y-5">
-                <p className="text-xs text-muted-foreground">
+              {/* ── Aba 4: Documentos + uso interno + LGPD (espelha o passo 4 do /reservar) ── */}
+              <TabsContent value="documentos" className="mt-0 space-y-5">
+                <p className="form-group-title">Documento de identificação</p>
+                <p className="text-xs text-muted-foreground -mt-2">
                   Envie o PDF da CNH digital (gov.br) ou RG — frente, verso e QR num arquivo só — ou uma foto do documento.
                   {isEdit && " Documentos já enviados aparecem na aba Documentação do perfil."}
                 </p>
@@ -568,75 +631,35 @@ export function ClientFormModal({ open, onClose, onSuccess, client }: ClientForm
                     Estrangeiro ou sem CNH digital? Envie uma foto do documento (passaporte ou RG).
                   </span>
                 </div>
-              </TabsContent>
 
-              {/* ── Aba 5: Perfil ── */}
-              <TabsContent value="perfil" className="mt-0 space-y-4">
-                <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-4 form-group-divider">
+                  <p className="form-group-title">Uso interno</p>
                   <div>
-                    <Label className={labelCls}>Altura (m) *</Label>
-                    <Input value={form.height} onChange={(e) => set("height", e.target.value)} placeholder="1.75" className={inputCls} />
-                  </div>
-                  <div>
-                    <Label className={labelCls}>Peso (kg) *</Label>
-                    <Input type="number" min="20" max="300" step="0.1" value={form.weight} onChange={(e) => set("weight", e.target.value)} placeholder="75" className={inputCls} />
+                    <Label className={labelCls}>Observações internas (visível apenas para admin)</Label>
+                    <Textarea value={form.notes} onChange={(e) => set("notes", e.target.value)} placeholder="Notas sobre o cliente..." className={`${inputCls} resize-none`} rows={3} />
                   </div>
                 </div>
-                <div>
-                  <Label className={labelCls}>Experiência em ciclismo</Label>
-                  <Select value={form.pedalFrequency} onValueChange={(v) => set("pedalFrequency", v)}>
-                    <SelectTrigger className={inputCls}><SelectValue placeholder="--" /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="Raramente">Raramente</SelectItem>
-                      <SelectItem value="1x por semana">1x por semana</SelectItem>
-                      <SelectItem value="2-3x por semana">2-3x por semana</SelectItem>
-                      <SelectItem value="4-5x por semana">4-5x por semana</SelectItem>
-                      <SelectItem value="Diariamente">Diariamente</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <Label className={labelCls}>Como nos encontrou</Label>
-                  <Select value={form.origin} onValueChange={(v) => set("origin", v)}>
-                    <SelectTrigger className={inputCls}><SelectValue placeholder="--" /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="Pela internet">Pela internet</SelectItem>
-                      <SelectItem value="Instagram">Instagram</SelectItem>
-                      <SelectItem value="Indicacao de amigo">Indicação de amigo</SelectItem>
-                      <SelectItem value="Shopify">Shopify</SelectItem>
-                      <SelectItem value="Outro">Outro</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <Label className={labelCls}>Hospedagem / Acomodação</Label>
-                  <Input value={form.accommodation} onChange={(e) => set("accommodation", e.target.value)} placeholder="Hotel, pousada..." className={inputCls} />
-                </div>
-                <div>
-                  <Label className={labelCls}>Observações internas (visível apenas para admin)</Label>
-                  <Textarea value={form.notes} onChange={(e) => set("notes", e.target.value)} placeholder="Notas sobre o cliente..." className={`${inputCls} resize-none`} rows={3} />
-                </div>
-              </TabsContent>
 
-              {/* ── Aba 6: LGPD ── */}
-              <TabsContent value="lgpd" className="mt-0 space-y-5">
-                <div className="rounded-lg border border-border bg-secondary/50 p-4 text-xs text-muted-foreground leading-relaxed">
-                  <p className="font-semibold text-foreground mb-2">Política de Privacidade — LGPD</p>
-                  <p>
-                    Seus dados pessoais serão utilizados exclusivamente para a prestação dos serviços de aluguel de bicicletas da Bike To Go, em conformidade com a Lei Geral de Proteção de Dados (Lei nº 13.709/2018). Não compartilhamos seus dados com terceiros sem seu consentimento.
-                  </p>
-                </div>
-                <div className="flex items-start gap-3">
-                  <Checkbox id="cf-lgpdConsent" checked={form.lgpdConsent} onCheckedChange={(v) => set("lgpdConsent", !!v)} className="mt-0.5" />
-                  <label htmlFor="cf-lgpdConsent" className="text-sm text-foreground cursor-pointer leading-snug">
-                    Li e concordo com a Política de Privacidade e autorizo o tratamento dos meus dados pessoais. <span className="text-destructive">*</span>
-                  </label>
-                </div>
-                <div className="flex items-start gap-3">
-                  <Checkbox id="cf-marketingConsent" checked={form.marketingConsent} onCheckedChange={(v) => set("marketingConsent", !!v)} className="mt-0.5" />
-                  <label htmlFor="cf-marketingConsent" className="text-sm text-muted-foreground cursor-pointer leading-snug">
-                    Aceito receber comunicações de marketing e promoções da Bike To Go.
-                  </label>
+                <div className="space-y-4 form-group-divider">
+                  <p className="form-group-title">Privacidade</p>
+                  <div className="rounded-lg border border-border bg-secondary/50 p-4 text-xs text-muted-foreground leading-relaxed">
+                    <p className="font-semibold text-foreground mb-2">Política de Privacidade — LGPD</p>
+                    <p>
+                      Seus dados pessoais serão utilizados exclusivamente para a prestação dos serviços de aluguel de bicicletas da Bike To Go, em conformidade com a Lei Geral de Proteção de Dados (Lei nº 13.709/2018). Não compartilhamos seus dados com terceiros sem seu consentimento.
+                    </p>
+                  </div>
+                  <div className="flex items-start gap-3">
+                    <Checkbox id="cf-lgpdConsent" checked={form.lgpdConsent} onCheckedChange={(v) => set("lgpdConsent", !!v)} className="mt-0.5" />
+                    <label htmlFor="cf-lgpdConsent" className="text-sm text-foreground cursor-pointer leading-snug">
+                      Li e concordo com a Política de Privacidade e autorizo o tratamento dos meus dados pessoais. <span className="text-destructive">*</span>
+                    </label>
+                  </div>
+                  <div className="flex items-start gap-3">
+                    <Checkbox id="cf-marketingConsent" checked={form.marketingConsent} onCheckedChange={(v) => set("marketingConsent", !!v)} className="mt-0.5" />
+                    <label htmlFor="cf-marketingConsent" className="text-sm text-muted-foreground cursor-pointer leading-snug">
+                      Aceito receber comunicações de marketing e promoções da Bike To Go.
+                    </label>
+                  </div>
                 </div>
               </TabsContent>
             </div>

@@ -1,5 +1,5 @@
 import { trpc } from "@/lib/trpc";
-import { useState, useRef } from "react";
+import { useState, useRef, type ReactNode } from "react";
 import { toast } from "sonner";
 import {
   Bike as BikeIcon,
@@ -40,6 +40,7 @@ import { Separator } from "@/components/ui/separator";
 import { useConfirm } from "@/components/ConfirmDialog";
 import { friendlyError } from "@/lib/utils";
 import { UnitStatusBadge, type BikeUnitStatus } from "@/components/UnitStatusBadge";
+import { EmptyState } from "@/components/EmptyState";
 import { ViewModeToggle } from "@/components/ViewModeToggle";
 import { useViewMode, type ViewMode } from "@/hooks/useViewMode";
 
@@ -84,7 +85,7 @@ function DiscountRulesEditor({ bikeId, onClose }: { bikeId: number; onClose: () 
 
   return (
     <Dialog open onOpenChange={onClose}>
-      <DialogContent className="max-w-md dialog-mobile">
+      <DialogContent className="sm:max-w-md dialog-mobile">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Percent className="w-4 h-4 text-primary" />
@@ -298,6 +299,16 @@ function BikeUnitsPanel({ bikeSizeId, bikeId }: { bikeSizeId: number; bikeId: nu
   );
 }
 
+// Aba vazia dentro do modal de altura fixa: o texto solto no topo ficava
+// perdido no espaço em branco — centraliza na área de conteúdo.
+function TabPlaceholder({ children }: { children: ReactNode }) {
+  return (
+    <div className="flex h-full min-h-56 items-center justify-center text-center">
+      <p className="text-sm text-muted-foreground">{children}</p>
+    </div>
+  );
+}
+
 // ─── Bike Sizes Tab ───────────────────────────────────────────────────────────
 function BikeSizesTab({ bikeId }: { bikeId: number }) {
   const confirmDialog = useConfirm();
@@ -445,7 +456,7 @@ function MaintenanceTab({ bikeId }: { bikeId: number }) {
   });
   if (isLoading) return <p className="text-sm text-muted-foreground py-4">Carregando…</p>;
   if (emManutencao.length === 0)
-    return <p className="text-sm text-muted-foreground py-4">Nenhuma bike em manutenção.</p>;
+    return <TabPlaceholder>Nenhuma bike em manutenção.</TabPlaceholder>;
   return (
     <div className="space-y-2 py-1">
       {emManutencao.map((u) => (
@@ -547,7 +558,6 @@ function BikeFormDialog({ bike, onClose, onSuccess }: { bike: any | null; onClos
   });
 
   const handleSubmit = () => {
-    if (!form.serialNumber.trim()) return toast.error("Número de série é obrigatório.");
     if (!form.model.trim()) return toast.error("Modelo é obrigatório.");
     const payload: any = { ...form, quantity: Number(form.quantity) || 1, photoUrl: photoUrl ?? undefined };
     if (savedId) updateMut.mutate({ id: savedId, ...payload });
@@ -558,64 +568,89 @@ function BikeFormDialog({ bike, onClose, onSuccess }: { bike: any | null; onClos
 
   return (
     <Dialog open onOpenChange={onClose}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto dialog-mobile">
-        <DialogHeader>
-          <DialogTitle>{isEdit ? "Editar Bicicleta" : "Nova Bicicleta"}</DialogTitle>
+      <DialogContent className="sm:max-w-2xl dialog-steps p-0 gap-0 flex flex-col overflow-hidden dialog-mobile">
+        <DialogHeader className="px-5 py-4 border-b border-border shrink-0">
+          <DialogTitle className="text-base">{isEdit ? "Editar Bicicleta" : "Nova Bicicleta"}</DialogTitle>
         </DialogHeader>
-        <Tabs defaultValue="dados">
-          <TabsList className="w-full grid grid-cols-4 h-9">
-            <TabsTrigger value="dados" className="text-xs">Dados</TabsTrigger>
-            <TabsTrigger value="foto" disabled={!currentId} className="text-xs">Foto</TabsTrigger>
-            <TabsTrigger value="tamanhos" disabled={!currentId} className="text-xs">Tamanhos</TabsTrigger>
-            <TabsTrigger value="manutencao" disabled={!currentId} className="text-xs">
-              <span className="hidden sm:inline">Manutenção</span>
-              <span className="sm:hidden">Manut.</span>
-            </TabsTrigger>
-          </TabsList>
+        <Tabs defaultValue="dados" className="flex flex-col flex-1 overflow-hidden">
+          <div className="px-5 pt-4 shrink-0">
+            <TabsList className="w-full grid grid-cols-4 h-9">
+              <TabsTrigger value="dados" className="text-xs">Dados</TabsTrigger>
+              <TabsTrigger value="foto" disabled={!currentId} className="text-xs">Foto</TabsTrigger>
+              <TabsTrigger value="tamanhos" disabled={!currentId} className="text-xs">Tamanhos</TabsTrigger>
+              <TabsTrigger value="manutencao" disabled={!currentId} className="text-xs">
+                <span className="hidden sm:inline">Manutenção</span>
+                <span className="sm:hidden">Manut.</span>
+              </TabsTrigger>
+            </TabsList>
+          </div>
 
-          {/* Aba Dados */}
-          <TabsContent value="dados" className="space-y-4 pt-2">
-            <div className="grid grid-cols-2 gap-3">
-              <div><Label className="text-xs">Nº de Série *</Label><Input value={form.serialNumber} onChange={e => set("serialNumber", e.target.value)} className="h-8 text-sm" /></div>
-              <div><Label className="text-xs">Modelo *</Label><Input value={form.model} onChange={e => set("model", e.target.value)} className="h-8 text-sm" /></div>
-              <div><Label className="text-xs">Marca</Label><Input value={form.brand} onChange={e => set("brand", e.target.value)} className="h-8 text-sm" /></div>
-              <div>
-                <Label className="text-xs">Categoria</Label>
-                <Select value={form.category || ""} onValueChange={v => set("category", v)}>
-                  <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Selecione" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="mtb">MTB</SelectItem>
-                    <SelectItem value="speed">Speed</SelectItem>
-                    <SelectItem value="gravel">Gravel</SelectItem>
-                  </SelectContent>
-                </Select>
+          {/* flex-col + flex-1 no painel: dá altura definida pra aba ativa, então
+              o h-full do TabPlaceholder resolve e o vazio fica centrado. */}
+          <div className="flex flex-col flex-1 overflow-y-auto px-5 py-4">
+            {/* Aba Dados */}
+            <TabsContent value="dados" className="mt-0 flex-1 space-y-5">
+              <div className="space-y-4">
+                <p className="form-group-title">Identificação</p>
+                {/* Nº de Série removido (Cassiana 2026-07-24): a bike é
+                    identificada por modelo + unidades (aba Tamanhos → Nº de
+                    sistema). */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div><Label className="text-xs">Modelo *</Label><Input value={form.model} onChange={e => set("model", e.target.value)} className="h-8 text-sm" /></div>
+                  <div><Label className="text-xs">Marca</Label><Input value={form.brand} onChange={e => set("brand", e.target.value)} className="h-8 text-sm" /></div>
+                  <div>
+                    <Label className="text-xs">Categoria</Label>
+                    <Select value={form.category || ""} onValueChange={v => set("category", v)}>
+                      <SelectTrigger className="h-8 text-sm w-full"><SelectValue placeholder="Selecione" /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="mtb">MTB</SelectItem>
+                        <SelectItem value="speed">Speed</SelectItem>
+                        <SelectItem value="gravel">Gravel</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
               </div>
-              <div><Label className="text-xs">Cor</Label><Input value={form.color} onChange={e => set("color", e.target.value)} className="h-8 text-sm" /></div>
-              <div><Label className="text-xs">Diária (R$)</Label><Input type="number" value={form.dailyRate} onChange={e => set("dailyRate", e.target.value)} className="h-8 text-sm" /></div>
-              <div><Label className="text-xs">Peso (kg)</Label><Input value={form.weight} onChange={e => set("weight", e.target.value)} className="h-8 text-sm" /></div>
-              <div><Label className="text-xs">Limite de peso (kg)</Label><Input value={form.weightLimit} onChange={e => set("weightLimit", e.target.value)} className="h-8 text-sm" /></div>
-            </div>
-            <div><Label className="text-xs">Descrição</Label><Textarea value={form.description} onChange={e => set("description", e.target.value)} className="text-sm min-h-[60px]" /></div>
-            <div><Label className="text-xs">Observações internas</Label><Textarea value={form.notes} onChange={e => set("notes", e.target.value)} className="text-sm min-h-[60px]" /></div>
-            <Button onClick={handleSubmit} disabled={createMut.isPending || updateMut.isPending} className="w-full">
+
+              <div className="space-y-4 form-group-divider">
+                <p className="form-group-title">Especificações</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div><Label className="text-xs">Cor</Label><Input value={form.color} onChange={e => set("color", e.target.value)} className="h-8 text-sm" /></div>
+                  <div><Label className="text-xs">Diária (R$)</Label><Input type="number" value={form.dailyRate} onChange={e => set("dailyRate", e.target.value)} className="h-8 text-sm" /></div>
+                  <div><Label className="text-xs">Peso (kg)</Label><Input value={form.weight} onChange={e => set("weight", e.target.value)} className="h-8 text-sm" /></div>
+                  <div><Label className="text-xs">Limite de peso (kg)</Label><Input value={form.weightLimit} onChange={e => set("weightLimit", e.target.value)} className="h-8 text-sm" /></div>
+                </div>
+                <div><Label className="text-xs">Descrição</Label><Textarea value={form.description} onChange={e => set("description", e.target.value)} className="text-sm min-h-[60px]" /></div>
+              </div>
+
+              <div className="space-y-4 form-group-divider">
+                <p className="form-group-title">Uso interno</p>
+                <div><Label className="text-xs">Observações internas</Label><Textarea value={form.notes} onChange={e => set("notes", e.target.value)} className="text-sm min-h-[60px]" /></div>
+              </div>
+            </TabsContent>
+
+            {/* Aba Foto */}
+            <TabsContent value="foto" className="mt-0 flex-1">
+              {currentId ? <BikePhotoUpload bikeId={currentId} currentUrl={photoUrl} onUploaded={url => setPhotoUrl(url)} /> : <TabPlaceholder>Salve a bicicleta primeiro.</TabPlaceholder>}
+            </TabsContent>
+
+            {/* Aba Tamanhos */}
+            <TabsContent value="tamanhos" className="mt-0 flex-1">
+              {currentId ? <BikeSizesTab bikeId={currentId} /> : <TabPlaceholder>Salve a bicicleta primeiro.</TabPlaceholder>}
+            </TabsContent>
+
+            {/* Aba Manutenção */}
+            <TabsContent value="manutencao" className="mt-0 flex-1">
+              {currentId ? <MaintenanceTab bikeId={currentId} /> : <TabPlaceholder>Salve a bicicleta primeiro.</TabPlaceholder>}
+            </TabsContent>
+          </div>
+
+          <div className="flex gap-3 px-5 py-4 border-t border-border shrink-0">
+            <Button type="button" variant="outline" onClick={onClose} className="flex-1">Cancelar</Button>
+            <Button onClick={handleSubmit} disabled={createMut.isPending || updateMut.isPending} className="flex-1">
               {createMut.isPending || updateMut.isPending ? "Salvando..." : (savedId && !isEdit ? "Salvo ✓ — Atualizar" : isEdit ? "Salvar alterações" : "Criar bicicleta")}
             </Button>
-          </TabsContent>
-
-          {/* Aba Foto */}
-          <TabsContent value="foto" className="pt-2">
-            {currentId ? <BikePhotoUpload bikeId={currentId} currentUrl={photoUrl} onUploaded={url => setPhotoUrl(url)} /> : <p className="text-sm text-muted-foreground text-center py-8">Salve a bicicleta primeiro.</p>}
-          </TabsContent>
-
-          {/* Aba Tamanhos */}
-          <TabsContent value="tamanhos" className="pt-2">
-            {currentId ? <BikeSizesTab bikeId={currentId} /> : <p className="text-sm text-muted-foreground text-center py-8">Salve a bicicleta primeiro.</p>}
-          </TabsContent>
-
-          {/* Aba Manutenção */}
-          <TabsContent value="manutencao" className="pt-2">
-            {currentId ? <MaintenanceTab bikeId={currentId} /> : <p className="text-sm text-muted-foreground text-center py-8">Salve a bicicleta primeiro.</p>}
-          </TabsContent>
+          </div>
         </Tabs>
       </DialogContent>
     </Dialog>
@@ -673,8 +708,6 @@ function BikeCard({ bike, mode, onManage, onDiscount, onDelete }: {
           <p className="font-semibold text-sm text-foreground leading-tight truncate">{bike.model}</p>
           <p className="text-xs text-muted-foreground mt-0.5 truncate">
             {bike.brand && <span>{bike.brand}</span>}
-            {bike.brand && bike.serialNumber && <span className="mx-1">·</span>}
-            {bike.serialNumber && <span className="font-mono">#{bike.serialNumber}</span>}
           </p>
         </div>
         {rate && (
@@ -745,8 +778,6 @@ function BikeCard({ bike, mode, onManage, onDiscount, onDelete }: {
           <p className="font-semibold text-sm text-foreground leading-tight">{bike.model}</p>
           <p className="text-xs text-muted-foreground mt-0.5">
             {bike.brand && <span>{bike.brand}</span>}
-            {bike.brand && bike.serialNumber && <span className="mx-1">·</span>}
-            {bike.serialNumber && <span className="font-mono">#{bike.serialNumber}</span>}
           </p>
         </div>
         {rate && (
@@ -824,7 +855,7 @@ export default function Bikes() {
         <div className="relative flex-1 max-w-xs">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
           <Input
-            placeholder="Buscar por modelo, série..."
+            placeholder="Buscar por modelo, marca..."
             value={search}
             onChange={e => { setSearch(e.target.value); setPage(1); }}
             className="h-9 text-sm pl-8"
@@ -875,10 +906,24 @@ export default function Bikes() {
           ))}
         </div>
       ) : bikes.length === 0 ? (
-        <div className="flex flex-col items-center justify-center h-48 text-muted-foreground">
-          <BikeIcon className="w-10 h-10 mb-3 opacity-30" />
-          <p className="text-sm">Nenhuma bicicleta encontrada</p>
-        </div>
+        (search || categoryFilter) ? (
+          <EmptyState
+            icon={Search}
+            title="Nenhuma bicicleta para esse filtro"
+            description="Tente outro modelo, marca ou categoria."
+            actionLabel="Limpar filtros"
+            onAction={() => { setSearch(""); setCategoryFilter(undefined); setPage(1); }}
+          />
+        ) : (
+          <EmptyState
+            icon={BikeIcon}
+            title="Nenhuma bicicleta na frota"
+            description="Cadastre o modelo, depois os tamanhos e as unidades físicas — é o estoque que os contratos consomem."
+            actionLabel="Cadastrar primeira bicicleta"
+            actionIcon={Plus}
+            onAction={() => { setEditBike(null); setShowForm(true); }}
+          />
+        )
       ) : (
         <>
           {/* Card grid — hierárquico (modelo → tamanhos → unidades via dialog).

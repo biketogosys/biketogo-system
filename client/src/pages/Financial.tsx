@@ -1,11 +1,12 @@
 import { useMemo, useState, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
 import { usePageParam } from "@/hooks/usePageParam";
+import { EmptyState } from "@/components/EmptyState";
 import { toast } from "sonner";
 import {
   Plus, Pencil, Trash2, Tag, Download, Wallet,
   TrendingUp, TrendingDown, ArrowUpRight, ArrowDownRight,
-  ReceiptText, HandCoins, Bike,
+  ReceiptText, HandCoins, Bike, ChevronRight, ChevronDown,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -35,6 +36,61 @@ interface TxRow {
   description: string | null;
   amount: string;
   date: string | Date;
+  // Detalhamento de pagamento dividido por forma (Cassiana 2026-07-24): a linha
+  // do Financeiro é uma só; o breakdown abre na setinha.
+  meta?: {
+    kind?: string;
+    contractId?: number;
+    breakdown?: Array<{ method: string; amount: string }>;
+  } | null;
+}
+
+// Rótulo da forma de pagamento (enum → exibição). Espelha PAYMENT_METHODS.
+const PAY_METHOD_LABELS: Record<string, string> = {
+  pix: "Pix", cash: "Dinheiro", credit_card: "Cartão de crédito",
+  debit_card: "Cartão de débito", other: "Outro",
+};
+
+// Célula de descrição com detalhamento expansível (setinha) quando o pagamento
+// foi dividido em mais de uma forma. Componente próprio → estado local por linha.
+function DescriptionCell({ row }: { row: TxRow }) {
+  const [open, setOpen] = useState(false);
+  const breakdown = row.meta?.breakdown ?? [];
+  const temSplit = breakdown.length > 1;
+  const fmtBRL2 = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+  if (!temSplit) {
+    // 1 forma: mostra a forma inline (muted), sem setinha
+    const forma = breakdown[0]?.method ? PAY_METHOD_LABELS[breakdown[0].method] ?? breakdown[0].method : null;
+    return (
+      <span className="text-sm text-foreground">
+        {row.description || "—"}
+        {forma && <span className="text-xs text-muted-foreground"> · {forma}</span>}
+      </span>
+    );
+  }
+  return (
+    <div className="min-w-0">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="flex items-center gap-1.5 text-sm text-foreground text-left hover:text-primary transition-colors"
+      >
+        {open ? <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" /> : <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />}
+        <span>{row.description || "—"}</span>
+        <span className="text-xs text-muted-foreground">({breakdown.length} formas)</span>
+      </button>
+      {open && (
+        <div className="mt-1.5 ml-5 space-y-0.5 border-l border-border pl-2.5">
+          {breakdown.map((b, i) => (
+            <div key={i} className="flex items-center justify-between gap-3 text-xs">
+              <span className="text-muted-foreground">{PAY_METHOD_LABELS[b.method] ?? b.method}</span>
+              <span className="tabular-nums text-foreground">{fmtBRL2(parseFloat(b.amount) || 0)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 // ─── Período ─────────────────────────────────────────────────────────────────
@@ -138,7 +194,7 @@ function CategoryManagerDialog({
 
   return (
     <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
-      <DialogContent className="max-w-sm dialog-mobile">
+      <DialogContent className="sm:max-w-sm dialog-mobile">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-base">
             <Tag className="size-4 text-primary" />
@@ -275,7 +331,7 @@ function TransactionDialog({
 
   return (
     <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
-      <DialogContent className="max-w-md dialog-mobile">
+      <DialogContent className="sm:max-w-md dialog-mobile">
         <DialogHeader>
           <DialogTitle className="text-base">
             {item ? "Editar" : "Nova"} {isExpense ? "Despesa" : "Receita"}
@@ -596,9 +652,7 @@ export default function Financial() {
       id: "descricao",
       header: "Descrição",
       accessorKey: "description",
-      cell: ({ row }) => (
-        <span className="text-sm text-foreground">{row.original.description || "—"}</span>
-      ),
+      cell: ({ row }) => <DescriptionCell row={row.original} />,
     },
     {
       id: "valor",
@@ -780,14 +834,16 @@ export default function Financial() {
         loading={currentLoading && datesValid}
         pagination={{ page: currentPage, totalPages, onPageChange: setCurrentPage }}
         empty={
-          <div className="flex flex-col items-center gap-3 text-muted-foreground">
-            {isExpense
-              ? <ReceiptText className="h-10 w-10 opacity-30" />
-              : <HandCoins className="h-10 w-10 opacity-30" />}
-            <p className="text-sm">
-              {isExpense ? "Nenhuma despesa no período." : "Nenhuma receita no período."}
-            </p>
-          </div>
+          <EmptyState
+            icon={isExpense ? ReceiptText : HandCoins}
+            title={isExpense ? "Nenhuma despesa no período" : "Nenhuma receita no período"}
+            description={isExpense
+              ? "Manutenção, peças e custos da operação entram aqui e abatem o lucro do período."
+              : "As receitas de aluguel entram sozinhas ao confirmar o pagamento do contrato. Use o botão para lançar entradas avulsas."}
+            actionLabel={isExpense ? "Lançar despesa" : "Lançar receita"}
+            actionIcon={Plus}
+            onAction={() => { setEditItem(null); setShowForm(true); }}
+          />
         }
       />
 

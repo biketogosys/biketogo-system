@@ -44,7 +44,11 @@ import {
   Check,
 } from "lucide-react";
 import { UnitStatusBadge, UNIT_STATUS_LABELS, type BikeUnitStatus } from "@/components/UnitStatusBadge";
-import { DataTable } from "@/components/ui/data-table";
+import { DataTable, DataTablePaginationBar } from "@/components/ui/data-table";
+import { Card, CardContent, CardFooter } from "@/components/ui/card";
+import { EmptyState } from "@/components/EmptyState";
+import { ViewModeToggle } from "@/components/ViewModeToggle";
+import { useViewMode, type ViewMode } from "@/hooks/useViewMode";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { usePageParam } from "@/hooks/usePageParam";
 import { useMemo, useEffect } from "react";
@@ -188,7 +192,7 @@ function AccessoryUnitsPanel({ accessoryId, onClose }: { accessoryId: number; on
 
   return (
     <Dialog open onOpenChange={onClose}>
-      <DialogContent className="bg-card border-border max-w-lg max-h-[90vh] overflow-y-auto dialog-mobile">
+      <DialogContent className="bg-card border-border sm:max-w-lg max-h-[90vh] overflow-y-auto dialog-mobile">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <List className="w-4 h-4 text-primary" />
@@ -536,7 +540,7 @@ function AccessoryUnitsPanel({ accessoryId, onClose }: { accessoryId: number; on
 
       {/* Delete unit confirm */}
       <Dialog open={!!deleteUnitId} onOpenChange={() => setDeleteUnitId(null)}>
-        <DialogContent className="bg-card border-border max-w-sm dialog-mobile">
+        <DialogContent className="bg-card border-border sm:max-w-sm dialog-mobile">
           <DialogHeader>
             <DialogTitle>Excluir Unidade</DialogTitle>
           </DialogHeader>
@@ -607,6 +611,134 @@ function StockCell({ item }: { item: any }) {
   );
 }
 
+// Estoque em número grande — o dado que a Cassiana procura ao bater o olho
+// ("tenho capacete M?"). Verde quando há disponível, destructive quando zerou.
+function StockFigure({ item, size }: { item: any; size: "lg" | "sm" }) {
+  const bd = item.breakdown;
+  const disp = bd ? bd.disponivel : (item.quantidadeDisponivel ?? item.quantity ?? 0);
+  const total = bd ? bd.total : (item.quantidadeTotal ?? item.quantity ?? 0);
+  return (
+    <p className={`font-bold tabular-nums leading-none ${size === "lg" ? "text-2xl" : "text-lg"} ${
+      disp > 0 ? "text-emerald-600 dark:text-emerald-400" : "text-destructive"
+    }`}>
+      {disp}
+      <span className="text-muted-foreground font-normal text-sm">/{total}</span>
+    </p>
+  );
+}
+
+// Chips de variante com estoque (disp/total). Verde se há disponível, senão
+// esmaecido — o pedido do Q15 era ver as variantes, não só "N variações".
+function VariantChips({ variantes, size = "md" }: { variantes: any[]; size?: "md" | "sm" }) {
+  if (variantes.length === 0) return null;
+  return (
+    <div className="flex flex-wrap gap-1">
+      {variantes.map((v: any) => {
+        const total = v.total ?? (v.disponivel + (v.alugado ?? 0) + (v.manutencao ?? 0) + (v.perdido ?? 0) + (v.roubado ?? 0));
+        const ok = v.disponivel > 0;
+        return (
+          <span
+            key={v.variante ?? "__null__"}
+            title={`${v.variante ?? "Padrão"}: ${v.disponivel} de ${total} disponível(is)`}
+            className={`inline-flex items-center gap-1 rounded-md border ${size === "sm" ? "px-1 py-0 text-[10px]" : "px-1.5 py-0.5 text-[11px]"} font-medium ${
+              ok
+                ? "bg-emerald-500/10 text-emerald-600 border-emerald-500/25 dark:text-emerald-400"
+                : "bg-muted/50 text-muted-foreground border-border"
+            }`}
+          >
+            <span className="font-semibold">{v.variante ?? "Padrão"}</span>
+            <span className="tabular-nums">{v.disponivel}/{total}</span>
+          </span>
+        );
+      })}
+    </div>
+  );
+}
+
+// Q15: card de acessório nos 3 modos. Acessório não tem foto (diferente de
+// bike), então quem manda no card é NOME + ESTOQUE, não imagem.
+function AccessoryCard({
+  item, mode, onEdit, onUnits, onDelete,
+}: {
+  item: any;
+  mode: ViewMode;
+  onEdit: (item: any) => void;
+  onUnits: (id: number) => void;
+  onDelete: (id: number) => void;
+}) {
+  const bd = item.breakdown;
+  const named: any[] = (bd?.byVariante ?? []).filter((v: any) => v.variante !== null);
+
+  const TipoBadge = () => item.obrigatorio ? (
+    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-semibold border bg-amber-500/15 text-amber-600 border-amber-500/30 dark:text-amber-400">
+      <ShieldCheck className="w-3 h-3" />Obrigatório
+    </span>
+  ) : (
+    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-semibold border bg-muted/50 text-muted-foreground border-border">
+      <ShieldOff className="w-3 h-3" />Opcional
+    </span>
+  );
+
+  // ─── COMPACTO: só o essencial, muitos por linha ────────────────────────────
+  if (mode === "compact") {
+    return (
+      <Card className="group border border-border bg-card hover:border-primary/40 hover:shadow-md transition-[border-color,box-shadow] duration-200 ease-out">
+        <CardContent className="p-3 space-y-2">
+          <div className="flex items-start justify-between gap-2">
+            <p className="font-semibold text-xs leading-tight line-clamp-2 min-w-0" title={item.name}>{item.name}</p>
+            <Package className="w-3.5 h-3.5 text-muted-foreground/40 shrink-0" />
+          </div>
+          <StockFigure item={item} size="sm" />
+          {/* Variantes visíveis também no compacto (pedido do Q15) */}
+          {named.length > 0 ? <VariantChips variantes={named} size="sm" /> : null}
+        </CardContent>
+        <CardFooter className="px-3 pb-3 pt-0 flex items-center gap-1">
+          <Button size="sm" variant="default" className="flex-1 h-7 text-xs px-1.5" onClick={() => onEdit(item)}>Editar</Button>
+          <Button size="sm" variant="ghost" className="h-7 w-7 p-0 shrink-0 text-muted-foreground hover:text-destructive hover:bg-destructive/10" onClick={() => onDelete(item.id)} title="Remover acessório" aria-label={`Remover ${item.name}`}>
+            <Trash2 className="w-3 h-3" />
+          </Button>
+        </CardFooter>
+      </Card>
+    );
+  }
+
+  // ─── GRADE: card completo com categoria, variantes e ações ─────────────────
+  return (
+    <Card className="group border border-border bg-card hover:border-primary/40 hover:shadow-md transition-[border-color,box-shadow] duration-200 ease-out">
+      <CardContent className="p-4 space-y-3">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="font-semibold text-sm leading-tight truncate" title={item.name}>{item.name}</p>
+          </div>
+          <StockFigure item={item} size="lg" />
+        </div>
+        <div className="flex items-center gap-1.5 flex-wrap">
+          {item.category && (
+            <span className="px-1.5 py-0.5 bg-primary/10 text-primary rounded-md text-[10px] uppercase font-medium">{item.category}</span>
+          )}
+          <TipoBadge />
+        </div>
+        {/* Variantes por extenso com estoque (Q15: antes era só "N variações") */}
+        {named.length > 0 && (
+          <div className="pt-1 border-t border-border/60 space-y-1.5">
+            <p className="flex items-center gap-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+              <Layers className="w-3 h-3" /> Variantes
+            </p>
+            <VariantChips variantes={named} />
+          </div>
+        )}
+      </CardContent>
+      <CardFooter className="px-4 pb-4 pt-0 flex items-center gap-1.5">
+        <Button size="sm" variant="default" className="flex-1 h-8 text-xs" onClick={() => onEdit(item)}>Editar</Button>
+        <Button size="sm" variant="outline" className="h-8 text-xs" onClick={() => onUnits(item.id)}>Unidades</Button>
+        <Button size="sm" variant="ghost" className="h-8 w-8 p-0 shrink-0 text-muted-foreground hover:text-destructive hover:bg-destructive/10" onClick={() => onDelete(item.id)} title="Remover acessório" aria-label={`Remover ${item.name}`}>
+          <Trash2 className="w-3.5 h-3.5" />
+        </Button>
+      </CardFooter>
+    </Card>
+  );
+}
+
 export default function Accessories() {
   const [search, setSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
@@ -618,6 +750,9 @@ export default function Accessories() {
 
   const utils = trpc.useUtils();
   const [page, setPage] = usePageParam();
+  // Q15: acessório é conferência de ESTOQUE, não vitrine — o padrão é a lista
+  // (tabela), com grade/compacto pra quem quer bater o olho no número.
+  const [viewMode, setViewMode] = useViewMode("accessories", "list");
   const LIMIT = 20;
 
   const { data: accessoriesResult, isLoading } = trpc.accessories.list.useQuery({
@@ -728,7 +863,6 @@ export default function Accessories() {
         return (
           <div className="min-w-0">
             <p className="text-[13px] font-medium text-foreground truncate">{item.name}</p>
-            {item.serialNumber && <p className="text-[11px] text-muted-foreground">#{item.serialNumber}</p>}
           </div>
         );
       },
@@ -784,6 +918,32 @@ export default function Accessories() {
     },
   ], []);
 
+  // Q15: colunas por modo (mesma escala de Bicicletas)
+  const gridClass = viewMode === "compact"
+    ? "grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3"
+    : "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4";
+
+  // Empty state compartilhado entre a tabela e a grade (Q9)
+  const isFiltering = !!search || categoryFilter !== "all";
+  const emptyState = isFiltering ? (
+    <EmptyState
+      icon={Search}
+      title="Nenhum acessório para esse filtro"
+      description="Tente outro nome ou categoria."
+      actionLabel="Limpar filtros"
+      onAction={() => { setSearch(""); setCategoryFilter("all"); setPage(1); }}
+    />
+  ) : (
+    <EmptyState
+      icon={Package}
+      title="Nenhum acessório cadastrado"
+      description="Capacetes, cadeados e suportes que acompanham as bikes ficam aqui. Marque como obrigatório o que nunca pode sair sem."
+      actionLabel="Cadastrar primeiro acessório"
+      actionIcon={Plus}
+      onAction={openCreate}
+    />
+  );
+
   return (
     <>
       <div className="p-4 md:p-6 space-y-4">
@@ -809,7 +969,7 @@ export default function Accessories() {
         <div className="flex flex-col sm:flex-row gap-2 items-stretch sm:items-center">
           <div className="relative flex-1 max-w-xs">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
-            <Input placeholder="Buscar por nome ou série..." value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} className="h-9 text-sm pl-8" />
+            <Input placeholder="Buscar por nome..." value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} className="h-9 text-sm pl-8" />
           </div>
           {uniqueCategories.length > 0 && (
             <Select value={categoryFilter} onValueChange={(v) => { setCategoryFilter(v); setPage(1); }}>
@@ -827,30 +987,48 @@ export default function Accessories() {
               Limpar
             </Button>
           )}
+          <ViewModeToggle value={viewMode} onChange={setViewMode} className="sm:ml-auto" />
         </div>
 
-        {/* Conteúdo — DataTable da casa (responsivo: vira card no mobile;
-            paginação numerada do Q13). */}
-        <DataTable
-          columns={columns}
-          data={items}
-          loading={isLoading}
-          pagination={{ page, totalPages, onPageChange: setPage }}
-          empty={
-            <div className="flex flex-col items-center gap-3 py-6 text-muted-foreground">
-              <Package className="w-10 h-10 opacity-40" />
-              <p className="text-sm">Nenhum acessório encontrado</p>
-              <Button variant="outline" size="sm" onClick={openCreate} className="gap-2">
-                <Plus className="w-4 h-4" /> Cadastrar primeiro acessório
-              </Button>
+        {/* Conteúdo — Q15: lista = DataTable da casa (responsivo, vira card no
+            mobile, paginação numerada do Q13); grade/compacto = cards, com a
+            MESMA barra de paginação (DataTablePaginationBar). */}
+        {viewMode === "list" ? (
+          <DataTable
+            columns={columns}
+            data={items}
+            loading={isLoading}
+            pagination={{ page, totalPages, onPageChange: setPage }}
+            empty={emptyState}
+          />
+        ) : isLoading ? (
+          <div className={gridClass}>
+            {Array.from({ length: 8 }).map((_, i) => <Skeleton key={i} className="h-32 w-full" />)}
+          </div>
+        ) : items.length === 0 ? (
+          <div className="rounded-lg border border-border bg-card">{emptyState}</div>
+        ) : (
+          <div className="space-y-4">
+            <div className={`${gridClass} motion-stagger`}>
+              {items.map((item) => (
+                <AccessoryCard
+                  key={item.id}
+                  item={item}
+                  mode={viewMode}
+                  onEdit={openEdit}
+                  onUnits={setUnitsAccessoryId}
+                  onDelete={setDeleteConfirmId}
+                />
+              ))}
             </div>
-          }
-        />
+            <DataTablePaginationBar page={page} totalPages={totalPages} onPageChange={setPage} />
+          </div>
+        )}
       </div>
 
       {/* Create / Edit Dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="bg-card border-border max-w-lg max-h-[90vh] overflow-y-auto dialog-mobile">
+        <DialogContent className="bg-card border-border sm:max-w-lg max-h-[90vh] overflow-y-auto dialog-mobile">
           <DialogHeader>
             <DialogTitle>{editingId ? "Editar Acessório" : "Novo Acessório"}</DialogTitle>
           </DialogHeader>
@@ -886,16 +1064,8 @@ export default function Accessories() {
                 </Select>
               </div>
 
-              <div className="space-y-1">
-                <Label>Número de Série</Label>
-                <Input
-                  placeholder="Ex: CAP-001"
-                  value={form.serialNumber}
-                  onChange={(e) => setForm({ ...form, serialNumber: e.target.value })}
-                  className="bg-background"
-                />
-              </div>
-
+              {/* Nº de série removido (Cassiana 2026-07-24): as UNIDADES é que
+                  têm nº de controle/sistema (na aba Unidades), como as bikes. */}
               <div className="space-y-1">
                 <Label>Valor de Reposição (R$)</Label>
                 <Input
@@ -977,7 +1147,7 @@ export default function Accessories() {
 
       {/* Delete Confirm */}
       <Dialog open={!!deleteConfirmId} onOpenChange={() => setDeleteConfirmId(null)}>
-        <DialogContent className="bg-card border-border max-w-sm dialog-mobile">
+        <DialogContent className="bg-card border-border sm:max-w-sm dialog-mobile">
           <DialogHeader>
             <DialogTitle>Remover Acessório</DialogTitle>
           </DialogHeader>

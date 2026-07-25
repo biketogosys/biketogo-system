@@ -475,6 +475,32 @@ export async function getBikeDiscountRules(bikeId: number) {
   return db.select().from(bikeDiscountRules).where(eq(bikeDiscountRules.bikeId, bikeId)).orderBy(bikeDiscountRules.minDays);
 }
 
+/**
+ * Q8: regras de desconto de VÁRIAS bikes de uma vez (1 query em vez de N).
+ * Usado ao duplicar contrato — sem isto o contrato duplicado sairia com diária
+ * cheia, regredindo o fix de desconto progressivo da Cassiana (2026-07-22).
+ * Retorna mapa bikeId → regras (bike sem regra não aparece).
+ */
+export async function getBikeDiscountRulesBatch(
+  // `db` injetável (padrão dos módulos novos: agenda/search/renewal) — é o que
+  // permite testar contra PGlite em vez de exigir DATABASE_URL real.
+  dbArg: Awaited<ReturnType<typeof getDb>>,
+  bikeIds: number[],
+) {
+  const db = dbArg;
+  if (!db || bikeIds.length === 0) return {} as Record<number, Array<{ minDays: number; discountPercent: string }>>;
+  const rows = await db
+    .select()
+    .from(bikeDiscountRules)
+    .where(inArray(bikeDiscountRules.bikeId, bikeIds))
+    .orderBy(bikeDiscountRules.minDays);
+  const out: Record<number, Array<{ minDays: number; discountPercent: string }>> = {};
+  for (const r of rows) {
+    (out[r.bikeId] ??= []).push({ minDays: r.minDays, discountPercent: String(r.discountPercent) });
+  }
+  return out;
+}
+
 export async function createBikeDiscountRule(data: InsertBikeDiscountRule): Promise<number> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");

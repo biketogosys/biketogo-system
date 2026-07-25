@@ -5,7 +5,8 @@
       "name": "biketogo-dev",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev:local:once"],
-      "port": 3000
+      "port": 3000,
+      "autoPort": true
     }
   ]
 }

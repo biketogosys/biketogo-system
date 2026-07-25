@@ -15,6 +15,7 @@ import {
   Check,
   Trash2,
   Pencil,
+  Copy,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -108,7 +109,7 @@ function VerifiedClientAutocomplete({
       const target = e.target as HTMLElement | null;
       if (!target) return;
       // Cliques em BARRA DE ROLAGEM disparam mousedown mas não devem fechar a
-      // lista. O DialogContent (max-h-[90vh] overflow-y-auto) tem barra própria:
+      // lista. O corpo do modal (altura fixa + overflow-y-auto) tem barra própria:
       // rolar o formulário fechava o autocomplete. Ignora 3 casos de scrollbar:
       const root = document.documentElement;
       // 1) barra da janela (clique além da largura/altura útil do documento)
@@ -203,16 +204,42 @@ type EditPrefill = {
   accessories: Array<{ accessoryId: number; variante: string | null; qty: number }>;
 };
 
+/**
+ * Q8 — duplicar contrato. É CRIAÇÃO (não tem contractId): copia cliente, bikes
+ * e acessórios de um contrato existente para um período NOVO.
+ * ⚠️ Não copia `unitIds` de propósito: disponibilidade é POR DATA, então a
+ * unidade física do contrato original pode estar ocupada no período novo. Vão
+ * vazias e o servidor auto-atribui (ou o usuário escolhe no lápis do carrinho).
+ */
+type DuplicatePrefill = {
+  contractId: number;
+  clientId: number;
+  clientName: string;
+  bikes: Array<{
+    bikeId: number;
+    bikeModel: string;
+    bikeBrand: string;
+    bikeSizeId: number | null;
+    tamanho: string;
+    quantity: number;
+    dailyRate: string;
+  }>;
+  accessories: Array<{ accessoryId: number; variante: string | null; qty: number }>;
+};
+
 export function NewContractModal({
   open,
   onClose,
   editPrefill,
+  duplicateFrom,
   initialClient,
   initialStartDate,
 }: {
   open: boolean;
   onClose: () => void;
   editPrefill?: EditPrefill;
+  /** Q8: pré-carrega um contrato existente em período novo (modo criação) */
+  duplicateFrom?: DuplicatePrefill;
   initialClient?: { clientId: number; clientName: string };
   /** Data de início pré-preenchida (F1.1: clique num dia da agenda) */
   initialStartDate?: string;
@@ -251,6 +278,56 @@ export function NewContractModal({
       setStep(2);
     }
   }, [open, isEditMode]);
+
+  // ─── Q8 — DUPLICAÇÃO ────────────────────────────────────────────────────────
+  // O período novo é escolhido no PASSO 1 (que no modo duplicar substitui a
+  // seleção de cliente — o cliente já vem do contrato original).
+  // ⚠️ Um dialog SÓ, de propósito: um Dialog de período separado ficava montado
+  // junto com este e os dois Radix brigavam — o antigo travava visível
+  // (data-state=closed com opacity 1) e o novo entrava com opacity 0.
+  const isDuplicateMode = !!duplicateFrom && !isEditMode;
+  const [dupStart, setDupStart] = useState("");
+  const [dupEnd, setDupEnd] = useState("");
+
+  const { data: dupRules } = trpc.bikes.discountRulesBatch.useQuery(
+    { bikeIds: Array.from(new Set((duplicateFrom?.bikes ?? []).map((b) => b.bikeId))) },
+    { enabled: open && isDuplicateMode },
+  );
+
+  useEffect(() => {
+    if (!(open && isDuplicateMode && duplicateFrom)) return;
+    setClientId(String(duplicateFrom.clientId));
+    setClientName(duplicateFrom.clientName);
+    setClientStatus("verified");
+    const sel: Record<number, Record<string, number>> = {};
+    for (const l of duplicateFrom.accessories) {
+      const k = l.variante ?? "__sem__";
+      (sel[l.accessoryId] ??= {})[k] = (sel[l.accessoryId]?.[k] ?? 0) + l.qty;
+    }
+    setAccSelections(sel);
+    setStep(1);
+  }, [open, isDuplicateMode]);
+
+  /** Monta o carrinho com as bikes do original no período escolhido (passo 1→2). */
+  function applyDuplicateBikes() {
+    if (!duplicateFrom) return;
+    setBikeEntries(
+      duplicateFrom.bikes.map((b) => {
+        const base = {
+          ...b,
+          startDate: dupStart,
+          endDate: dupEnd,
+          unitIds: [] as number[], // por data: o servidor auto-atribui no período novo
+        };
+        const { numDays, totalAmount, discountPercent } = calcTotal(base, (dupRules?.[b.bikeId] ?? []) as any);
+        return { ...base, numDays, totalAmount, discountPercent };
+      }),
+    );
+    // Deixa o período também nos campos de seleção (adicionar outra bike já vem
+    // com as mesmas datas, que é o esperado).
+    setSelStartDate(dupStart);
+    setSelEndDate(dupEnd);
+  }
 
   // Bike selection state
   const [selCategory, setSelCategory] = useState("all");
@@ -344,12 +421,61 @@ export function NewContractModal({
   );
   const accList = accData?.data ?? [];
 
-  // availability query for step 3
+  // availability query for step 3 — POR PERÍODO do contrato (span das bikes no
+  // carrinho). Sem período a query cai no estoque "de agora" (fallback).
   const accIds = (accData?.data ?? []).map((a: any) => a.id);
+  const accPeriod = (() => {
+    const starts = bikeEntries.map((b) => b.startDate).filter(Boolean).sort();
+    const ends = bikeEntries.map((b) => b.endDate).filter(Boolean).sort();
+    return { startDate: starts[0], endDate: (ends.length ? ends : starts).slice(-1)[0] };
+  })();
   const { data: availData } = trpc.accessories.availability.useQuery(
-    { accessoryIds: accIds },
-    { enabled: step === 3 && accIds.length > 0 }
+    {
+      accessoryIds: accIds,
+      startDate: accPeriod.startDate,
+      endDate: accPeriod.endDate,
+      // na edição, o próprio contrato não pode bloquear suas unidades
+      excludeContractId: isEditMode && editPrefill ? editPrefill.contractId : undefined,
+    },
+    { enabled: step === 3 && accIds.length > 0 && !!accPeriod.startDate && !!accPeriod.endDate }
   );
+
+  /**
+   * Q8 — clamp dos acessórios copiados ao disponível NO PERÍODO.
+   * Rede de segurança: com a disponibilidade de acessório agora POR DATA
+   * (2026-07-23), o capacete do contrato original volta a estar livre no período
+   * novo — então no caso comum este clamp NÃO corta nada. Ainda vale quando a
+   * qtd copiada excede o estoque real do período (ex.: outro contrato pegou a
+   * unidade no meio). Corta e avisa antes do resumo, em vez de estourar no save.
+   */
+  const dupAccClampedRef = useRef(false);
+  useEffect(() => {
+    if (!(isDuplicateMode && step === 3 && availData)) return;
+    if (dupAccClampedRef.current) return;
+    dupAccClampedRef.current = true;
+
+    // Calculado FORA do updater de propósito: o updater do setState roda depois,
+    // então preencher a lista de cortes lá dentro deixava o aviso sempre vazio.
+    const cortes: string[] = [];
+    const next: Record<number, Record<string, number>> = {};
+    for (const [idStr, byKey] of Object.entries(accSelections)) {
+      const accId = Number(idStr);
+      const av = (availData as any[]).find((a) => a.accessoryId === accId);
+      const nome = (accData?.data ?? []).find((a: any) => a.id === accId)?.name ?? `#${accId}`;
+      for (const [key, qty] of Object.entries(byKey)) {
+        const variante = key === "__sem__" ? null : key;
+        const disp = (av?.variantes ?? []).find((v: any) => (v.variante ?? null) === variante)?.disponivel ?? 0;
+        const usado = Math.min(qty, disp);
+        if (usado < qty) cortes.push(`${nome}${variante ? ` (${variante})` : ""}: ${qty}→${usado}`);
+        if (usado > 0) (next[accId] ??= {})[key] = usado;
+      }
+    }
+    if (cortes.length === 0) return;
+    setAccSelections(next);
+    toast.warning(`Estoque insuficiente, ajustei: ${cortes.join(" · ")}. Escolha outra variante se precisar.`, {
+      duration: 10000,
+    });
+  }, [isDuplicateMode, step, availData, accData]);
 
   const selectedBike = bikes.find((b) => b.id === Number(selBikeId));
 
@@ -472,6 +598,7 @@ export function NewContractModal({
   function handleReset() {
     setStep(1); setClientId(""); setClientName(""); setClientStatus("");
     setBikeEntries([]); setAccSelections({}); setPrefillSelections({}); setNotes("");
+    setDupStart(""); setDupEnd(""); dupAccClampedRef.current = false;
     setSelCategory("all");
     setSelBikeId(""); setSelBikeSizeId(""); setSelStartDate(""); setSelEndDate(""); setSelQty(1);
   }
@@ -518,20 +645,25 @@ export function NewContractModal({
     }
   }
 
-  const stepLabels = ["Cliente", "Bikes", "Acessórios", "Resumo"];
+  // No modo duplicar o passo 1 é o PERÍODO (o cliente vem do contrato original)
+  const stepLabels = [isDuplicateMode ? "Período" : "Cliente", "Bikes", "Acessórios", "Resumo"];
 
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!o) { handleReset(); onClose(); } }}>
-      <DialogContent className="dialog-mobile max-w-2xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
+      <DialogContent className="dialog-mobile dialog-steps sm:max-w-2xl p-0 gap-0 flex flex-col overflow-hidden">
+        <DialogHeader className="px-5 py-4 border-b border-border shrink-0">
+          <DialogTitle className="flex items-center gap-2 text-base">
             <FileText className="h-5 w-5 text-primary" />
-            {isEditMode ? `Editar Contrato #${editPrefill?.contractId}` : "Novo Contrato Manual"}
+            {isEditMode
+              ? `Editar Contrato #${editPrefill?.contractId}`
+              : isDuplicateMode
+                ? "Duplicar Contrato"
+                : "Novo Contrato Manual"}
           </DialogTitle>
         </DialogHeader>
 
         {/* Step indicator */}
-        <div className="flex items-center gap-1 mb-4">
+        <div className="flex items-center gap-1 px-5 pt-4 shrink-0">
           {stepLabels.map((label, i) => (
             <div key={i} className="flex items-center gap-1 flex-1">
               <div className={`flex items-center justify-center w-7 h-7 rounded-full text-xs font-bold shrink-0 ${
@@ -545,8 +677,47 @@ export function NewContractModal({
           ))}
         </div>
 
+        <div className="flex-1 overflow-y-auto px-5 py-4">
+        {/* Step 1 (modo duplicar): período novo — o cliente já vem do original */}
+        {step === 1 && isDuplicateMode && duplicateFrom && (
+          <div className="space-y-4">
+            <div className="flex items-start gap-2 p-3 rounded-md border bg-sky-500/10 border-sky-500/30 text-xs text-sky-700 dark:text-sky-400">
+              <Copy className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+              <span>
+                Cópia do contrato <strong>#{duplicateFrom.contractId}</strong> de{" "}
+                <strong>{duplicateFrom.clientName}</strong>: {duplicateFrom.bikes.length} bike(s)
+                {duplicateFrom.accessories.length > 0 && ` e ${duplicateFrom.accessories.length} acessório(s)`}.
+                As unidades físicas serão reatribuídas no período novo.
+              </span>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label className="mb-1 block text-xs">Data início</Label>
+                <Input type="date" value={dupStart} onChange={(e) => setDupStart(e.target.value)} className="text-sm" />
+              </div>
+              <div>
+                <Label className="mb-1 block text-xs">Data devolução</Label>
+                <Input type="date" value={dupEnd} onChange={(e) => setDupEnd(e.target.value)} min={dupStart} className="text-sm" />
+              </div>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              A disponibilidade é conferida nas datas escolhidas — se alguma bike estiver ocupada no período, o próximo passo avisa.
+            </p>
+            <div className="rounded-md border bg-muted/40 p-3 space-y-1">
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Será copiado</p>
+              {duplicateFrom.bikes.map((b, i) => (
+                <p key={i} className="text-sm">
+                  {b.bikeModel}
+                  {b.tamanho && <span className="text-xs text-muted-foreground"> ({b.tamanho})</span>}
+                  <span className="text-xs text-muted-foreground"> · {b.quantity}x</span>
+                </p>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Step 1: Select client */}
-        {step === 1 && (
+        {step === 1 && !isDuplicateMode && (
           <div className="space-y-4">
             <div>
               <Label className="mb-2 block">Buscar cliente</Label>
@@ -574,6 +745,16 @@ export function NewContractModal({
             por data, então o período define o que os seletores mostram. */}
         {step === 2 && (
           <div className="space-y-4">
+            {isDuplicateMode && (
+              <div className="flex items-start gap-2 p-2.5 rounded-md border bg-sky-500/10 border-sky-500/30 text-xs text-sky-700 dark:text-sky-400">
+                <Copy className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                <span>
+                  Cópia do contrato de <strong>{duplicateFrom?.clientName}</strong> no período novo.
+                  As <strong>unidades físicas serão reatribuídas</strong> (a disponibilidade é por data) —
+                  use o lápis se quiser escolher unidades específicas.
+                </span>
+              </div>
+            )}
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label className="mb-1 block text-xs">Data início</Label>
@@ -718,8 +899,8 @@ export function NewContractModal({
 
             {/* Financial warning for ativo/parcial edit */}
             {isAtivoParcial && (
-              <div className="flex items-start gap-2 p-2.5 rounded-md bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 text-xs text-amber-700 dark:text-amber-400">
-                <span className="shrink-0 mt-0.5">⚠️</span>
+              <div className="flex items-start gap-2 p-2.5 rounded-md border bg-amber-500/10 border-amber-500/30 text-xs text-amber-600 dark:text-amber-400">
+                <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
                 <span>Alterar valores lançará um ajuste no financeiro e o contrato será regenerado em PDF.</span>
               </div>
             )}
@@ -776,7 +957,9 @@ export function NewContractModal({
         {step === 3 && (
           <div className="space-y-3">
             <p className="text-sm text-muted-foreground">Selecione a quantidade de cada variante desejada. Acessórios obrigatórios precisam de ao menos 1 unidade.</p>
-            <div className="space-y-3 max-h-80 overflow-y-auto pr-1">
+            {/* Sem scroll próprio: o corpo do modal já rola (altura fixa) —
+                dois scrolls aninhados prendiam a lista numa janelinha. */}
+            <div className="space-y-3">
               {accList.map((acc) => {
                 const isMandatory = (acc as any).obrigatorio;
                 const accAvail = (availData ?? []).find((av: any) => av.accessoryId === acc.id);
@@ -790,7 +973,7 @@ export function NewContractModal({
                       <Package className="h-4 w-4 text-muted-foreground shrink-0" />
                       <div className="flex-1 min-w-0">
                         <span className="font-medium text-sm truncate">{acc.name}</span>
-                        {isMandatory && <span className="ml-2 text-xs bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">Obrigatório</span>}
+                        {isMandatory && <span className="ml-2 text-xs px-1.5 py-0.5 rounded-md border bg-amber-500/20 text-amber-600 border-amber-500/30 dark:text-amber-400">Obrigatório</span>}
                       </div>
                       {totalSelected > 0 && <span className="text-xs text-primary font-medium">{totalSelected} selecionado(s)</span>}
                     </div>
@@ -900,8 +1083,9 @@ export function NewContractModal({
             </div>
           </div>
         )}
+        </div>
 
-        <DialogFooter className="flex items-center justify-between gap-2 pt-2">
+        <DialogFooter className="flex items-center justify-between gap-2 px-5 py-4 border-t border-border shrink-0">
           <div>
             {step > 1 && (
               <Button variant="outline" size="sm" onClick={() => setStep((s) => s - 1)}>
@@ -915,7 +1099,11 @@ export function NewContractModal({
               <Button
                 size="sm"
                 onClick={() => {
-                  if (step === 1 && (!clientId || clientStatus !== "verified")) {
+                  if (step === 1 && isDuplicateMode) {
+                    if (!dupStart || !dupEnd) { toast.error("Escolha o período novo."); return; }
+                    if (dupEnd < dupStart) { toast.error("A devolução não pode ser antes do início."); return; }
+                    applyDuplicateBikes(); // só aqui as bikes entram no carrinho
+                  } else if (step === 1 && (!clientId || clientStatus !== "verified")) {
                     toast.error("Selecione um cliente verificado."); return;
                   }
                   if (step === 2 && bikeEntries.length === 0) {
@@ -925,7 +1113,19 @@ export function NewContractModal({
                     const mandatory = accList.filter((a: any) => a.obrigatorio);
                     for (const ma of mandatory) {
                       const total = Object.values(accSelections[ma.id] ?? {}).reduce((s, q) => s + q, 0);
-                      if (total < 1) { toast.error(`Selecione ao menos 1 unidade do acessório obrigatório: ${ma.name}`); return; }
+                      if (total >= 1) continue;
+                      // Distinguir "esqueceu de escolher" de "não há nenhum em
+                      // estoque" — com 0 disponível em todas as variantes o
+                      // usuário ficava preso sem entender o que fazer.
+                      const av = (availData as any[] | undefined)?.find((a) => a.accessoryId === ma.id);
+                      const estoque = (av?.variantes ?? []).reduce((s: number, v: any) => s + (v.disponivel ?? 0), 0);
+                      toast.error(
+                        estoque === 0
+                          ? `Sem estoque de "${ma.name}" (obrigatório) — nenhuma unidade disponível. Libere uma unidade em Acessórios ou desmarque a obrigatoriedade.`
+                          : `Selecione ao menos 1 unidade do acessório obrigatório: ${ma.name}`,
+                        { duration: 8000 },
+                      );
+                      return;
                     }
                   }
                   setStep((s) => s + 1);

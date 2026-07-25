@@ -42,6 +42,73 @@ interface DataTablePagination {
   onPageChange: (page: number) => void
 }
 
+/**
+ * Barra de paginação numerada (Q13) — extraída da DataTable pra ser reusável
+ * (Q15): telas que trocam a tabela por GRADE de cards precisam da MESMA
+ * paginação. Fonte única — não reimplementar prev/next na tela.
+ * Não renderiza nada com 1 página só.
+ */
+export function DataTablePaginationBar({
+  page,
+  totalPages,
+  onPageChange,
+  className,
+}: DataTablePagination & { className?: string }) {
+  if (totalPages <= 1) return null
+  return (
+    <div className={cn("flex items-center justify-between gap-2 px-1", className)}>
+      <p className="hidden sm:block text-sm text-muted-foreground tabular-nums shrink-0">
+        Página {page} de {totalPages}
+      </p>
+      <div className="flex items-center gap-1 ml-auto">
+        <Button
+          variant="outline"
+          size="icon"
+          className="size-8"
+          onClick={() => onPageChange(page - 1)}
+          disabled={page <= 1}
+          aria-label="Página anterior"
+        >
+          <ChevronLeftIcon className="size-4" />
+        </Button>
+        {getPageWindow(page, totalPages).map((p, i) =>
+          p === "…" ? (
+            <span
+              key={`ellipsis-${i}`}
+              className="flex size-8 items-center justify-center text-muted-foreground"
+              aria-hidden
+            >
+              <MoreHorizontalIcon className="size-4" />
+            </span>
+          ) : (
+            <Button
+              key={p}
+              variant={p === page ? "default" : "ghost"}
+              size="icon"
+              className="size-8 tabular-nums"
+              onClick={() => onPageChange(p)}
+              aria-label={`Página ${p}`}
+              aria-current={p === page ? "page" : undefined}
+            >
+              {p}
+            </Button>
+          )
+        )}
+        <Button
+          variant="outline"
+          size="icon"
+          className="size-8"
+          onClick={() => onPageChange(page + 1)}
+          disabled={page >= totalPages}
+          aria-label="Próxima página"
+        >
+          <ChevronRightIcon className="size-4" />
+        </Button>
+      </div>
+    </div>
+  )
+}
+
 // Janela de páginas com reticências: 1 … (atual-1) [atual] (atual+1) … último.
 // Sempre mostra a 1ª e a última; "…" marca os buracos. (Q13)
 function getPageWindow(current: number, total: number): (number | "…")[] {
@@ -222,58 +289,7 @@ export function DataTable<TData>({
       </div>
 
       {/* Paginação server-side — numerada com reticências (Q13) */}
-      {pagination && pagination.totalPages > 1 && (
-        <div className="flex items-center justify-between gap-2 px-1">
-          <p className="hidden sm:block text-sm text-muted-foreground tabular-nums shrink-0">
-            Página {pagination.page} de {pagination.totalPages}
-          </p>
-          <div className="flex items-center gap-1 ml-auto">
-            <Button
-              variant="outline"
-              size="icon"
-              className="size-8"
-              onClick={() => pagination.onPageChange(pagination.page - 1)}
-              disabled={pagination.page <= 1}
-              aria-label="Página anterior"
-            >
-              <ChevronLeftIcon className="size-4" />
-            </Button>
-            {getPageWindow(pagination.page, pagination.totalPages).map((p, i) =>
-              p === "…" ? (
-                <span
-                  key={`ellipsis-${i}`}
-                  className="flex size-8 items-center justify-center text-muted-foreground"
-                  aria-hidden
-                >
-                  <MoreHorizontalIcon className="size-4" />
-                </span>
-              ) : (
-                <Button
-                  key={p}
-                  variant={p === pagination.page ? "default" : "ghost"}
-                  size="icon"
-                  className="size-8 tabular-nums"
-                  onClick={() => pagination.onPageChange(p)}
-                  aria-label={`Página ${p}`}
-                  aria-current={p === pagination.page ? "page" : undefined}
-                >
-                  {p}
-                </Button>
-              )
-            )}
-            <Button
-              variant="outline"
-              size="icon"
-              className="size-8"
-              onClick={() => pagination.onPageChange(pagination.page + 1)}
-              disabled={pagination.page >= pagination.totalPages}
-              aria-label="Próxima página"
-            >
-              <ChevronRightIcon className="size-4" />
-            </Button>
-          </div>
-        </div>
-      )}
+      {pagination && <DataTablePaginationBar {...pagination} />}
     </div>
   )
 }

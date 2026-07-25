@@ -38,6 +38,7 @@ export interface ContractPdfData {
   clientRg?: string | null;
   clientPhone?: string | null;
   clientEmail?: string | null;
+  clientAddress?: string | null; // endereço já formatado (pedido Cassiana 2026-07-24)
   criadoEm: Date | string;
   valorTotal?: string | null;
   paymentMethod?: string | null;
@@ -57,14 +58,23 @@ export interface ContractPdfData {
   accessories: Array<{
     accessoryName?: string | null;
     qty?: number | null;
-    serialNumber?: string | null;
+    serialNumber?: string | null; // nº de controle/sistema da unidade
     valorReposicao?: string | null;
+    periodo?: string | null;      // período do aluguel (aplica aos acessórios também)
   }>;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function formatDate(d: Date | string | null | undefined): string {
   if (!d) return "—";
+  // "YYYY-MM-DD" (coluna date) é formatado SEM Date() — new Date("2026-07-22")
+  // vira meia-noite UTC e, num fuso atrás do UTC (BR = -3), toLocaleDateString
+  // volta um dia (mostrava 21 no lugar de 22). Bug que só aparecia porque o
+  // período dos acessórios (timezone-safe) ficou lado a lado com o das bikes.
+  if (typeof d === "string") {
+    const m = d.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (m) return `${m[3]}/${m[2]}/${m[1]}`;
+  }
   const dt = typeof d === "string" ? new Date(d) : d;
   if (isNaN(dt.getTime())) return "—";
   return dt.toLocaleDateString("pt-BR");
@@ -421,7 +431,7 @@ export async function generateContractPdf(
     sectionTitle(1, L.section1);
     {
       const gap = 16, bw = (CW - gap) / 2, bx2 = M + bw + gap;
-      const y0 = doc.y, bh = 92, pad = 11;
+      const y0 = doc.y, pad = 11;
 
       const locadoraRows: [string, string][] = [
         ["Razão social", empresaNome],
@@ -429,12 +439,28 @@ export async function generateContractPdf(
         ["Endereço",     empresaEndereco],
         ["Cidade",       empresaCidade],
       ];
+      // Endereço do locatário adicionado (pedido Cassiana 2026-07-24); pode
+      // quebrar em 2 linhas, então o box tem altura dinâmica (mede o conteúdo).
       const locatarioRows: [string, string][] = [
         ["Nome",     data.clientName || "—"],
         ["CPF",      data.clientCpf  || "—"],
         ["RG",       data.clientRg   || "—"],
         ["Telefone", data.clientPhone || "—"],
+        ["Endereço", data.clientAddress || "—"],
       ];
+
+      // Mede a altura necessária de um conjunto de linhas (rótulo+valor na mesma
+      // linha, valor quebrando). Assim os dois boxes ficam com a MESMA altura e
+      // o endereço longo não vaza.
+      const measureRows = (rows: [string, string][]) => {
+        let h = 26; // topo + título
+        for (const [l, v] of rows) {
+          const vh = doc.font("Helvetica").fontSize(8).heightOfString(`${l}: ${v}`, { width: bw - 2 * pad });
+          h += Math.max(15, vh + 3);
+        }
+        return h + 8;
+      };
+      const bh = Math.max(measureRows(locadoraRows), measureRows(locatarioRows), 92);
 
       ([ [M, L.locadora, locadoraRows], [bx2, L.locatario, locatarioRows] ] as const).forEach(
         ([bx, title, rows]) => {
@@ -447,7 +473,7 @@ export async function generateContractPdf(
             doc.fontSize(8).fillColor(MUTED).font("Helvetica")
               .text(`${l}: `, (bx as number) + pad, yy, { continued: true, width: bw - 2 * pad });
             doc.fillColor(INK).text(v);
-            yy += 15;
+            yy = Math.max(yy + 15, doc.y + 3); // avança pela altura real (endereço quebra)
           });
         }
       );
@@ -532,9 +558,13 @@ export async function generateContractPdf(
     // ── 3. ACESSÓRIOS INCLUSOS ───────────────────────────────────────────
     sectionTitle(3, L.section3);
     {
+      // 3 colunas: item · Nº sistema (controle da unidade, como as bikes) ·
+      // Período (a data do aluguel vale para os acessórios também — Cassiana
+      // 2026-07-24).
       const cols = [
-        { k: "item", x: M,   w: 378, t: L.colItem,    a: "left"  as const },
-        { k: "un",   x: 418, w: 137, t: L.colUnidade,  a: "right" as const },
+        { k: "item", x: M,   w: 278, t: L.colItem,    a: "left"  as const },
+        { k: "sis",  x: 322, w: 95,  t: L.colSis,     a: "left"  as const },
+        { k: "per",  x: 420, w: 135, t: L.colPeriodo, a: "right" as const },
       ];
 
       let y = doc.y;
@@ -550,7 +580,8 @@ export async function generateContractPdf(
         doc.fillColor(INK).font("Helvetica").fontSize(8.5);
         const row: Record<string, string> = {
           item: a.accessoryName || "—",
-          un:   a.serialNumber  || "—",
+          sis:  a.serialNumber  || "—",
+          per:  a.periodo       || "—",
         };
         cols.forEach((c) =>
           doc.text(row[c.k], c.x + 4, y + 4.5, { width: c.w - 8, align: c.a, lineBreak: false })
@@ -608,10 +639,12 @@ export async function generateContractPdf(
     doc.moveDown(0.6);
     renderTerms(doc, empresaTermos);
     // ── ASSINATURAS ───────────────────────────────────────────────────────────
-    doc.moveDown(2.4);
+    // Mais espaço ACIMA da linha pra caber assinatura alta (Cassiana 2026-07-24:
+    // "sobrando espaço embaixo, mais espaço pro pessoal que tem assinatura alta").
+    doc.moveDown(5.5);
     // Bloco de assinaturas + fecho não pode partir no meio: se não couber,
     // joga tudo pra próxima página (antes ficava órfão gerando página quase vazia).
-    ensureSpace(90);
+    ensureSpace(120);
     const sy = doc.y;
     const sw = (CW - 60) / 2;
 

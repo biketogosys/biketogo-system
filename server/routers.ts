@@ -621,7 +621,11 @@ const bikesRouter = router({
 
   create: adminAuthProcedure
     .input(z.object({
-      serialNumber: z.string().min(1),
+      // Nº de série removido do formulário (Cassiana 2026-07-24): a bike é
+      // identificada por modelo + unidades físicas (bike_units.numeroSistema).
+      // A coluna é notNull+unique, então auto-preenchemos um valor interno
+      // (nunca exibido) quando não vier. Vira coluna inerte na prática.
+      serialNumber: z.string().optional(),
       model: z.string().min(1),
       brand: z.string().optional(),
       category: z.enum(["mtb", "speed", "gravel"]).optional(),
@@ -637,7 +641,9 @@ const bikesRouter = router({
       notes: z.string().optional(),
     }))
     .mutation(async ({ input }) => {
-      const id = await createBike(input as any);
+      const serialNumber = input.serialNumber?.trim()
+        || `BTG-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+      const id = await createBike({ ...input, serialNumber } as any);
       return { id };
     }),
 
@@ -678,6 +684,16 @@ const bikesRouter = router({
   discountRules: adminAuthProcedure
     .input(z.object({ bikeId: z.number() }))
     .query(({ input }) => getBikeDiscountRules(input.bikeId)),
+
+  // Q8: regras de N bikes numa query só (duplicar contrato precisa de todas
+  // as bikes do contrato original pra recalcular o desconto no período novo).
+  discountRulesBatch: adminAuthProcedure
+    .input(z.object({ bikeIds: z.array(z.number()).max(50) }))
+    .query(async ({ input }) => {
+      const { getBikeDiscountRulesBatch } = await import("./db");
+      const db = await getDb();
+      return getBikeDiscountRulesBatch(db, input.bikeIds);
+    }),
 
   addDiscountRule: adminAuthProcedure
     .input(z.object({
@@ -1081,22 +1097,23 @@ const rentalsRouter = router({
       }
       // Receita NÃO entra aqui — só no CONFIRMAR PAGAMENTO (recebimento na
       // devolução). Antes registrava aqui E no pagamento → receita dobrada.
-      // Mark accessory units as 'alugado' for this contract
+      // Garantir que toda linha de contract_accessories tenha uma unidade ligada.
+      // NÃO marcamos mais status 'alugado' — a ocupação virou derivada de data
+      // (accessory-availability.ts), então marcar aqui seria mentira p/ reservas
+      // futuras sendo confirmadas. O fallback abaixo é dead-in-practice (o
+      // createManual já liga a unidade), mas cobre linhas legadas sem unitId.
       try {
-        const { contractAccessories: caTable, accessoryUnits: auTable } = await import("../drizzle/schema");
-        const { eq: eqOp2, and: andOp2 } = await import("drizzle-orm");
+        const { contractAccessories: caTable } = await import("../drizzle/schema");
+        const { eq: eqOp2 } = await import("drizzle-orm");
+        const confirmPeriod = contractPeriodFromBikes(pendingRentals as any[]);
         const caRows = await db.select().from(caTable).where(eqOp2(caTable.contractId, input.contractId));
+        const usadas: number[] = caRows.map((c: any) => c.unitId).filter((u: any): u is number => u != null);
         for (const ca of caRows) {
-          if (ca.unitId) {
-            // Update the specific linked unit
-            await db.update(auTable).set({ status: "alugado" }).where(eqOp2(auTable.id, ca.unitId));
-          } else {
-            // No specific unit linked — usar helper de reserva (single-source)
-            const newUnitId = await reserveOneAccessoryUnit(db, ca.accessoryId, null);
-            if (newUnitId) await db.update(caTable).set({ unitId: newUnitId }).where(eqOp2(caTable.id, ca.id));
-          }
+          if (ca.unitId) continue;
+          const newUnitId = await reserveOneAccessoryUnit(db, ca.accessoryId, null, { ...confirmPeriod, excludeContractId: input.contractId }, usadas);
+          if (newUnitId) { usadas.push(newUnitId); await db.update(caTable).set({ unitId: newUnitId }).where(eqOp2(caTable.id, ca.id)); }
         }
-      } catch (err) { console.warn("[confirmAll] Unit marking error:", err); }
+      } catch (err) { console.warn("[confirmAll] Unit linking error:", err); }
       // Ligar unidades físicas de bike para rentals que ainda não têm ligação (BU-3A)
       try {
         const { rentalBikeUnits: rbuTable } = await import("../drizzle/schema");
@@ -1337,9 +1354,32 @@ const accessoriesRouter = router({
     }),
 
   availability: adminAuthProcedure
-    .input(z.object({ accessoryIds: z.array(z.number()).min(1) }))
+    .input(z.object({
+      accessoryIds: z.array(z.number()).min(1),
+      // Datas: quando presentes, a disponibilidade é POR PERÍODO (overlap de
+      // contratos). Sem datas, cai no breakdown por status (estoque "de agora"),
+      // para não quebrar chamadas que não têm período.
+      startDate: z.string().optional(),
+      endDate: z.string().optional(),
+      excludeContractId: z.number().optional(),
+    }))
     .query(async ({ input }) => {
-      // UMA query batch em vez de 1 por acessório
+      if (input.startDate && input.endDate) {
+        const { getAccessoryAvailabilityByPeriod } = await import("./accessory-availability");
+        const db = await (await import("./db")).getDb();
+        const bds = await getAccessoryAvailabilityByPeriod(db, {
+          accessoryIds: input.accessoryIds,
+          startDate: input.startDate,
+          endDate: input.endDate,
+          excludeContractId: input.excludeContractId,
+        });
+        const byId = new Map(bds.map((b) => [b.accessoryId, b]));
+        return input.accessoryIds.map((id) => ({
+          accessoryId: id,
+          variantes: (byId.get(id)?.byVariante ?? []).map((v) => ({ variante: v.variante, disponivel: v.disponivel })),
+        }));
+      }
+      // UMA query batch em vez de 1 por acessório (fallback sem período)
       const { getAccessoryBreakdowns } = await import("./db");
       const bdMap = await getAccessoryBreakdowns(input.accessoryIds);
       return input.accessoryIds.map((id) => {
@@ -2278,16 +2318,45 @@ import { getDb } from "./db";
 
 // Reserva UMA unidade disponível de (accessoryId, variante|null), marca "alugado".
 // Retorna o unitId reservado, ou null se não houver disponível.
-async function reserveOneAccessoryUnit(db: any, accessoryId: number, variante: string | null): Promise<number | null> {
-  const { accessoryUnits } = await import("../drizzle/schema");
-  const { and, eq } = await import("drizzle-orm");
-  const conds: any[] = [eq(accessoryUnits.accessoryId, accessoryId), eq(accessoryUnits.status, "disponivel")];
-  if (variante != null) conds.push(eq(accessoryUnits.variante, variante));
-  const [unit] = await db.select({ id: accessoryUnits.id }).from(accessoryUnits)
-    .where(and(...conds)).orderBy(accessoryUnits.id).limit(1);
-  if (!unit) return null;
-  await db.update(accessoryUnits).set({ status: "alugado" }).where(eq(accessoryUnits.id, unit.id));
-  return unit.id;
+/**
+ * Reserva UMA unidade de acessório livre NO PERÍODO.
+ *
+ * ⚠️ NÃO marca `alugado` — a ocupação virou derivada de data (ver
+ * accessory-availability.ts). Marcar status prendia a unidade "pra sempre" e
+ * era a raiz do bug de duplicar contrato pra período futuro.
+ *
+ * `jaUsadas` é obrigatório na prática: como não marcamos status, duas chamadas
+ * seguidas no mesmo período pegariam a MESMA unidade sem essa lista.
+ */
+async function reserveOneAccessoryUnit(
+  db: any,
+  accessoryId: number,
+  variante: string | null,
+  period: { startDate: string; endDate: string; excludeContractId?: number },
+  jaUsadas: number[] = [],
+): Promise<number | null> {
+  const { reserveAccessoryUnitForPeriod } = await import("./accessory-availability");
+  return reserveAccessoryUnitForPeriod(db, {
+    accessoryId,
+    // undefined = qualquer variante; a UI sempre manda a variante certa (ou null p/ padrão)
+    variante,
+    startDate: period.startDate,
+    endDate: period.endDate,
+    excludeContractId: period.excludeContractId,
+    jaUsadas,
+  });
+}
+
+/** Período do contrato = [menor início, maior fim] entre as bikes. */
+function contractPeriodFromBikes(
+  bikes: Array<{ startDate: string; endDate?: string | null }>,
+): { startDate: string; endDate: string } {
+  const starts = bikes.map((b) => b.startDate).filter(Boolean);
+  const ends = bikes.map((b) => b.endDate).filter(Boolean) as string[];
+  return {
+    startDate: starts.sort()[0],
+    endDate: (ends.length ? ends.sort() : starts.sort()).slice(-1)[0],
+  };
 }
 
 // Libera (alugado→disponivel) TODAS as unidades ligadas às linhas deste contrato.
@@ -2305,53 +2374,42 @@ async function releaseAccessoryUnits(db: any, contractId: number): Promise<void>
 }
 
 // Pré-valida disponibilidade por (accessoryId, variante) ANTES de reservar (evita reserva parcial).
-async function assertAccessoryAvailability(lines: Array<{accessoryId:number;variante:string|null;qty:number}>): Promise<void> {
-  const { getAccessoryBreakdowns } = await import("./db");
-  const need = new Map<string, {accessoryId:number;variante:string|null;qty:number}>();
+/**
+ * Valida disponibilidade de acessório NO PERÍODO, antes de reservar qualquer
+ * coisa (o app é não-transacional — reserva parcial deixa lixo).
+ *
+ * `excludeContractId` cobre a EDIÇÃO: as unidades que o PRÓPRIO contrato já
+ * segura não podem reprovar a própria edição. Antes isso era feito somando as
+ * unidades "held" à mão; agora o overlap já ignora o contrato excluído, que é
+ * a mesma solução usada nas bikes.
+ */
+async function assertAccessoryAvailability(
+  db: any,
+  lines: Array<{ accessoryId: number; variante: string | null; qty: number }>,
+  period: { startDate: string; endDate: string; excludeContractId?: number },
+): Promise<void> {
+  if (lines.length === 0) return;
+  const { getAccessoryAvailabilityByPeriod } = await import("./accessory-availability");
+  const need = new Map<string, { accessoryId: number; variante: string | null; qty: number }>();
   for (const l of lines) {
     const k = `${l.accessoryId}::${l.variante ?? "__null__"}`;
     const cur = need.get(k); if (cur) cur.qty += l.qty; else need.set(k, { ...l });
   }
   const needList = Array.from(need.values());
-  const bdMap = await getAccessoryBreakdowns(Array.from(new Set(needList.map((d) => d.accessoryId))));
+  const bds = await getAccessoryAvailabilityByPeriod(db, {
+    accessoryIds: Array.from(new Set(needList.map((d) => d.accessoryId))),
+    startDate: period.startDate,
+    endDate: period.endDate,
+    excludeContractId: period.excludeContractId,
+  });
+  const byId = new Map(bds.map((b) => [b.accessoryId, b]));
   for (const d of needList) {
-    const bd = bdMap.get(d.accessoryId)!;
+    const bd = byId.get(d.accessoryId);
     const disp = d.variante == null
-      ? bd.disponivel
-      : (bd.byVariante.find((v) => v.variante === d.variante)?.disponivel ?? 0);
+      ? (bd?.disponivel ?? 0)
+      : (bd?.byVariante.find((v) => v.variante === d.variante)?.disponivel ?? 0);
     if (disp < d.qty) throw new TRPCError({ code: "PRECONDITION_FAILED",
-      message: `Acessório indisponível (variante: ${d.variante ?? "—"}). Disponível: ${disp}, pedido: ${d.qty}.` });
-  }
-}
-
-// Como assertAccessoryAvailability, mas para EDIÇÃO: soma as unidades que o próprio
-// contrato já segura, para não falsa-reprovar ao manter o mesmo acessório.
-async function assertAccessoryAvailabilityForUpdate(db: any, contractId: number, lines: Array<{accessoryId:number;variante:string|null;qty:number}>): Promise<void> {
-  const { getAccessoryBreakdowns } = await import("./db");
-  const { accessoryUnits, contractAccessories } = await import("../drizzle/schema");
-  const { eq } = await import("drizzle-orm");
-  const held = new Map<string, number>();
-  const heldRows = await db.select({ accessoryId: contractAccessories.accessoryId, variante: accessoryUnits.variante })
-    .from(contractAccessories)
-    .leftJoin(accessoryUnits, eq(contractAccessories.unitId, accessoryUnits.id))
-    .where(eq(contractAccessories.contractId, contractId));
-  for (const r of heldRows) {
-    if (r.accessoryId == null) continue;
-    const k = `${r.accessoryId}::${r.variante ?? "__null__"}`;
-    held.set(k, (held.get(k) ?? 0) + 1);
-  }
-  const need = new Map<string, {accessoryId:number;variante:string|null;qty:number}>();
-  for (const l of lines) {
-    const k = `${l.accessoryId}::${l.variante ?? "__null__"}`;
-    const cur = need.get(k); if (cur) cur.qty += l.qty; else need.set(k, { ...l });
-  }
-  const needEntries = Array.from(need.entries());
-  const bdMap = await getAccessoryBreakdowns(Array.from(new Set(needEntries.map(([, d]) => d.accessoryId))));
-  for (const [k, d] of needEntries) {
-    const bd = bdMap.get(d.accessoryId)!;
-    const disp = d.variante == null ? bd.disponivel : (bd.byVariante.find((v) => v.variante === d.variante)?.disponivel ?? 0);
-    const effective = disp + (held.get(k) ?? 0);
-    if (effective < d.qty) throw new TRPCError({ code: "PRECONDITION_FAILED", message: `Acessório indisponível (variante: ${d.variante ?? "—"}). Disponível: ${effective}, pedido: ${d.qty}.` });
+      message: `Acessório indisponível no período (variante: ${d.variante ?? "—"}). Disponível: ${disp}, pedido: ${d.qty}.` });
   }
 }
 
@@ -2493,14 +2551,42 @@ async function buildContractPdfData(db: Awaited<ReturnType<typeof getDb>>, contr
     accessoryId: caT.accessoryId, qty: caT.qty, unitId: caT.unitId,
     accessoryName: accT.name,
   }).from(caT).leftJoin(accT, eq(caT.accessoryId, accT.id)).where(eq(caT.contractId, contractId));
+  // Período do contrato = [menor início, maior fim] entre os aluguéis. A data do
+  // aluguel vale para os acessórios também (Cassiana 2026-07-24).
+  const fmtBr = (d?: string | null) => (d ? d.split("-").reverse().join("/") : null);
+  const startsPdf = rentalsForPdf.map((r) => r.startDate).filter(Boolean).sort();
+  const endsPdf = rentalsForPdf.map((r) => r.endDate).filter(Boolean).sort() as string[];
+  const periodoContrato = (() => {
+    const s = fmtBr(startsPdf[0]);
+    const e = fmtBr((endsPdf.length ? endsPdf : startsPdf).slice(-1)[0]);
+    if (!s && !e) return null;
+    return s === e ? s : `${s} a ${e}`;
+  })();
+
   const accWithSerial = await Promise.all(caRows.map(async (ca) => {
     let serialNumber: string | null = null;
     if (ca.unitId) {
       const [unit] = await db.select({ serialNumber: auT.serialNumber }).from(auT).where(eq(auT.id, ca.unitId));
       serialNumber = unit?.serialNumber ?? null;
     }
-    return { accessoryName: ca.accessoryName, qty: ca.qty, serialNumber, valorReposicao: null };
+    return { accessoryName: ca.accessoryName, qty: ca.qty, serialNumber, valorReposicao: null, periodo: periodoContrato };
   }));
+
+  // Endereço do cliente já formatado para o contrato (Cassiana 2026-07-24).
+  const clientAddress = (() => {
+    if (!clientRow) return null;
+    const linha1 = [clientRow.street, clientRow.number].filter(Boolean).join(", ");
+    const compl = clientRow.complement ? ` (${clientRow.complement})` : "";
+    const cidadeUf = [clientRow.city, clientRow.state].filter(Boolean).join("/");
+    const partes = [
+      linha1 + compl,
+      clientRow.neighborhood,
+      cidadeUf,
+      clientRow.zipCode ? `CEP ${clientRow.zipCode}` : null,
+    ].map((p) => (p || "").trim()).filter(Boolean);
+    return partes.length ? partes.join(" · ") : null;
+  })();
+
   return {
     contractId,
     clientName: clientRow?.name ?? "—",
@@ -2508,6 +2594,7 @@ async function buildContractPdfData(db: Awaited<ReturnType<typeof getDb>>, contr
     clientRg: clientRow?.rg ?? null,
     clientPhone: clientRow?.phone ?? null,
     clientEmail: clientRow?.email ?? null,
+    clientAddress,
     criadoEm: contractRow?.criadoEm ?? new Date(),
     valorTotal: contractRow?.valorTotal ?? null,
     paymentMethod: rentalsForPdf[0]?.paymentMethod ?? null,
@@ -3039,9 +3126,15 @@ const contractsRouter = router({
         }
       }
 
-      // Validar disponibilidade de ACESSÓRIOS também ANTES de criar nada
+      // Validar disponibilidade de ACESSÓRIOS também ANTES de criar nada —
+      // agora POR PERÍODO (o período do contrato = span das bikes).
+      const accPeriod = contractPeriodFromBikes(input.bikes);
       if (input.accessories && input.accessories.length > 0) {
-        await assertAccessoryAvailability(input.accessories.map((a: any) => ({ accessoryId: a.accessoryId, variante: a.variante ?? null, qty: a.qty })));
+        await assertAccessoryAvailability(
+          db,
+          input.accessories.map((a: any) => ({ accessoryId: a.accessoryId, variante: a.variante ?? null, qty: a.qty })),
+          accPeriod,
+        );
       }
 
       // Calculate total value from all bikes
@@ -3093,14 +3186,17 @@ const contractsRouter = router({
       // Add accessories to contract_accessories and rental_accessories
       if (input.accessories && input.accessories.length > 0) {
         const { contractAccessories: caSchema } = await import("../drizzle/schema");
+        // não marcamos mais status → acumular as já reservadas p/ não repetir
+        const usadas: number[] = [];
         for (const acc of input.accessories) {
           const accessory = await getAccessoryById(acc.accessoryId);
           // link de preço (agregado), 1 por linha
           await createRentalAccessory({ rentalId: rentalIds[0], accessoryId: acc.accessoryId, quantity: acc.qty, dailyRate: accessory?.dailyRate ?? null } as any);
           // reserva física: 1 linha de contract_accessories POR UNIDADE
           for (let k = 0; k < acc.qty; k++) {
-            const unitId = await reserveOneAccessoryUnit(db, acc.accessoryId, acc.variante ?? null);
-            if (unitId == null) throw new TRPCError({ code: "PRECONDITION_FAILED", message: `Sem unidade disponível (variante: ${acc.variante ?? "—"}).` });
+            const unitId = await reserveOneAccessoryUnit(db, acc.accessoryId, acc.variante ?? null, accPeriod, usadas);
+            if (unitId == null) throw new TRPCError({ code: "PRECONDITION_FAILED", message: `Sem unidade disponível no período (variante: ${acc.variante ?? "—"}).` });
+            usadas.push(unitId);
             await db.insert(caSchema).values({ contractId: contract.id, accessoryId: acc.accessoryId, qty: 1, unitId, status: "ok" });
           }
         }
@@ -3177,6 +3273,10 @@ const contractsRouter = router({
 
       const isPendente = contract.status === "pendente";
 
+      // Período do contrato p/ disponibilidade de acessório (span das bikes).
+      // excludeContractId: o próprio contrato não pode bloquear suas unidades.
+      const accPeriodUpd = { ...contractPeriodFromBikes(input.bikes), excludeContractId: input.id };
+
       // ─── RAMO PENDENTE: substituição total (comportamento original) ───────────
       if (isPendente) {
         // Validate availability for each bike size, EXCLUDING current rentals of this contract
@@ -3249,9 +3349,10 @@ const contractsRouter = router({
           }
         }
 
-        // validar ANTES de desmontar (conta as unidades que o próprio contrato já segura)
+        // validar ANTES de desmontar (POR PERÍODO; excludeContractId ignora as
+        // unidades que o próprio contrato já segura, dispensando o cálculo "held")
         if (input.accessories && input.accessories.length > 0) {
-          await assertAccessoryAvailabilityForUpdate(db, input.id, input.accessories.map((a: any) => ({ accessoryId: a.accessoryId, variante: a.variante ?? null, qty: a.qty })));
+          await assertAccessoryAvailability(db, input.accessories.map((a: any) => ({ accessoryId: a.accessoryId, variante: a.variante ?? null, qty: a.qty })), accPeriodUpd);
         }
 
         // Reconcile accessories: liberar unidades antigas, deletar linhas, recriar
@@ -3263,6 +3364,7 @@ const contractsRouter = router({
             .where(and(eq(rentalsTable.contractId, input.id), isNull(rentalsTable.deletedAt)))
             .limit(1);
           const firstRentalId = newRentals[0]?.id;
+          const usadas: number[] = [];
           for (const acc of input.accessories) {
             const accessory = await getAccessoryById(acc.accessoryId);
             if (firstRentalId) {
@@ -3275,8 +3377,9 @@ const contractsRouter = router({
             }
             // reserva física: 1 linha de contract_accessories POR UNIDADE
             for (let k = 0; k < acc.qty; k++) {
-              const unitId = await reserveOneAccessoryUnit(db, acc.accessoryId, acc.variante ?? null);
-              if (unitId == null) throw new TRPCError({ code: "PRECONDITION_FAILED", message: `Sem unidade disponível (variante: ${acc.variante ?? "—"}).` });
+              const unitId = await reserveOneAccessoryUnit(db, acc.accessoryId, acc.variante ?? null, accPeriodUpd, usadas);
+              if (unitId == null) throw new TRPCError({ code: "PRECONDITION_FAILED", message: `Sem unidade disponível no período (variante: ${acc.variante ?? "—"}).` });
+              usadas.push(unitId);
               await db.insert(contractAccessories).values({
                 contractId: input.id,
                 accessoryId: acc.accessoryId,
@@ -3368,7 +3471,7 @@ const contractsRouter = router({
       // 2026-07-22: este ramo ignorava acessórios — editar não adicionava nem
       // atualizava unidade/variação). Espelha a lógica do ramo pendente.
       if (input.accessories && input.accessories.length > 0) {
-        await assertAccessoryAvailabilityForUpdate(db, input.id, input.accessories.map((a: any) => ({ accessoryId: a.accessoryId, variante: a.variante ?? null, qty: a.qty })));
+        await assertAccessoryAvailability(db, input.accessories.map((a: any) => ({ accessoryId: a.accessoryId, variante: a.variante ?? null, qty: a.qty })), accPeriodUpd);
       }
       {
         // Limpar vínculos de preço (rental_accessories) dos aluguéis preservados,
@@ -3387,14 +3490,16 @@ const contractsRouter = router({
           .where(and(eq(rentalsTable.contractId, input.id), isNull(rentalsTable.deletedAt)))
           .limit(1);
         const firstRentalId = firstRow[0]?.id;
+        const usadas: number[] = [];
         for (const acc of input.accessories) {
           const accessory = await getAccessoryById(acc.accessoryId);
           if (firstRentalId) {
             await createRentalAccessory({ rentalId: firstRentalId, accessoryId: acc.accessoryId, quantity: acc.qty, dailyRate: accessory?.dailyRate ?? null } as any);
           }
           for (let k = 0; k < acc.qty; k++) {
-            const unitId = await reserveOneAccessoryUnit(db, acc.accessoryId, acc.variante ?? null);
-            if (unitId == null) throw new TRPCError({ code: "PRECONDITION_FAILED", message: `Sem unidade disponível (variante: ${acc.variante ?? "—"}).` });
+            const unitId = await reserveOneAccessoryUnit(db, acc.accessoryId, acc.variante ?? null, accPeriodUpd, usadas);
+            if (unitId == null) throw new TRPCError({ code: "PRECONDITION_FAILED", message: `Sem unidade disponível no período (variante: ${acc.variante ?? "—"}).` });
+            usadas.push(unitId);
             await db.insert(contractAccessories).values({ contractId: input.id, accessoryId: acc.accessoryId, qty: 1, unitId, status: "ok" });
           }
         }
@@ -3509,6 +3614,13 @@ const contractsRouter = router({
       // Forma de pagamento escolhida NA HORA de receber (devolução da bike) —
       // pedido da Cassiana 2026-07-22; antes ficava (errado) na criação.
       paymentMethod: z.enum(["pix", "credit_card", "debit_card", "cash", "other"]).optional(),
+      // Pagamento DIVIDIDO em várias formas com valor em cada (Cassiana
+      // 2026-07-24). Cada linha vira 1 receita no Financeiro. `amount` ausente =
+      // forma única cobrindo o total (retrocompat com o fluxo antigo).
+      payments: z.array(z.object({
+        method: z.enum(["pix", "credit_card", "debit_card", "cash", "other"]),
+        amount: z.string().optional(),
+      })).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
@@ -3533,25 +3645,67 @@ const contractsRouter = router({
       if (contractRentals.every((r) => r.paymentStatus === "paid"))
         throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Este contrato já teve o pagamento confirmado." });
 
+      const totalAmt = contractRentals.reduce((sum, r) => sum + parseFloat(r.totalAmount || "0"), 0);
+
+      // Normaliza as formas de pagamento: `payments` (novo, pode dividir) tem
+      // prioridade; senão cai no `paymentMethod` único (retrocompat). O rótulo
+      // amigável da forma é montado na TELA (Financeiro), não aqui.
+      type PayLine = { method: string; amount: number };
+      let payLines: PayLine[];
+      if (input.payments && input.payments.length > 0) {
+        const comValor = input.payments.some((p) => p.amount != null && p.amount !== "");
+        if (comValor) {
+          payLines = input.payments.map((p) => ({ method: p.method, amount: parseFloat(p.amount || "0") || 0 }));
+          const soma = payLines.reduce((s, l) => s + l.amount, 0);
+          // Guarda contra digitação errada no recebimento (tolerância de 1 centavo).
+          if (totalAmt > 0 && Math.abs(soma - totalAmt) > 0.01) {
+            throw new TRPCError({ code: "BAD_REQUEST",
+              message: `A soma das formas (R$ ${soma.toFixed(2)}) não bate com o total (R$ ${totalAmt.toFixed(2)}).` });
+          }
+        } else {
+          // formas sem valor → forma única cobrindo o total
+          payLines = [{ method: input.payments[0].method, amount: totalAmt }];
+        }
+      } else if (input.paymentMethod) {
+        payLines = [{ method: input.paymentMethod, amount: totalAmt }];
+      } else {
+        payLines = [];
+      }
+
       // Marca pago (não mexe no status do aluguel/contrato — já ativos; o
-      // encerramento é dirigido pelas devoluções).
+      // encerramento é dirigido pelas devoluções). A coluna paymentMethod é
+      // única (enum): guarda a forma PRIMÁRIA (a de maior valor). A divisão
+      // completa vive nos lançamentos do Financeiro.
+      const primaryMethod = payLines.length
+        ? [...payLines].sort((a, b) => b.amount - a.amount)[0].method
+        : undefined;
       await db.update(rentalsTable)
         .set({
           paymentStatus: "paid",
-          ...(input.paymentMethod ? { paymentMethod: input.paymentMethod } : {}),
+          ...(primaryMethod ? { paymentMethod: primaryMethod as any } : {}),
         })
         .where(and(eq(rentalsTable.contractId, input.contractId), isNull(rentalsTable.deletedAt)));
 
-      // Register revenue in financial module
+      // Registra a receita no Financeiro: UMA linha com o TOTAL (Cassiana
+      // 2026-07-24 — "juntar em um, com setinha pra ver os detalhes"). O
+      // detalhamento por forma vai em `meta.breakdown`; a tela expande pra ver.
       try {
         const today = new Date().toISOString().split("T")[0];
-        const totalAmt = contractRentals.reduce((sum, r) => sum + parseFloat(r.totalAmount || "0"), 0);
-        if (totalAmt > 0) {
+        const linhasValidas = payLines.filter((l) => l.amount > 0);
+        const revenueTotal = linhasValidas.length ? linhasValidas.reduce((s, l) => s + l.amount, 0) : totalAmt;
+        if (revenueTotal > 0) {
           await createRevenue({
             categoryId: 1,
             description: `Pagamento presencial — Contrato #${input.contractId}`,
-            amount: totalAmt.toFixed(2),
+            amount: revenueTotal.toFixed(2),
             date: today,
+            meta: linhasValidas.length
+              ? {
+                  kind: "contract_payment",
+                  contractId: input.contractId,
+                  breakdown: linhasValidas.map((l) => ({ method: l.method, amount: l.amount.toFixed(2) })),
+                }
+              : undefined,
           } as any);
         }
       } catch (err) { console.warn("[confirmPayment] Revenue error:", err); }

@@ -2,8 +2,9 @@ import { useState, useCallback, useMemo, useEffect } from "react";
 import { Link } from "wouter";
 import { usePageParam } from "@/hooks/usePageParam";
 import {
-  Search, Plus, User, Trash2, RotateCcw, Eye, EyeOff,
+  Search, Plus, User, Trash2, RotateCcw, Eye, EyeOff, Archive,
 } from "lucide-react";
+import { EmptyState } from "@/components/EmptyState";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -63,6 +64,8 @@ export default function Clients() {
   const [view, setView] = useState<"ativos" | "arquivados">("ativos");
   const utils = trpc.useUtils();
   const limit = 20;
+  // Q9: lista vazia por FILTRO ≠ lista vazia por não ter nada cadastrado
+  const isFiltering = !!search || status !== undefined;
 
   const { data: settingsData } = trpc.settings.getAll.useQuery();
   const retentionDays = useMemo(() => {
@@ -343,12 +346,30 @@ export default function Clients() {
         loading={isLoadingCurrent}
         pagination={{ page: currentPage, totalPages: currentTotalPages, onPageChange: setCurrentPage }}
         empty={
-          <div className="flex flex-col items-center gap-3 text-muted-foreground">
-            <User className="h-10 w-10 opacity-30" />
-            <p className="text-sm">
-              {view === "arquivados" ? "Nenhum cliente arquivado." : "Nenhum cliente encontrado."}
-            </p>
-          </div>
+          view === "arquivados" ? (
+            <EmptyState
+              icon={Archive}
+              title="Nenhum cliente arquivado"
+              description="Clientes arquivados saem da lista principal mas continuam no histórico."
+            />
+          ) : isFiltering ? (
+            <EmptyState
+              icon={Search}
+              title="Nenhum cliente para essa busca"
+              description="Tente outro nome, CPF ou RG."
+              actionLabel="Limpar busca"
+              onAction={() => { setSearch(""); setStatus(undefined); setPage(1); }}
+            />
+          ) : (
+            <EmptyState
+              icon={User}
+              title="Nenhum cliente ainda"
+              description="Cadastre aqui quem vai alugar. Quem se cadastra pelo /reservar cai nesta lista como lead."
+              actionLabel="Cadastrar primeiro cliente"
+              actionIcon={Plus}
+              onAction={() => setShowNew(true)}
+            />
+          )
         }
       />
 

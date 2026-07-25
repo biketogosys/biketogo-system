@@ -22,6 +22,7 @@ import {
   X,
   Check,
   Trash2,
+  Copy,
 } from "lucide-react";
 import { SegmentedTabs } from "@/components/ui/segmented-tabs";
 import { DataTable } from "@/components/ui/data-table";
@@ -54,6 +55,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { EmptyState } from "@/components/EmptyState";
 import { useConfirm } from "@/components/ConfirmDialog";
 import { friendlyError } from "@/lib/utils";
 import {
@@ -184,7 +186,7 @@ function CloseContractDialog({
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="dialog-mobile max-w-2xl max-h-[80vh] overflow-y-auto">
+      <DialogContent className="dialog-mobile sm:max-w-2xl max-h-[80vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <CheckCircle2 className="h-5 w-5 text-emerald-500" />
@@ -388,6 +390,8 @@ function ContractDetail({
   const { data, isLoading } = trpc.contracts.getById.useQuery({ id: contractId });
   const [closeOpen, setCloseOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
+  // Q8 — duplicar: um modal só (o período é o passo 1 dele)
+  const [dupPayload, setDupPayload] = useState<any>(null);
   const [returnDialogOpen, setReturnDialogOpen] = useState(false);
   const [returnRentalId, setReturnRentalId] = useState<number | null>(null);
   const [returnBikeLabel, setReturnBikeLabel] = useState("");
@@ -431,12 +435,14 @@ function ContractDetail({
 
   // Forma de pagamento escolhida na hora de RECEBER (devolução) — Cassiana 2026-07-22
   const [payOpen, setPayOpen] = useState(false);
-  const [payMethod, setPayMethod] = useState("");
+  // Pagamento pode ser DIVIDIDO em várias formas com valor em cada (ex: parte
+  // Pix, parte dinheiro) — pedido Cassiana 2026-07-24. Cada linha vira 1 receita.
+  const [payLines, setPayLines] = useState<Array<{ method: string; amount: string }>>([{ method: "", amount: "" }]);
+  const resetPay = () => { setPayOpen(false); setPayLines([{ method: "", amount: "" }]); };
   const confirmPaymentMutation = trpc.contracts.confirmPayment.useMutation({
     onSuccess: (res) => {
       toast.success(`Pagamento confirmado para ${res.paid} aluguel(is). Receita registrada.`);
-      setPayOpen(false);
-      setPayMethod("");
+      resetPay();
       utils.contracts.getById.invalidate({ id: contractId });
       utils.contracts.list.invalidate();
     },
@@ -500,6 +506,50 @@ function ContractDetail({
               onClick={() => setEditOpen(true)}
             >
               <FileText className="h-4 w-4 mr-1" /> Editar contrato
+            </Button>
+          )}
+          {/* Q8 — duplicar: vale em QUALQUER status (o caso clássico é repetir
+              um contrato já encerrado pro mesmo cliente que voltou). */}
+          {(data.rentals ?? []).length > 0 && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                // Agrupa por bike+tamanho: várias unidades da mesma bike viram
+                // UMA entrada com quantity somada (as unidades são reatribuídas).
+                const byKey = new Map<string, any>();
+                for (const r of (data.rentals ?? []) as any[]) {
+                  const k = `${r.bikeId}::${r.bikeSizeId ?? "null"}`;
+                  const cur = byKey.get(k);
+                  if (cur) { cur.quantity += r.quantity ?? 1; continue; }
+                  byKey.set(k, {
+                    bikeId: r.bikeId,
+                    bikeModel: r.bikeModel ?? "",
+                    bikeBrand: r.bikeBrand ?? "",
+                    bikeSizeId: r.bikeSizeId ?? null,
+                    tamanho: r.tamanho ?? "",
+                    quantity: r.quantity ?? 1,
+                    dailyRate: r.dailyRate ?? "0",
+                  });
+                }
+                setDupPayload({
+                  contractId: data.id,
+                  clientId: data.clientId,
+                  clientName: data.clientName ?? `Cliente #${data.clientId}`,
+                  bikes: Array.from(byKey.values()),
+                  accessories: Object.values(
+                    (data.accessories ?? []).reduce((acc: any, a: any) => {
+                      const variante = a.variante ?? null;
+                      const k = `${a.accessoryId}::${variante ?? "__null__"}`;
+                      if (!acc[k]) acc[k] = { accessoryId: a.accessoryId, variante, qty: 0 };
+                      acc[k].qty += (a.qty ?? 1);
+                      return acc;
+                    }, {})
+                  ),
+                });
+              }}
+            >
+              <Copy className="h-4 w-4 mr-1" /> Duplicar
             </Button>
           )}
           {(data.status === "pendente" || data.rentals?.some((r: any) => r.status === "pending")) && (
@@ -578,7 +628,11 @@ function ContractDetail({
             <Button
               size="sm"
               className="bg-amber-600 hover:bg-amber-700 text-white"
-              onClick={() => setPayOpen(true)}
+              onClick={() => {
+                // pré-preenche 1 linha com o total do contrato (caso comum: 1 forma)
+                setPayLines([{ method: "", amount: data.valorTotal ? String(data.valorTotal) : "" }]);
+                setPayOpen(true);
+              }}
               disabled={confirmPaymentMutation.isPending}
             >
               <CreditCard className="h-4 w-4 mr-1" />
@@ -588,10 +642,23 @@ function ContractDetail({
         );
       })()}
 
-      {/* Dialog de confirmação de pagamento — a forma de pagamento é escolhida
-          AQUI (na devolução/recebimento), não na criação do contrato. */}
-      <Dialog open={payOpen} onOpenChange={(o) => { if (!o) { setPayOpen(false); setPayMethod(""); } }}>
-        <DialogContent className="dialog-mobile max-w-sm">
+      {/* Dialog de confirmação de pagamento — a forma é escolhida AQUI (na
+          devolução/recebimento). Pode DIVIDIR em várias formas com valor em cada
+          (ex: parte Pix, parte dinheiro) — cada linha vira 1 receita. */}
+      {(() => {
+        const total = parseFloat(String(data.valorTotal ?? "0")) || 0;
+        const soma = payLines.reduce((s, l) => s + (parseFloat(l.amount) || 0), 0);
+        const diff = +(total - soma).toFixed(2);
+        const linhasValidas = payLines.filter((l) => l.method && (parseFloat(l.amount) || 0) > 0);
+        // Uma forma só: não exige valor (usa o total). Várias: exige valor em cada.
+        const single = payLines.length === 1;
+        const podeConfirmar = single
+          ? !!payLines[0].method || payLines[0].amount === "" // 1 forma: método opcional (mantém comportamento antigo)
+          : linhasValidas.length === payLines.length && Math.abs(diff) < 0.01;
+        const fmt = (n: number) => n.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        return (
+      <Dialog open={payOpen} onOpenChange={(o) => { if (!o) resetPay(); }}>
+        <DialogContent className="dialog-mobile sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <CreditCard className="h-5 w-5 text-primary" /> Confirmar Pagamento
@@ -599,33 +666,92 @@ function ContractDetail({
           </DialogHeader>
           <div className="space-y-3">
             <p className="text-sm text-muted-foreground">
-              Total do contrato: <span className="font-semibold text-foreground">R$ {data.valorTotal ?? "—"}</span>.
-              A receita será registrada automaticamente.
+              Total do contrato: <span className="font-semibold text-foreground tabular-nums">R$ {fmt(total)}</span>.
+              A receita será registrada automaticamente (uma por forma).
             </p>
-            <div>
-              <Label className="mb-1 block text-xs">Forma de pagamento</Label>
-              <Select value={payMethod} onValueChange={setPayMethod}>
-                <SelectTrigger className="text-sm w-full min-w-0"><SelectValue placeholder="Selecionar (opcional)" /></SelectTrigger>
-                <SelectContent>
-                  {PAYMENT_METHODS.map((p) => (
-                    <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+
+            <div className="space-y-2">
+              <Label className="block text-xs">Formas de pagamento</Label>
+              {payLines.map((line, i) => (
+                <div key={i} className="flex items-center gap-2">
+                  <Select
+                    value={line.method}
+                    onValueChange={(v) => setPayLines((prev) => prev.map((l, j) => j === i ? { ...l, method: v } : l))}
+                  >
+                    <SelectTrigger className="text-sm flex-1 min-w-0"><SelectValue placeholder="Forma" /></SelectTrigger>
+                    <SelectContent>
+                      {PAYMENT_METHODS.filter((p) => p.value === line.method || !payLines.some((l) => l.method === p.value))
+                        .map((p) => (<SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>))}
+                    </SelectContent>
+                  </Select>
+                  <div className="relative w-28 shrink-0">
+                    <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">R$</span>
+                    <Input
+                      type="number" min={0} step="0.01" inputMode="decimal"
+                      value={line.amount}
+                      onChange={(e) => setPayLines((prev) => prev.map((l, j) => j === i ? { ...l, amount: e.target.value } : l))}
+                      className="text-sm pl-7 tabular-nums"
+                      placeholder="0,00"
+                    />
+                  </div>
+                  {payLines.length > 1 && (
+                    <button type="button" onClick={() => setPayLines((prev) => prev.filter((_, j) => j !== i))}
+                      className="text-muted-foreground hover:text-destructive p-1 shrink-0" title="Remover forma">
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+                </div>
+              ))}
+              {payLines.length < PAYMENT_METHODS.length && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    // ao dividir, joga o restante no novo campo
+                    setPayLines((prev) => [...prev, { method: "", amount: diff > 0 ? String(diff.toFixed(2)) : "" }]);
+                  }}
+                  className="text-xs text-primary hover:underline flex items-center gap-1"
+                >
+                  <Plus className="h-3 w-3" /> Dividir em outra forma
+                </button>
+              )}
             </div>
+
+            {payLines.length > 1 && (
+              <div className={`flex items-center justify-between text-xs rounded-md border px-2.5 py-1.5 ${
+                Math.abs(diff) < 0.01
+                  ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-600 dark:text-emerald-400"
+                  : "bg-amber-500/10 border-amber-500/30 text-amber-600 dark:text-amber-400"
+              }`}>
+                <span className="tabular-nums">Somado: R$ {fmt(soma)} / R$ {fmt(total)}</span>
+                <span className="tabular-nums font-medium">
+                  {Math.abs(diff) < 0.01 ? "confere ✓" : diff > 0 ? `falta R$ ${fmt(diff)}` : `excede R$ ${fmt(-diff)}`}
+                </span>
+              </div>
+            )}
           </div>
           <DialogFooter>
-            <Button variant="outline" size="sm" onClick={() => { setPayOpen(false); setPayMethod(""); }}>Cancelar</Button>
+            <Button variant="outline" size="sm" onClick={resetPay}>Cancelar</Button>
             <Button
               size="sm"
-              onClick={() => confirmPaymentMutation.mutate({ contractId, paymentMethod: (payMethod || undefined) as any })}
-              disabled={confirmPaymentMutation.isPending}
+              onClick={() => confirmPaymentMutation.mutate({
+                contractId,
+                // 1 forma sem valor → back-compat (usa o total no servidor).
+                // Várias formas → manda a divisão com valor em cada.
+                payments: (single && !payLines[0].amount)
+                  ? (payLines[0].method ? [{ method: payLines[0].method as any }] : undefined)
+                  : payLines
+                      .filter((l) => l.method)
+                      .map((l) => ({ method: l.method as any, amount: (parseFloat(l.amount) || 0).toFixed(2) })),
+              })}
+              disabled={confirmPaymentMutation.isPending || !podeConfirmar}
             >
               {confirmPaymentMutation.isPending ? "Confirmando..." : "Confirmar"}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+        );
+      })()}
 
       {/* PDF download */}
       <div className="flex items-center gap-2">
@@ -869,9 +995,19 @@ function ContractDetail({
           }}
         />
       )}
+      {/* Q8 — formulário da cópia (montado só com payload pronto: o prefill
+          roda no mount). Fecha limpando o payload. */}
+      {dupPayload && (
+        <NewContractModal
+          open
+          onClose={() => setDupPayload(null)}
+          duplicateFrom={dupPayload}
+        />
+      )}
+
       {/* Return rental dialog */}
       <Dialog open={returnDialogOpen} onOpenChange={(v) => { if (!v) setReturnDialogOpen(false); }}>
-        <DialogContent className="dialog-mobile max-w-md">
+        <DialogContent className="dialog-mobile sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Devolver bike — {returnBikeLabel}</DialogTitle>
           </DialogHeader>
@@ -1251,15 +1387,30 @@ export default function Contracts() {
         loading={isLoadingCurrent}
         pagination={{ page, totalPages, onPageChange: setPage }}
         empty={
-          <div className="flex flex-col items-center gap-3 text-muted-foreground">
-            <FileText className="h-10 w-10 opacity-30" />
-            <p className="text-sm">
-              {view === "excluidos" ? "Nenhum contrato excluído." : "Nenhum contrato encontrado."}
-            </p>
-            {view !== "excluidos" && (
-              <p className="text-xs">Contratos são criados ao vincular múltiplos aluguéis a um cliente.</p>
-            )}
-          </div>
+          view === "excluidos" ? (
+            <EmptyState
+              icon={Trash2}
+              title="Nenhum contrato excluído"
+              description="Contratos excluídos ficam aqui e podem ser restaurados."
+            />
+          ) : view === "arquivados" ? (
+            <EmptyState
+              icon={FileText}
+              title="Nenhum contrato arquivado"
+              description="Contratos encerrados podem ser arquivados para sair da lista principal."
+            />
+          ) : (
+            <EmptyState
+              icon={FileText}
+              title="Nenhum contrato ainda"
+              /* A copy antiga falava em "vincular múltiplos aluguéis" — herança
+                 da /alugueis, aposentada. Hoje o contrato é criado direto. */
+              description="O contrato reúne cliente, bikes, acessórios e período — e gera o PDF para assinatura."
+              actionLabel="Criar primeiro contrato"
+              actionIcon={Plus}
+              onAction={() => setNewContractOpen(true)}
+            />
+          )
         }
       />
 

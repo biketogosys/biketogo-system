@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { Shield, ChevronLeft, ChevronRight, Search, Filter } from "lucide-react";
+import { EmptyState } from "@/components/EmptyState";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
@@ -165,10 +166,11 @@ export default function AuditLog() {
             {Array.from({ length: 8 }).map((_, i) => <Skeleton key={i} className="h-9 w-full" />)}
           </div>
         ) : logs.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-48 text-muted-foreground">
-            <Shield className="w-8 h-8 mb-2 opacity-20" />
-            <p className="text-sm">Nenhum registro encontrado</p>
-          </div>
+          <EmptyState
+            icon={Shield}
+            title="Nenhum registro de auditoria"
+            description="Toda ação relevante (criar, editar, arquivar, restaurar) é registrada aqui automaticamente com autor e data."
+          />
         ) : (
           <>
             <div className="overflow-x-auto">
