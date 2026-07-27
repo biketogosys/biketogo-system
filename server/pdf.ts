@@ -263,7 +263,7 @@ async function fetchLogoBuffer(logoUrl: string | null): Promise<Buffer | null> {
       // cai no fallback
     }
   }
-  // Fallback: logo BTG padrão via storage (backend abstraído — Manus/S3/local)
+  // Fallback 1: logo BTG padrão via storage (backend abstraído — Manus/S3/local)
   const DEFAULT_LOGO_KEY = "logo-btg_a866cb03.png";
   try {
     const { storageGet } = await import("./storage");
@@ -276,7 +276,28 @@ async function fetchLogoBuffer(logoUrl: string | null): Promise<Buffer | null> {
       }
     }
   } catch {
-    // sem logo — ok
+    // cai no fallback local
+  }
+
+  // Fallback 2 (o que garante que o contrato NUNCA saia sem logo): asset do
+  // repositório, lido do DISCO. Antes o PDF dependia de `company_logo_url` estar
+  // configurado OU de um arquivo existir no storage — sem os dois, saía sem logo
+  // nenhuma (2026-07-27). Reusa o ícone que o Vite já publica em dist/public,
+  // então o caminho existe em dev e em produção sem tocar no build.
+  // ⚠️ Ordem importa: `client/public` (a FONTE) vem primeiro. Um `dist/` de build
+  // antigo tem o ícone velho e venceria — foi o que aconteceu ao trocar a arte
+  // (o PDF saiu com a bike âmbar antiga). Em produção a pasta `client/` não
+  // existe no deploy, então cai naturalmente no dist/public publicado.
+  for (const p of [
+    path.resolve(import.meta.dirname, "..", "client", "public", "icons", "icon-512.png"), // dev (fonte)
+    path.resolve(import.meta.dirname, "public", "icons", "icon-512.png"),                 // prod: dist/public
+    path.resolve(import.meta.dirname, "..", "dist", "public", "icons", "icon-512.png"),
+  ]) {
+    try {
+      if (fs.existsSync(p)) return fs.readFileSync(p);
+    } catch {
+      // tenta o próximo caminho
+    }
   }
   return null;
 }
@@ -638,14 +659,22 @@ export async function generateContractPdf(
       .text(empresaObjetoTexto, M, doc.y, { width: CW });
     doc.moveDown(0.6);
     renderTerms(doc, empresaTermos);
-    // ── ASSINATURAS ───────────────────────────────────────────────────────────
-    // Mais espaço ACIMA da linha pra caber assinatura alta (Cassiana 2026-07-24:
-    // "sobrando espaço embaixo, mais espaço pro pessoal que tem assinatura alta").
-    doc.moveDown(5.5);
-    // Bloco de assinaturas + fecho não pode partir no meio: se não couber,
-    // joga tudo pra próxima página (antes ficava órfão gerando página quase vazia).
-    ensureSpace(120);
-    const sy = doc.y;
+    // ── ASSINATURAS (ancoradas no RODAPÉ) ─────────────────────────────────────
+    // Cassiana 2026-07-27: "a assinatura tem que estar próxima ao rodapé".
+    // Antes o bloco seguia o fluxo do texto e parava no meio da página, com um
+    // vazio enorme embaixo. Agora é posicionado por coordenada ABSOLUTA logo
+    // acima do rodapé — assim todo o espaço em branco da página sobra ACIMA da
+    // linha, que é justamente onde a pessoa assina (resolve a "assinatura alta").
+    const SIG_H = 64;              // linha → fim do fecho
+    const SIG_GAP_MIN = 36;        // respiro mínimo entre os termos e a linha
+    let sy = CONTENT_BOTTOM - SIG_H;
+
+    // Se os termos já chegaram perto demais, o bloco vai pra próxima página —
+    // continuando ancorado no rodapé dela.
+    if (doc.y + SIG_GAP_MIN > sy) {
+      doc.addPage();
+      sy = CONTENT_BOTTOM - SIG_H;
+    }
     const sw = (CW - 60) / 2;
 
     doc.moveTo(M, sy).lineTo(M + sw, sy).lineWidth(0.7).strokeColor("#9A9A9A").stroke();
@@ -662,9 +691,9 @@ export async function generateContractPdf(
       .text(L.locatario, M + sw + 60, sy + 19, { width: sw, align: "center" });
 
     // ── FECHO ─────────────────────────────────────────────────────────────────
-    doc.moveDown(2.2);
+    // Coordenada absoluta (não moveDown): o bloco inteiro é ancorado.
     doc.fillColor(MUTED).font("Helvetica").fontSize(8.5)
-      .text(`${empresaCidade}, ${emitidoLong}.`, M, doc.y, { width: CW, align: "center" });
+      .text(`${empresaCidade}, ${emitidoLong}.`, M, sy + 46, { width: CW, align: "center" });
 
     // ── FOOTER BAND (carimbado em TODAS as páginas) ───────────────────────────
     // Só agora sabemos o total de páginas — percorre todas as páginas
