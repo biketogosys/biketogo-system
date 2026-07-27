@@ -243,3 +243,36 @@ export async function storageGet(
   // local: a própria rota do proxy serve os bytes.
   return { key, url: stableUrl(key) };
 }
+
+/**
+ * Lê os BYTES de um objeto do storage, independente do backend.
+ *
+ * Existe porque `storageGet` devolve uma URL que, nos backends `local` e `s3`,
+ * é RELATIVA (`/storage/<key>`) — quem precisa dos bytes no servidor (ex.: a
+ * logo no PDF) não consegue fazer `fetch` disso. Aceita tanto a key crua quanto
+ * a URL `/storage/<key>` guardada em settings.
+ * Devolve `null` em qualquer falha — nunca lança.
+ */
+export async function storageGetBuffer(relKeyOrUrl: string): Promise<Buffer | null> {
+  try {
+    // `/storage/a/b.png` → `a/b.png` (a key vem percent-encoded do stableUrl)
+    let key = relKeyOrUrl;
+    const m = key.match(/^\/storage\/(.+)$/);
+    if (m) key = m[1].split("/").map(decodeURIComponent).join("/");
+    key = normalizeKey(key);
+
+    const backend = getStorageBackend();
+    if (backend === "local") {
+      const fs = await import("fs/promises");
+      return await fs.readFile(localPathFor(key));
+    }
+    // manus/s3: storageGet devolve URL absoluta (assinada, no caso do s3)
+    const { url } = await storageGet(key);
+    if (!url.startsWith("http")) return null;
+    const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
+    if (!res.ok) return null;
+    return Buffer.from(await res.arrayBuffer());
+  } catch {
+    return null;
+  }
+}

@@ -263,6 +263,18 @@ async function fetchLogoBuffer(logoUrl: string | null): Promise<Buffer | null> {
       // cai no fallback
     }
   }
+
+  // Logo enviada em Configurações: `uploadLogo` grava em `company_logo_url` o
+  // que o `storagePut` devolve — que nos backends `local` e `s3` é um caminho
+  // RELATIVO (`/storage/company/logo-*.png`). O teste `startsWith("http")` acima
+  // descartava isso, então a logo da empresa NUNCA era usada e o PDF caía no
+  // fallback (bug 2026-07-27: "coloquei a logo nas Configurações e o contrato
+  // não substitui"). Aqui lemos os bytes direto do storage.
+  if (logoUrl && logoUrl.trim() !== "") {
+    const { storageGetBuffer } = await import("./storage");
+    const buf = await storageGetBuffer(logoUrl);
+    if (buf) return buf;
+  }
   // Fallback 1: logo BTG padrão via storage (backend abstraído — Manus/S3/local)
   const DEFAULT_LOGO_KEY = "logo-btg_a866cb03.png";
   try {
