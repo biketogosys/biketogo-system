@@ -141,7 +141,7 @@ export const translations = {
     // LGPD
     lgpdTitle: "Termos de uso e privacidade",
     lgpdText:
-      "Ao enviar este formulário, seus dados pessoais serão coletados pela Bike To Go Floripa exclusivamente para fins de cadastro, controle de aluguel de bicicletas e comunicação via WhatsApp. Suas informações serão tratadas de forma segura e confidencial, conforme a Lei Geral de Proteção de Dados (LGPD — Lei nº 13.709/2018). Você pode solicitar a exclusão ou correção dos seus dados a qualquer momento entrando em contato pelo e-mail ou WhatsApp da loja.",
+      "Ao enviar este formulário, seus dados pessoais serão coletados pela Bike To Go Floripa exclusivamente para fins de cadastro, controle de aluguel de bicicletas e comunicação via WhatsApp. Suas informações serão tratadas de forma segura e confidencial, conforme a Lei Geral de Proteção de Dados (LGPD, Lei nº 13.709/2018). Você pode solicitar a exclusão ou correção dos seus dados a qualquer momento entrando em contato pelo e-mail ou WhatsApp da loja.",
     lgpdConsent:
       "Li e concordo com os termos acima e autorizo o uso dos meus dados pessoais conforme a LGPD.",
 
@@ -304,7 +304,7 @@ export const translations = {
 
     lgpdTitle: "Terms of use and privacy",
     lgpdText:
-      "By submitting this form, your personal data will be collected by Bike To Go Floripa exclusively for registration, bike rental management, and WhatsApp communication purposes. Your information will be handled securely and confidentially, in accordance with the Brazilian General Data Protection Law (LGPD — Law No. 13,709/2018). You may request deletion or correction of your data at any time by contacting us via email or WhatsApp.",
+      "By submitting this form, your personal data will be collected by Bike To Go Floripa exclusively for registration, bike rental management, and WhatsApp communication purposes. Your information will be handled securely and confidentially, in accordance with the Brazilian General Data Protection Law (LGPD, Law No. 13,709/2018). You may request deletion or correction of your data at any time by contacting us via email or WhatsApp.",
     lgpdConsent:
       "I have read and agree to the terms above and authorize the use of my personal data in accordance with LGPD.",
 
@@ -464,7 +464,7 @@ export const translations = {
 
     lgpdTitle: "Términos de uso y privacidad",
     lgpdText:
-      "Al enviar este formulario, tus datos personales serán recopilados por Bike To Go Floripa exclusivamente para fines de registro, control de alquiler de bicicletas y comunicación por WhatsApp. Tu información será tratada de forma segura y confidencial, conforme a la Ley General de Protección de Datos de Brasil (LGPD — Ley nº 13.709/2018). Puedes solicitar la eliminación o corrección de tus datos en cualquier momento contactándonos por correo electrónico o WhatsApp.",
+      "Al enviar este formulario, tus datos personales serán recopilados por Bike To Go Floripa exclusivamente para fines de registro, control de alquiler de bicicletas y comunicación por WhatsApp. Tu información será tratada de forma segura y confidencial, conforme a la Ley General de Protección de Datos de Brasil (LGPD, Ley nº 13.709/2018). Puedes solicitar la eliminación o corrección de tus datos en cualquier momento contactándonos por correo electrónico o WhatsApp.",
     lgpdConsent:
       "He leído y acepto los términos anteriores y autorizo el uso de mis datos personales conforme a la LGPD.",
 

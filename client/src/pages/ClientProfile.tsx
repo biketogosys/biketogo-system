@@ -238,7 +238,7 @@ export default function ClientProfile() {
             {client.status === "lead" && (
               <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-3 mb-3">
                 <p className="text-xs text-amber-400 font-medium">
-                  Lead — cadastro preenchido pelo cliente.
+                  Lead: cadastro preenchido pelo cliente.
                 </p>
               </div>
             )}
@@ -247,7 +247,7 @@ export default function ClientProfile() {
             {client.status === "recusado" && (
               <div className="bg-destructive/10 border border-destructive/30 rounded-lg p-3 mb-3">
                 <p className="text-xs text-destructive font-medium">
-                  Recusado — {(client as any).motivoRecusa || "sem motivo informado"}
+                  Recusado: {(client as any).motivoRecusa || "sem motivo informado"}
                 </p>
               </div>
             )}
@@ -664,8 +664,8 @@ export default function ClientProfile() {
                                   const td = (client as any).tipoDocumento as string | undefined;
                                   const docName = td === "cnh" ? "CNH" : td === "rg" ? "RG" : td === "passaporte" ? "Passaporte" : "Documento";
                                   const dt = doc.type as string;
-                                  if (dt === "rg_front" || dt === "doc_front") return `${docName} — Frente`;
-                                  if (dt === "rg_back" || dt === "doc_back") return `${docName} — Verso`;
+                                  if (dt === "rg_front" || dt === "doc_front") return `${docName} (frente)`;
+                                  if (dt === "rg_back" || dt === "doc_back") return `${docName} (verso)`;
                                   return "Documento";
                                 })()}
                               </p>

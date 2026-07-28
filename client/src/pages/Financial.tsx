@@ -788,7 +788,7 @@ export default function Financial() {
           </div>
         )}
         {!datesValid && (
-          <span className="text-xs text-destructive">Período inválido — confira as datas.</span>
+          <span className="text-xs text-destructive">Período inválido, confira as datas.</span>
         )}
       </div>
 

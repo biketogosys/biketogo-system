@@ -87,7 +87,7 @@ export function buildNewLeadEmail(lead: NewLeadInfo, appUrl: string = ENV.appUrl
     subject: `Novo pré-cadastro: ${lead.name}`,
     html: `
 <div style="font-family:system-ui,-apple-system,Segoe UI,sans-serif;max-width:520px;margin:0 auto;padding:24px">
-  <p style="font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:#b45309;margin:0 0 4px">Bike To Go — novo lead</p>
+  <p style="font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:#b45309;margin:0 0 4px">Bike To Go · novo lead</p>
   <h1 style="font-size:20px;color:#18181b;margin:0 0 16px">${escapeHtml(lead.name)}</h1>
   <table style="border-collapse:collapse;font-size:14px">
     ${row("Telefone", lead.phone)}
@@ -132,10 +132,10 @@ export function buildDigestEmail(
          <table style="border-collapse:collapse;font-size:14px;width:100%">${items.map((x) => row(x, late)).join("")}</table>`;
 
   return {
-    subject: `Devoluções de hoje — ${total} pendente(s)${overdue.length ? `, ${overdue.length} em atraso` : ""}`,
+    subject: `Devoluções de hoje: ${total} pendente(s)${overdue.length ? `, ${overdue.length} em atraso` : ""}`,
     html: `
 <div style="font-family:system-ui,-apple-system,Segoe UI,sans-serif;max-width:560px;margin:0 auto;padding:24px">
-  <p style="font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:#b45309;margin:0 0 4px">Bike To Go — resumo do dia</p>
+  <p style="font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:#b45309;margin:0 0 4px">Bike To Go · resumo do dia</p>
   <h1 style="font-size:20px;color:#18181b;margin:0 0 4px">Devoluções pendentes</h1>
   <p style="font-size:14px;color:#71717a;margin:0">${total} no total${overdue.length ? ` · ${overdue.length} em atraso` : ""}.</p>
   ${section("Em atraso", overdue, true)}
@@ -162,7 +162,7 @@ export async function sendMorningDigest(): Promise<boolean> {
     }
     const returns = await getReturnsDue(db);
     if (returns.overdue.length + returns.dueToday.length === 0) {
-      console.log("[Digest] Nada pendente hoje — nenhum e-mail enviado.");
+      console.log("[Digest] Nada pendente hoje, nenhum e-mail enviado.");
       return false;
     }
     const { subject, html } = buildDigestEmail(returns);

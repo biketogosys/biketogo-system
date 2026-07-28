@@ -44,7 +44,7 @@ export function EarlyReturnDialog({
             <Check className="w-4 h-4 text-primary" /> Confirmar devolução
           </DialogTitle>
           <DialogDescription>
-            {target?.bikeModel} de {target?.clientName} — em bom estado. A unidade
+            {target?.bikeModel} de {target?.clientName}, em bom estado. A unidade
             volta a ficar disponível. Para registrar dano, use a tela do contrato.
           </DialogDescription>
         </DialogHeader>

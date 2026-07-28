@@ -512,14 +512,14 @@ function BikePhotoUpload({ bikeId, currentUrl, onUploaded }: { bikeId: number; c
         <button onClick={() => fileRef.current?.click()} className="w-full rounded-lg border-2 border-dashed border-border flex flex-col items-center justify-center gap-2 text-muted-foreground hover:border-primary/50 hover:text-primary transition-colors" style={{ aspectRatio: "4/3" }}>
           <Upload className="w-8 h-8" />
           <span className="text-sm">Clique para adicionar foto</span>
-          <span className="text-xs">JPG, PNG ou WEBP — máx. 5MB</span>
+          <span className="text-xs">JPG, PNG ou WEBP, máx. 5MB</span>
         </button>
       )}
       <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleFile} />
       <p className="text-xs text-muted-foreground">Recomendado: 800×600px, proporção 4:3, máximo 2MB</p>
       {sizeWarning && (
         <p className="text-xs text-amber-500 bg-amber-500/10 border border-amber-500/30 rounded-md px-3 py-2">
-          ⚠️ Foto muito grande — pode deixar o formulário lento
+          ⚠️ Foto muito grande, pode deixar o formulário lento
         </p>
       )}
       {uploadMut.isPending && <p className="text-xs text-muted-foreground text-center animate-pulse">Enviando foto...</p>}
@@ -648,7 +648,7 @@ function BikeFormDialog({ bike, onClose, onSuccess }: { bike: any | null; onClos
           <div className="flex gap-3 px-5 py-4 border-t border-border shrink-0">
             <Button type="button" variant="outline" onClick={onClose} className="flex-1">Cancelar</Button>
             <Button onClick={handleSubmit} disabled={createMut.isPending || updateMut.isPending} className="flex-1">
-              {createMut.isPending || updateMut.isPending ? "Salvando..." : (savedId && !isEdit ? "Salvo ✓ — Atualizar" : isEdit ? "Salvar alterações" : "Criar bicicleta")}
+              {createMut.isPending || updateMut.isPending ? "Salvando..." : (savedId && !isEdit ? "Salvo ✓ · Atualizar" : isEdit ? "Salvar alterações" : "Criar bicicleta")}
             </Button>
           </div>
         </Tabs>
@@ -918,7 +918,7 @@ export default function Bikes() {
           <EmptyState
             icon={BikeIcon}
             title="Nenhuma bicicleta na frota"
-            description="Cadastre o modelo, depois os tamanhos e as unidades físicas — é o estoque que os contratos consomem."
+            description="Cadastre o modelo, depois os tamanhos e as unidades físicas: é o estoque que os contratos consomem."
             actionLabel="Cadastrar primeira bicicleta"
             actionIcon={Plus}
             onAction={() => { setEditBike(null); setShowForm(true); }}

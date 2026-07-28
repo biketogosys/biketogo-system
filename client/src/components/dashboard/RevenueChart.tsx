@@ -70,7 +70,7 @@ export function RevenueChart({ data = [], loading, timeRange, onTimeRangeChange 
         <CardTitle>Receitas &amp; Despesas</CardTitle>
         <CardDescription>
           <span className="hidden @[540px]/card:block">
-            Movimentação semanal — últimas semanas
+            Movimentação semanal, últimas semanas
           </span>
           <span className="@[540px]/card:hidden">Movimentação semanal</span>
         </CardDescription>

@@ -193,7 +193,7 @@ export function ClientFormModal({ open, onClose, onSuccess, client }: ClientForm
     if (!String(form.weight).trim()) return fail("identificacao", "Peso obrigatório");
     if (isBrazilian && form.nacionalidade === "brasileiro" || (isEdit && isBrazilian)) {
       if (!form.cpf || form.cpf.replace(/\D/g, "").length < 11) return fail("identificacao", "CPF obrigatório (11 dígitos)");
-      if (!isValidCPF(form.cpf)) return fail("identificacao", "CPF inválido — verifique os dígitos");
+      if (!isValidCPF(form.cpf)) return fail("identificacao", "CPF inválido, verifique os dígitos");
       const rgDigits = form.rg.replace(/[.\-\s]/g, "");
       if (!rgDigits || rgDigits.length < 7) return fail("identificacao", "RG obrigatório (mín. 7 dígitos)");
     }
@@ -525,7 +525,7 @@ export function ClientFormModal({ open, onClose, onSuccess, client }: ClientForm
               <TabsContent value="documentos" className="mt-0 space-y-5">
                 <p className="form-group-title">Documento de identificação</p>
                 <p className="text-xs text-muted-foreground -mt-2">
-                  Envie o PDF da CNH digital (gov.br) ou RG — frente, verso e QR num arquivo só — ou uma foto do documento.
+                  Envie o PDF da CNH digital (gov.br) ou RG (frente, verso e QR num arquivo só) ou uma foto do documento.
                   {isEdit && " Documentos já enviados aparecem na aba Documentação do perfil."}
                 </p>
                 <div>
@@ -569,7 +569,7 @@ export function ClientFormModal({ open, onClose, onSuccess, client }: ClientForm
                         <ImageIcon className="w-7 h-7 text-primary/60" />
                       </div>
                       <p className="text-sm font-medium text-foreground">Arraste aqui ou clique para selecionar</p>
-                      <p className="text-xs text-muted-foreground">PDF ou imagem — até 10 MB</p>
+                      <p className="text-xs text-muted-foreground">PDF ou imagem, até 10 MB</p>
                     </div>
                   )}
                 </div>
@@ -643,7 +643,7 @@ export function ClientFormModal({ open, onClose, onSuccess, client }: ClientForm
                 <div className="space-y-4 form-group-divider">
                   <p className="form-group-title">Privacidade</p>
                   <div className="rounded-lg border border-border bg-secondary/50 p-4 text-xs text-muted-foreground leading-relaxed">
-                    <p className="font-semibold text-foreground mb-2">Política de Privacidade — LGPD</p>
+                    <p className="font-semibold text-foreground mb-2">Política de Privacidade (LGPD)</p>
                     <p>
                       Seus dados pessoais serão utilizados exclusivamente para a prestação dos serviços de aluguel de bicicletas da Bike To Go, em conformidade com a Lei Geral de Proteção de Dados (Lei nº 13.709/2018). Não compartilhamos seus dados com terceiros sem seu consentimento.
                     </p>

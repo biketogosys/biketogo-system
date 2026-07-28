@@ -90,8 +90,8 @@ export function AgendaMiniMonth({
                 onClick={() => (total > 0 ? onPickDay(day) : onNewContract(day))}
                 title={
                   total > 0
-                    ? `${total} movimentação(ões) — ver a semana`
-                    : "Sem movimentação — criar contrato neste dia"
+                    ? `${total} movimentação(ões): ver a semana`
+                    : "Sem movimentação: criar contrato neste dia"
                 }
                 className={`group relative flex h-11 flex-col items-center justify-center rounded-md border text-xs transition-colors ${
                   isToday

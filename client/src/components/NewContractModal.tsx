@@ -270,7 +270,10 @@ export function NewContractModal({
       }
       setAccSelections(sel);
       setPrefillSelections(sel);
-      setStep(1);
+      // Editar já sabe de quem é o contrato: abre direto nas BIKES (pedido
+      // Matheus 2026-07-28). O passo 1 continua alcançável pelo "Voltar" para
+      // quem realmente precisa trocar o cliente do contrato.
+      setStep(2);
     } else if (open && !isEditMode && initialClient) {
       setClientId(String(initialClient.clientId));
       setClientName(initialClient.clientName);
@@ -569,7 +572,7 @@ export function NewContractModal({
     setSelQty(b.quantity);
     setSelUnitIds(b.unitIds ?? []);
     setBikeEntries((prev) => prev.filter((_, i) => i !== idx));
-    toast.info("Bike carregada nos campos — ajuste e clique em \"Adicionar bike ao contrato\".");
+    toast.info("Bike carregada nos campos: ajuste e clique em \"Adicionar bike ao contrato\".");
   }
 
   const grandTotal = bikeEntries.reduce((s, b) => s + parseFloat(b.totalAmount), 0);
@@ -701,7 +704,7 @@ export function NewContractModal({
               </div>
             </div>
             <p className="text-xs text-muted-foreground">
-              A disponibilidade é conferida nas datas escolhidas — se alguma bike estiver ocupada no período, o próximo passo avisa.
+              A disponibilidade é conferida nas datas escolhidas: se alguma bike estiver ocupada no período, o próximo passo avisa.
             </p>
             <div className="rounded-md border bg-muted/40 p-3 space-y-1">
               <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Será copiado</p>
@@ -750,7 +753,7 @@ export function NewContractModal({
                 <Copy className="h-3.5 w-3.5 shrink-0 mt-0.5" />
                 <span>
                   Cópia do contrato de <strong>{duplicateFrom?.clientName}</strong> no período novo.
-                  As <strong>unidades físicas serão reatribuídas</strong> (a disponibilidade é por data) —
+                  As <strong>unidades físicas serão reatribuídas</strong> (a disponibilidade é por data):
                   use o lápis se quiser escolher unidades específicas.
                 </span>
               </div>
@@ -767,7 +770,7 @@ export function NewContractModal({
             </div>
             {!(selStartDate && selEndDate) && (
               <p className="text-xs text-muted-foreground">
-                Escolha o período primeiro — a disponibilidade das bikes é calculada pelas datas.
+                Escolha o período primeiro: a disponibilidade das bikes é calculada pelas datas.
               </p>
             )}
             {categories.length > 0 && (
@@ -800,7 +803,7 @@ export function NewContractModal({
                   <SelectContent>
                     {bikes.map((b) => (
                       <SelectItem key={b.id} value={String(b.id)}>
-                        {b.model}{b.brand ? ` — ${b.brand}` : ""}
+                        {b.model}{b.brand ? ` · ${b.brand}` : ""}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -815,7 +818,7 @@ export function NewContractModal({
                         recebe as datas) — agora o número é verdadeiro. */}
                     {sizes.map((s) => (
                       <SelectItem key={s.id} value={String(s.id)}>
-                        {s.tamanho} — {(s as any).disponivel ?? 0} disp. no período
+                        {s.tamanho} · {(s as any).disponivel ?? 0} disp. no período
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -1121,7 +1124,7 @@ export function NewContractModal({
                       const estoque = (av?.variantes ?? []).reduce((s: number, v: any) => s + (v.disponivel ?? 0), 0);
                       toast.error(
                         estoque === 0
-                          ? `Sem estoque de "${ma.name}" (obrigatório) — nenhuma unidade disponível. Libere uma unidade em Acessórios ou desmarque a obrigatoriedade.`
+                          ? `Sem estoque de "${ma.name}" (obrigatório): nenhuma unidade disponível. Libere uma unidade em Acessórios ou desmarque a obrigatoriedade.`
                           : `Selecione ao menos 1 unidade do acessório obrigatório: ${ma.name}`,
                         { duration: 8000 },
                       );

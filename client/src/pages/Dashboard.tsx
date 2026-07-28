@@ -188,7 +188,7 @@ export default function Dashboard() {
           {/* ─── Period selector ─────────────────────────────────────────── */}
           <div className="px-4 lg:px-6 flex items-center justify-between">
             <p className="text-xs text-muted-foreground">
-              Visão geral — Bike To Go Floripa
+              Visão geral · Bike To Go Floripa
             </p>
             <div className="relative">
               <button
@@ -337,7 +337,7 @@ export default function Dashboard() {
                   Receita por modelo de bicicleta
                 </CardTitle>
                 <p className="text-xs text-muted-foreground">
-                  Aluguéis pagos no período — {periodLabel}
+                  Aluguéis pagos no período · {periodLabel}
                 </p>
               </CardHeader>
               <CardContent>

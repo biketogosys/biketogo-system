@@ -358,7 +358,7 @@ export default function Settings() {
             <Field label="Nome da empresa" value={companyName} onChange={setCompanyName} placeholder="Bike To Go Floripa" />
             <Field label="CNPJ" value={companyCnpj} onChange={setCompanyCnpj} placeholder="00.000.000/0001-00" mono />
             <div className="sm:col-span-2">
-              <Field label="Endereço (rua, número, complemento)" value={companyAddress} onChange={setCompanyAddress} placeholder="Rua das Flores, 123 — Sala 2" />
+              <Field label="Endereço (rua, número, complemento)" value={companyAddress} onChange={setCompanyAddress} placeholder="Rua das Flores, 123, Sala 2" />
             </div>
             <Field label="Cidade" value={companyCity} onChange={setCompanyCity} placeholder="Florianópolis" />
             <Field label="Estado (UF)" value={companyState} onChange={setCompanyState} placeholder="SC" />
@@ -414,7 +414,7 @@ export default function Settings() {
             />
           </div>
           <p className="text-xs text-muted-foreground mb-4">
-            Texto do Objeto do contrato e as cláusulas de Termos, editáveis por idioma. Este é exatamente o texto que sai no PDF do contrato — os campos já vêm preenchidos com o padrão. Edite e salve para que o seu texto passe a valer.
+            Texto do Objeto do contrato e as cláusulas de Termos, editáveis por idioma. Este é exatamente o texto que sai no PDF do contrato. Os campos já vêm preenchidos com o padrão. Edite e salve para que o seu texto passe a valer.
           </p>
           <Tabs defaultValue="pt">
             <TabsList className="mb-4">
@@ -436,7 +436,7 @@ export default function Settings() {
                 </div>
                 <div>
                   <Label className="text-xs text-muted-foreground mb-1.5 block">Termos e condições</Label>
-                  <p className="text-xs text-muted-foreground mb-3">Cada cláusula é numerada automaticamente no PDF. Estas são as cláusulas que saem hoje no contrato — edite, remova ou adicione as suas.</p>
+                  <p className="text-xs text-muted-foreground mb-3">Cada cláusula é numerada automaticamente no PDF. Estas são as cláusulas que saem hoje no contrato. Edite, remova ou adicione as suas.</p>
                   <div className="space-y-2">
                     {clauses[lang].map((clause, i) => (
                       <div key={i} className="flex items-start gap-2">

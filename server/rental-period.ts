@@ -105,7 +105,7 @@ export async function extendRental(
   if (!rental) throw new Error("NOT_FOUND");
   if (rental.deletedAt) throw new Error("Este aluguel foi arquivado.");
   if (rental.returnedAt || rental.status === "returned") {
-    throw new Error("Este aluguel já foi devolvido — crie um novo contrato.");
+    throw new Error("Este aluguel já foi devolvido. Crie um novo contrato.");
   }
   if (rental.status === "cancelled") throw new Error("Este aluguel está cancelado.");
   if (!rental.endDate) {

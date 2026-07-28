@@ -109,7 +109,7 @@ export function EarlyReturnNotice({
           {perdeuDesconto && (
             <p className="text-xs text-muted-foreground flex gap-1.5">
               <Info className="w-3.5 h-3.5 shrink-0 mt-px" />
-              O desconto do período maior não vale para o período reduzido — o cliente
+              O desconto do período maior não vale para o período reduzido: o cliente
               paga a diária da nova faixa.
             </p>
           )}
@@ -122,7 +122,7 @@ export function EarlyReturnNotice({
           {data.alreadyPaid && credito > 0 && (
             <p className="text-xs text-muted-foreground flex gap-1.5">
               <Info className="w-3.5 h-3.5 shrink-0 mt-px" />
-              Este contrato já foi pago — o crédito entra como estorno no Financeiro.
+              Este contrato já foi pago: o crédito entra como estorno no Financeiro.
             </p>
           )}
         </div>

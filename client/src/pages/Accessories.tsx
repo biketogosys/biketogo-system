@@ -392,7 +392,7 @@ function AccessoryUnitsPanel({ accessoryId, onClose }: { accessoryId: number; on
                                   size="sm"
                                   variant="ghost"
                                   className="h-6 text-xs gap-1 text-emerald-600 hover:text-emerald-500 dark:text-emerald-400"
-                                  title="Resolver — voltar para disponível"
+                                  title="Resolver: voltar para disponível"
                                   disabled={updateMut.isPending}
                                   onClick={() => updateMut.mutate({ unitId: unit.id, status: "disponivel", observacao: "", variante: unit.variante ?? undefined })}
                                 >

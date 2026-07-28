@@ -72,12 +72,12 @@ describe("buildDigestEmail — resumo matinal", () => {
       overdue: [mk({ id: 1, daysLate: 2, endDate: "2026-07-18" }), mk({ id: 2, daysLate: 1, endDate: "2026-07-19" })],
       dueToday: [mk({ id: 3 })],
     }, "");
-    expect(subject).toBe("Devoluções de hoje — 3 pendente(s), 2 em atraso");
+    expect(subject).toBe("Devoluções de hoje: 3 pendente(s), 2 em atraso");
   });
 
   it("sem atrasadas: subject não menciona atraso", () => {
     const { subject } = buildDigestEmail({ overdue: [], dueToday: [mk({})] }, "");
-    expect(subject).toBe("Devoluções de hoje — 1 pendente(s)");
+    expect(subject).toBe("Devoluções de hoje: 1 pendente(s)");
   });
 
   it("seção vazia é omitida", () => {

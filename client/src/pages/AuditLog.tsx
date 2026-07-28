@@ -212,7 +212,7 @@ export default function AuditLog() {
             {/* Pagination */}
             <div className="flex items-center justify-between px-4 py-3 border-t border-border">
               <p className="text-xs text-muted-foreground">
-                {total} registro(s) — Página {page} de {totalPages}
+                {total} registro(s) · Página {page} de {totalPages}
               </p>
               <div className="flex items-center gap-2">
                 <Button

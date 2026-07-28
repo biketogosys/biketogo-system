@@ -50,7 +50,7 @@ export function ExtendRentalDialog({
   const extend = trpc.rentals.extend.useMutation({
     onSuccess: (r) => {
       toast.success(
-        `Renovado até ${fmtDay(r.newEndDate)} — +${r.addedDays} dia(s), ${fmtBRL(parseFloat(r.extraAmount))}.`,
+        `Renovado até ${fmtDay(r.newEndDate)}: +${r.addedDays} dia(s), ${fmtBRL(parseFloat(r.extraAmount))}.`,
       );
       utils.dashboard.agenda.invalidate();
       utils.dashboard.returns.invalidate();

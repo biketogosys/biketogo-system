@@ -276,7 +276,7 @@ export default function PublicReservation() {
       case "cpf":
         if (!isBrazilian) return undefined;
         if (!cpf || cpf.replace(/\D/g, "").length < 11) return lang === "pt" ? "CPF obrigatório (11 dígitos)" : lang === "en" ? "CPF required (11 digits)" : "CPF obligatorio (11 dígitos)";
-        if (!validateCPF(cpf)) return lang === "pt" ? "CPF inválido — verifique os dígitos" : lang === "en" ? "Invalid CPF — check the digits" : "CPF inválido — verifique los dígitos";
+        if (!validateCPF(cpf)) return lang === "pt" ? "CPF inválido, verifique os dígitos" : lang === "en" ? "Invalid CPF, check the digits" : "CPF inválido, verifique los dígitos";
         return undefined;
       case "rg": {
         // RG é OPCIONAL (Cassiana, 2026-07-17) — valida só se preenchido
@@ -563,7 +563,7 @@ export default function PublicReservation() {
               </button>
             ))}
           </div>
-          <span className={`text-[11px] sm:hidden ${textSecondary}`}>{step + 1}/{STEPS.length} — {STEPS[step]}</span>
+          <span className={`text-[11px] sm:hidden ${textSecondary}`}>{step + 1}/{STEPS.length} · {STEPS[step]}</span>
         </div>
       </div>
 
@@ -1023,7 +1023,7 @@ export default function PublicReservation() {
                       <p className={`text-xs text-center ${textMuted}`}>
                         {lang === "pt" ? "Clique ou arraste a foto aqui" : lang === "en" ? "Click or drag photo here" : "Haz clic o arrastra la foto aquí"}
                       </p>
-                      <p className={`text-[10px] ${textMuted}`}>JPG, PNG — máx. 10 MB</p>
+                      <p className={`text-[10px] ${textMuted}`}>JPG, PNG, máx. 10 MB</p>
                     </div>
                   )}
                 </div>
@@ -1159,7 +1159,7 @@ export default function PublicReservation() {
 
       <footer className="border-t border-border py-6 text-center">
         <p className={`text-xs ${textMuted}`}>
-          Bike To Go Floripa — {lang === "pt" ? "Aluguel de bicicletas" : lang === "en" ? "Bike rentals" : "Alquiler de bicicletas"}
+          Bike To Go Floripa · {lang === "pt" ? "Aluguel de bicicletas" : lang === "en" ? "Bike rentals" : "Alquiler de bicicletas"}
         </p>
       </footer>
     </div>

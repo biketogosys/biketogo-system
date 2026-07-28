@@ -1022,11 +1022,25 @@ const rentalsRouter = router({
           }
         }
       }
+      // Status do CONTRATO tem que acompanhar a devolução (2026-07-28): sem isto
+      // o contrato continuava "Ativo" com a bike já de volta, e só voltava ao
+      // normal se alguém clicasse em "Recalcular status" na mão. O markReturned
+      // da Agenda sempre fez isso; aqui faltava.
+      const contractIdRet = (rental as any).contractId as number | null;
+      if (contractIdRet) await recalcContractStatus(contractIdRet);
+
       // Valor mudou ⇒ o PDF guardado está desatualizado. Regera com o valor novo.
       if (recalc?.contractId) {
         const dbPdf = await getDb();
         if (dbPdf) await regenerateContractPdf(dbPdf, recalc.contractId, "returnRental");
       }
+      await createAuditLog({
+        adminId: (ctx as any).adminUser?.id ?? null,
+        acao: "devolveu_bike",
+        tabela: "rentals",
+        registroId: input.id,
+        dadosDepois: { condicao: input.bikeCondition, recalculado: !!recalc },
+      });
       // ok: nao mexe em status (unidade fica livre porque rental vira 'returned' e sai do overlap)
       return { success: true, recalculated: recalc };
     }),
@@ -2610,7 +2624,7 @@ async function recalcEarlyReturn(
     try {
       await createRevenue({
         categoryId: 1,
-        description: `Estorno — devolução antecipada, Contrato #${pv.contractId ?? "—"} (${pv.removedDays} dia(s) não usados)`,
+        description: `Estorno de devolução antecipada · Contrato #${pv.contractId ?? "?"} (${pv.removedDays} dia(s) não usados)`,
         amount: (-credito).toFixed(2),
         date: todaySaoPaulo(),
       } as any);
@@ -3060,7 +3074,7 @@ const contractsRouter = router({
           .filter((a) => a.status !== "ok")
           .map((a) => {
             const nome = caNameMap.get(a.id) ?? `Acessório #${a.id}`;
-            const obs = a.observacao ? ` — ${a.observacao}` : "";
+            const obs = a.observacao ? `: ${a.observacao}` : "";
             return `• ${nome}: ${a.status}${obs}`;
           })
           .join("\n");
@@ -3081,7 +3095,7 @@ const contractsRouter = router({
           if (clientRow?.name) clientName = clientRow.name;
         }
         await sendOwnerEmail(
-          `Pendência de acessório — Contrato #${input.id}`,
+          `Pendência de acessório no Contrato #${input.id}`,
           `<p>Acessórios com problema ao encerrar o contrato #${input.id}:</p><p>${escapeHtml(pendentes).replace(/\n/g, "<br>")}</p>`,
         );
       }
@@ -3678,7 +3692,7 @@ const contractsRouter = router({
           const today = new Date().toISOString().split("T")[0];
           await createRevenue({
             categoryId: 1,
-            description: `Ajuste — Contrato #${input.id} (edição)`,
+            description: `Ajuste do Contrato #${input.id} (edição)`,
             amount: delta.toFixed(2),
             date: today,
           } as any);
@@ -3843,7 +3857,7 @@ const contractsRouter = router({
         if (revenueTotal > 0) {
           await createRevenue({
             categoryId: 1,
-            description: `Pagamento presencial — Contrato #${input.contractId}`,
+            description: `Pagamento presencial · Contrato #${input.contractId}`,
             amount: revenueTotal.toFixed(2),
             date: today,
             meta: linhasValidas.length

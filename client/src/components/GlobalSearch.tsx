@@ -137,7 +137,7 @@ export function GlobalSearch() {
               {data!.contracts.map((c) => (
                 <CommandItem key={`ct-${c.id}`} value={`contrato-${c.id}`} onSelect={() => go("/contratos")}>
                   <FileText />
-                  <span className="truncate">Contrato #{c.id} — {c.clientName}</span>
+                  <span className="truncate">Contrato #{c.id} · {c.clientName}</span>
                   <span className="ml-auto text-xs text-muted-foreground shrink-0">
                     {CONTRACT_STATUS[c.status] ?? c.status}
                   </span>

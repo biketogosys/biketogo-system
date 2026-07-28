@@ -148,7 +148,7 @@ export default function Agenda() {
   const totalWeek =
     (data?.deliveries?.length ?? 0) + (data?.returns?.length ?? 0) + overdue.length;
 
-  const rangeLabel = `${dayLabel(from)} — ${dayLabel(to)}`;
+  const rangeLabel = `${dayLabel(from)} a ${dayLabel(to)}`;
 
   // ─── Linha de item (entrega ou devolução) ─────────────────────────────────
   const ItemRow = ({ item, kind }: { item: Item; kind: "delivery" | "return" }) => {

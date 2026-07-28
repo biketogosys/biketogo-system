@@ -283,7 +283,7 @@ async function seed(db: DevDb) {
   ]);
   await db.insert(schema.revenues).values([
     { categoryId: 2, description: "Venda de capacete usado", amount: "60.00", date: isoDay(-4) },
-    { categoryId: 3, description: "Taxa de entrega — Campeche", amount: "25.00", date: isoDay(-6) },
+    { categoryId: 3, description: "Taxa de entrega, Campeche", amount: "25.00", date: isoDay(-6) },
     { categoryId: 2, description: "Venda de cadeado", amount: "35.00", date: isoDay(-38) },
   ]);
 }

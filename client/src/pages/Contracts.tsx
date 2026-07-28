@@ -601,7 +601,7 @@ function ContractDetail({
               {data.clientStatus && data.clientStatus !== "verified" && (
                 <div className="flex items-center gap-1.5 text-xs text-amber-600 bg-amber-50 dark:bg-amber-950/30 dark:text-amber-400 border border-amber-200 dark:border-amber-800 rounded-md px-2.5 py-1.5">
                   <AlertTriangle className="h-3.5 w-3.5 flex-shrink-0" />
-                  <span>Cliente não verificado — verifique antes de confirmar</span>
+                  <span>Cliente não verificado, verifique antes de confirmar</span>
                 </div>
               )}
               <Button
@@ -671,7 +671,7 @@ function ContractDetail({
           <div className="flex items-center gap-2 p-3 rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30">
             <CreditCard className="h-4 w-4 text-amber-600 dark:text-amber-400 flex-shrink-0" />
             <span className="text-sm text-amber-700 dark:text-amber-300 flex-1">
-              A receber — confirme o pagamento ao recolher a bike.
+              A receber: confirme o pagamento ao recolher a bike.
             </span>
             <Button
               size="sm"
@@ -1058,7 +1058,7 @@ function ContractDetail({
       <Dialog open={returnDialogOpen} onOpenChange={(v) => { if (!v) setReturnDialogOpen(false); }}>
         <DialogContent className="dialog-mobile sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Devolver bike — {returnBikeLabel}</DialogTitle>
+            <DialogTitle>Devolver bike: {returnBikeLabel}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-2">
             <div className="space-y-2">
@@ -1073,7 +1073,7 @@ function ContractDetail({
                     onChange={() => setReturnCondition("ok")}
                     className="accent-primary"
                   />
-                  <span className="text-sm">OK — devolver disponível</span>
+                  <span className="text-sm">OK, devolver disponível</span>
                 </label>
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input
@@ -1466,7 +1466,7 @@ export default function Contracts() {
               title="Nenhum contrato ainda"
               /* A copy antiga falava em "vincular múltiplos aluguéis" — herança
                  da /alugueis, aposentada. Hoje o contrato é criado direto. */
-              description="O contrato reúne cliente, bikes, acessórios e período — e gera o PDF para assinatura."
+              description="O contrato reúne cliente, bikes, acessórios e período, e gera o PDF para assinatura."
               actionLabel="Criar primeiro contrato"
               actionIcon={Plus}
               onAction={() => setNewContractOpen(true)}
