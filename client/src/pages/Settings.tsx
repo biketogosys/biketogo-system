@@ -94,6 +94,7 @@ function FieldTextarea({
 }
 
 export default function Settings() {
+  const utils = trpc.useUtils();
   const { data: settings, isLoading } = trpc.settings.getAll.useQuery(undefined, {
     refetchOnWindowFocus: false,
   });
@@ -104,7 +105,11 @@ export default function Settings() {
     refetchOnWindowFocus: false,
   });
   const setManyMutation = trpc.settings.setMany.useMutation({
-    onSuccess: () => toast.success("Configurações salvas"),
+    // Invalidar é obrigatório: sem isso o cache da query fica com os valores
+    // ANTIGOS e, ao voltar na tela, o effect abaixo re-hidrata o formulário com
+    // eles — desfazendo o que acabou de ser salvo (ver o bug da logo em
+    // uploadLogo).
+    onSuccess: () => { toast.success("Configurações salvas"); utils.settings.getAll.invalidate(); },
     onError: (e) => toast.error(friendlyError(e)),
   });
 
@@ -113,7 +118,16 @@ export default function Settings() {
   const [companyLogoUrl, setCompanyLogoUrl] = useState("");
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const uploadLogoMutation = trpc.settings.uploadLogo.useMutation({
-    onSuccess: (data) => { setCompanyLogoUrl(data.url); toast.success("Logo salva com sucesso"); },
+    // ⚠️ O invalidate NÃO é opcional (bug 2026-07-27 "a logo some"): o endpoint
+    // já gravou `company_logo_url` no banco, mas o cache da query continuava sem
+    // ela. Ao voltar na tela, o effect re-hidratava `companyLogoUrl` com o cache
+    // velho (= vazio) — a logo sumia do preview E, se a seção Empresa fosse
+    // salva nesse estado, o valor vazio ia junto e APAGAVA a logo no servidor.
+    onSuccess: (data) => {
+      setCompanyLogoUrl(data.url);
+      toast.success("Logo salva com sucesso");
+      utils.settings.getAll.invalidate();
+    },
     onError: (e) => toast.error(friendlyError(e)),
   });
   const [companyCnpj, setCompanyCnpj] = useState("");
