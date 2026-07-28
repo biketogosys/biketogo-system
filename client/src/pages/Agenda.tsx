@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import { useConfirm } from "@/components/ConfirmDialog";
 import { useMarkReturned } from "@/hooks/useMarkReturned";
 import { ExtendRentalDialog, type ExtendableRental } from "@/components/ExtendRentalDialog";
+import { EarlyReturnDialog, type EarlyReturnTarget } from "@/components/EarlyReturnDialog";
 import { AgendaMiniMonth, type DayDensity } from "@/components/AgendaMiniMonth";
 import { NewContractModal } from "@/components/NewContractModal";
 import { buildWhatsappUrl } from "@/lib/whatsapp";
@@ -78,6 +79,7 @@ export default function Agenda() {
   const confirmDialog = useConfirm();
   const markReturned = useMarkReturned(); // optimistic (M1)
   const [extending, setExtending] = useState<ExtendableRental | null>(null); // F8
+  const [earlyReturn, setEarlyReturn] = useState<EarlyReturnTarget | null>(null); // F10
 
   // ─── F1.1: mini-mês (navegador) + criar contrato num dia ─────────────────
   const [monthOpen, setMonthOpen] = useState(false);
@@ -113,6 +115,13 @@ export default function Agenda() {
   }, [monthData]);
 
   async function handleReturn(item: Item) {
+    // F10 — devolvendo ANTES do combinado (`day` numa devolução É o endDate):
+    // pergunta o recálculo agora, com os números do servidor. Devolução no dia
+    // certo (ou atrasada) segue no confirm simples de sempre.
+    if (item.day > today) {
+      setEarlyReturn({ id: item.id, clientName: item.clientName, bikeModel: item.bikeModel });
+      return;
+    }
     const ok = await confirmDialog({
       title: "Confirmar devolução?",
       description: `Marcar a ${item.bikeModel} de ${item.clientName} como devolvida (em bom estado). Para registrar dano, use a tela do contrato.`,
@@ -345,6 +354,17 @@ export default function Agenda() {
 
       {/* F8 — renovação */}
       <ExtendRentalDialog rental={extending} onOpenChange={(o) => !o && setExtending(null)} />
+
+      {/* F10 — devolvendo antes do combinado: recalcular pelos dias usados */}
+      <EarlyReturnDialog
+        target={earlyReturn}
+        pending={markReturned.isPending}
+        onOpenChange={(o) => !o && setEarlyReturn(null)}
+        onConfirm={({ rentalId, recalculate }) => {
+          markReturned.mutate({ rentalId, recalculate });
+          setEarlyReturn(null);
+        }}
+      />
 
       {/* F1.1 — novo contrato a partir de um dia da agenda. Montado
           condicionalmente pra o prefill da data valer no mount. */}

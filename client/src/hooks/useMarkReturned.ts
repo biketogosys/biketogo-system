@@ -49,11 +49,26 @@ export function useMarkReturned() {
       for (const [key, data] of ctx?.prev ?? []) queryClient.setQueryData(key, data);
       toast.error(e.message || "Não foi possível registrar a devolução.");
     },
-    onSuccess: () => toast.success("Devolução registrada."),
+    onSuccess: (res) => {
+      // F10: quando o recálculo entrou, o número é a informação — não "ok".
+      const pv = (res as { recalculated?: { creditAmount: string; newTotal: string } | null })?.recalculated;
+      const credito = pv ? parseFloat(pv.creditAmount) : 0;
+      if (pv && credito > 0) {
+        const brl = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+        toast.success(
+          `Devolução registrada. Valor recalculado para ${brl(parseFloat(pv.newTotal))} (−${brl(credito)}).`,
+        );
+        return;
+      }
+      toast.success("Devolução registrada.");
+    },
     onSettled: () => {
       utils.dashboard.returns.invalidate();
       utils.dashboard.agenda.invalidate();
       utils.dashboard.summary.invalidate();
+      // O recálculo mexe em contrato e (se já pago) no Financeiro.
+      utils.contracts.invalidate();
+      utils.financial.invalidate();
     },
   });
 }

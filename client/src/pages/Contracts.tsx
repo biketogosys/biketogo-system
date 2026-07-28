@@ -56,6 +56,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { EmptyState } from "@/components/EmptyState";
+import { EarlyReturnNotice } from "@/components/EarlyReturnNotice";
 import { useConfirm } from "@/components/ConfirmDialog";
 import { friendlyError } from "@/lib/utils";
 import {
@@ -64,6 +65,12 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+
+const fmtBRL = (v: string | number) =>
+  (typeof v === "string" ? parseFloat(v) : v).toLocaleString("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+  });
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type ContractStatus = "pendente" | "ativo" | "parcialmente_devolvido" | "encerrado" | "cancelado";
@@ -164,11 +171,24 @@ function CloseContractDialog({
     }
   }
 
+  // F10 — encerrando antes do combinado: prévia do recálculo de TODOS os
+  // aluguéis ainda abertos do contrato (o encerramento devolve todos de uma vez).
+  const [recalcEarly, setRecalcEarly] = useState(true);
+  const { data: earlyPreview, isLoading: earlyLoading } =
+    trpc.rentals.earlyReturnPreview.useQuery({ contractId }, { enabled: open });
+
   const closeMutation = trpc.contracts.close.useMutation({
-    onSuccess: () => {
-      toast.success("Contrato encerrado");
+    onSuccess: (res) => {
+      const credito = parseFloat(res?.creditAmount ?? "0");
+      toast.success(
+        credito > 0
+          ? `Contrato encerrado. Valor recalculado pelos dias usados (−${fmtBRL(credito)}).`
+          : "Contrato encerrado",
+      );
       utils.contracts.list.invalidate();
       utils.contracts.getById.invalidate({ id: contractId });
+      utils.rentals.earlyReturnPreview.invalidate();
+      if (credito > 0) utils.financial.invalidate();
       onClose();
     },
     onError: (e) => toast.error(friendlyError(e, "Erro ao encerrar contrato.")),
@@ -181,7 +201,7 @@ function CloseContractDialog({
       observacao: accChecklist[acc.id]?.observacao ?? "",
       fotoUrl: accChecklist[acc.id]?.fotoUrl,
     }));
-    closeMutation.mutate({ id: contractId, accessories });
+    closeMutation.mutate({ id: contractId, accessories, recalculate: recalcEarly });
   };
 
   return (
@@ -232,6 +252,15 @@ function CloseContractDialog({
                 {(!detail?.rentals || detail.rentals.length === 0) && (
                   <p className="text-sm text-muted-foreground px-4 py-3">Nenhuma bike vinculada.</p>
                 )}
+              </div>
+              {/* F10 — encerrando antes do combinado: recalcular pelos dias usados */}
+              <div className="mt-3">
+                <EarlyReturnNotice
+                  data={earlyPreview}
+                  loading={earlyLoading}
+                  recalculate={recalcEarly}
+                  onRecalculateChange={setRecalcEarly}
+                />
               </div>
             </div>
 
@@ -397,6 +426,13 @@ function ContractDetail({
   const [returnBikeLabel, setReturnBikeLabel] = useState("");
   const [returnCondition, setReturnCondition] = useState<"ok" | "damaged">("ok");
   const [returnNotes, setReturnNotes] = useState("");
+  // F10 — devolução antecipada: prévia do recálculo (servidor é a autoridade)
+  const [returnRecalc, setReturnRecalc] = useState(true);
+  const { data: returnPreview, isLoading: returnPreviewLoading } =
+    trpc.rentals.earlyReturnPreview.useQuery(
+      { rentalId: returnRentalId ?? 0 },
+      { enabled: returnDialogOpen && returnRentalId != null },
+    );
 
   const recalcMutation = trpc.contracts.updateStatus.useMutation({
     onSuccess: () => {
@@ -425,10 +461,18 @@ function ContractDetail({
   });
 
   const returnRentalMutation = trpc.rentals.returnRental.useMutation({
-    onSuccess: () => {
-      toast.success("Devolução registrada");
+    onSuccess: (res) => {
+      const pv = res?.recalculated;
+      const credito = pv ? parseFloat(pv.creditAmount) : 0;
+      toast.success(
+        pv && credito > 0
+          ? `Devolução registrada. Valor recalculado para ${fmtBRL(pv.newTotal)} (−${fmtBRL(pv.creditAmount)}).`
+          : "Devolução registrada",
+      );
       utils.contracts.getById.invalidate({ id: contractId });
       utils.contracts.list.invalidate();
+      utils.rentals.earlyReturnPreview.invalidate();
+      if (pv) utils.financial.invalidate();
     },
     onError: (e) => toast.error(friendlyError(e, "Erro ao devolver.")),
   });
@@ -586,11 +630,15 @@ function ContractDetail({
           <Button
             variant="outline"
             size="sm"
+            // O nome "Recalcular" fazia a Cassiana esperar recálculo de VALOR
+            // (2026-07-28). Ele só reavalia ativo/parcial/encerrado — valor se
+            // recalcula na devolução (F10).
+            title="Reavalia se o contrato está ativo, parcialmente devolvido ou encerrado. Não altera valores."
             onClick={() => recalcMutation.mutate({ id: contractId })}
             disabled={recalcMutation.isPending}
           >
             <RefreshCw className={`h-4 w-4 mr-1 ${recalcMutation.isPending ? "animate-spin" : ""}`} />
-            Recalcular
+            Recalcular status
           </Button>
           {data.status !== "encerrado" && data.status !== "cancelado" && data.status !== "pendente" && (
             <Button
@@ -875,6 +923,7 @@ function ContractDetail({
                           setReturnBikeLabel(`${r.bikeBrand ?? ""} ${r.bikeModel ?? ""}`.trim() || "bike");
                           setReturnCondition("ok");
                           setReturnNotes("");
+                          setReturnRecalc(true);
                           setReturnDialogOpen(true);
                         }}
                       >
@@ -1051,6 +1100,13 @@ function ContractDetail({
                 />
               </div>
             )}
+            {/* F10 — devolveu antes do combinado: recalcula pelos dias usados */}
+            <EarlyReturnNotice
+              data={returnPreview}
+              loading={returnPreviewLoading}
+              recalculate={returnRecalc}
+              onRecalculateChange={setReturnRecalc}
+            />
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setReturnDialogOpen(false)}>Cancelar</Button>
@@ -1060,7 +1116,12 @@ function ContractDetail({
               onClick={() => {
                 if (!returnRentalId) return;
                 returnRentalMutation.mutate(
-                  { id: returnRentalId, bikeCondition: returnCondition, returnNotes: returnNotes || undefined },
+                  {
+                    id: returnRentalId,
+                    bikeCondition: returnCondition,
+                    returnNotes: returnNotes || undefined,
+                    recalculate: returnRecalc,
+                  },
                   { onSuccess: () => setReturnDialogOpen(false) }
                 );
               }}

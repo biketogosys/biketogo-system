@@ -4,10 +4,16 @@ import { z } from "zod";
 import { sanitize, sanitizeDate, sanitizeDateString, sanitizeNumeric, sanitizePhone } from "./_core/utils";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
-import { getReturnsDue } from "./overdue";
+import { getReturnsDue, todaySaoPaulo } from "./overdue";
 import { getAgenda } from "./agenda";
 import { globalSearch } from "./search";
-import { extendRental } from "./renewal";
+import {
+  extendRental,
+  applyEarlyReturn,
+  previewEarlyReturn,
+  contractOpenRentalIds,
+  type EarlyReturnPreview,
+} from "./rental-period";
 import {
   // Admin Users
   getAdminUserByEmail,
@@ -974,10 +980,24 @@ const rentalsRouter = router({
       id: z.number(),
       bikeCondition: z.enum(["ok", "damaged"]),
       returnNotes: z.string().optional(),
+      // F10 — devolveu antes do combinado: recalcula o valor pelos dias usados.
+      recalculate: z.boolean().optional(),
+      returnDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ ctx, input }) => {
       const rental = await getRentalById(input.id);
       if (!rental) throw new TRPCError({ code: "NOT_FOUND" });
+
+      let recalc: EarlyReturnPreview | null = null;
+      if (input.recalculate) {
+        const dbR = await getDb();
+        if (dbR) {
+          recalc = await recalcEarlyReturn(
+            dbR, input.id, input.returnDate ?? todaySaoPaulo(),
+            (ctx as any).adminUser?.id ?? null,
+          );
+        }
+      }
 
       await updateRental(input.id, {
         status: "returned",
@@ -1002,12 +1022,51 @@ const rentalsRouter = router({
           }
         }
       }
+      // Valor mudou ⇒ o PDF guardado está desatualizado. Regera com o valor novo.
+      if (recalc?.contractId) {
+        const dbPdf = await getDb();
+        if (dbPdf) await regenerateContractPdf(dbPdf, recalc.contractId, "returnRental");
+      }
       // ok: nao mexe em status (unidade fica livre porque rental vira 'returned' e sai do overlap)
-      return { success: true };
+      return { success: true, recalculated: recalc };
+    }),
+
+  /**
+   * F10 — prévia do recálculo por devolução antecipada. Aceita 1 aluguel
+   * (`rentalId`) ou o contrato inteiro (`contractId`, usado no "Encerrar
+   * contrato"). Lista vazia = nada a recalcular (devolução na data combinada
+   * ou depois). O servidor é a autoridade do número — a tela só exibe.
+   */
+  earlyReturnPreview: adminAuthProcedure
+    .input(z.object({
+      rentalId: z.number().optional(),
+      contractId: z.number().optional(),
+      returnDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+    }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+      const when = input.returnDate ?? todaySaoPaulo();
+      const ids = input.rentalId
+        ? [input.rentalId]
+        : input.contractId
+        ? await contractOpenRentalIds(db, input.contractId)
+        : [];
+      const items: EarlyReturnPreview[] = [];
+      for (const id of ids) {
+        const pv = await previewEarlyReturn(db, id, when);
+        if (pv) items.push(pv);
+      }
+      return {
+        items,
+        totalCredit: items.reduce((s, i) => s + parseFloat(i.creditAmount), 0).toFixed(2),
+        alreadyPaid: items.some((i) => i.alreadyPaid),
+        returnDate: when,
+      };
     }),
 
   // F8 — renovação: estende a devolução mantendo a mesma unidade física.
-  // Lógica em server/renewal.ts (testável isolada).
+  // Lógica em server/rental-period.ts (testável isolada).
   extend: adminAuthProcedure
     .input(z.object({
       rentalId: z.number(),
@@ -2239,12 +2298,28 @@ const dashboardRouter = router({
   // fluxo detalhado de encerramento do contrato. Espelha o contract-close:
   // returned + libera unidade + recalcula o status do contrato pai.
   markReturned: adminAuthProcedure
-    .input(z.object({ rentalId: z.number() }))
+    .input(z.object({
+      rentalId: z.number(),
+      // F10 — devolveu antes do combinado: recalcula o valor pelos dias usados.
+      recalculate: z.boolean().optional(),
+      returnDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+    }))
     .mutation(async ({ ctx, input }) => {
       const rental = await getRentalById(input.rentalId);
       if (!rental) throw new TRPCError({ code: "NOT_FOUND", message: "Aluguel não encontrado." });
       if ((rental as any).returnedAt || (rental as any).status === "returned") {
         throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Este aluguel já foi devolvido." });
+      }
+      // Recalcular ANTES de marcar devolvido (o preview ignora devolvidos).
+      let recalc: EarlyReturnPreview | null = null;
+      if (input.recalculate) {
+        const dbR = await getDb();
+        if (dbR) {
+          recalc = await recalcEarlyReturn(
+            dbR, input.rentalId, input.returnDate ?? todaySaoPaulo(),
+            (ctx as any).adminUser?.id ?? null,
+          );
+        }
       }
       await updateRental(input.rentalId, {
         status: "returned",
@@ -2254,13 +2329,17 @@ const dashboardRouter = router({
       const db = await getDb();
       if (db) await releaseBikeUnits(db, input.rentalId);
       if ((rental as any).contractId) await recalcContractStatus((rental as any).contractId);
+      // Valor mudou ⇒ o PDF guardado está desatualizado. Regera com o valor novo.
+      if (db && recalc?.contractId) {
+        await regenerateContractPdf(db, recalc.contractId, "markReturned");
+      }
       await createAuditLog({
         adminId: (ctx as any).adminUser?.id ?? null,
         acao: "devolucao_rapida",
         tabela: "rentals",
         registroId: input.rentalId,
       });
-      return { success: true };
+      return { success: true, recalculated: recalc };
     }),
 });
 
@@ -2509,6 +2588,55 @@ export async function assignBikeUnits(
   return linked;
 }
 
+/**
+ * F10 — recálculo da devolução ANTECIPADA, ponto único usado pelos 3 fluxos de
+ * devolução (ação rápida da Agenda, "Devolver" do contrato e "Encerrar
+ * contrato"). Encurta o período, abate o contrato e SÓ lança no Financeiro se o
+ * contrato já tinha sido pago — no fluxo normal da Cassiana o pagamento é na
+ * devolução, então o valor é corrigido ANTES de ela receber (sem estorno).
+ * Chamar SEMPRE antes de marcar o aluguel como devolvido (o preview ignora
+ * aluguel já devolvido, de propósito: evita recálculo em dobro).
+ */
+async function recalcEarlyReturn(
+  db: any,
+  rentalId: number,
+  returnDate: string,
+  adminId: number | null,
+): Promise<EarlyReturnPreview | null> {
+  const pv = await applyEarlyReturn(db, rentalId, returnDate);
+  if (!pv) return null;
+  const credito = parseFloat(pv.creditAmount);
+  if (pv.alreadyPaid && credito > 0) {
+    try {
+      await createRevenue({
+        categoryId: 1,
+        description: `Estorno — devolução antecipada, Contrato #${pv.contractId ?? "—"} (${pv.removedDays} dia(s) não usados)`,
+        amount: (-credito).toFixed(2),
+        date: todaySaoPaulo(),
+      } as any);
+    } catch (err) { console.warn("[recalcEarlyReturn] Revenue error:", err); }
+  }
+  await createAuditLog({
+    adminId,
+    acao: "devolucao_antecipada_recalculada",
+    tabela: "rentals",
+    registroId: rentalId,
+    dadosDepois: {
+      devolucaoCombinada: pv.oldEndDate,
+      devolucaoReal: pv.newEndDate,
+      diasNaoUsados: pv.removedDays,
+      valorAnterior: pv.oldTotal,
+      novoValor: pv.newTotal,
+      credito: pv.creditAmount,
+      descontoAnterior: pv.oldDiscountPercent,
+      novoDesconto: pv.newDiscountPercent,
+      travadoNoValorOriginal: pv.capped,
+      estornoLancado: pv.alreadyPaid && credito > 0,
+    },
+  });
+  return pv;
+}
+
 // Remove TODAS as ligações de um rental da tabela rental_bike_units.
 export async function releaseBikeUnits(db: any, rentalId: number): Promise<void> {
   const { rentalBikeUnits } = await import("../drizzle/schema");
@@ -2601,6 +2729,22 @@ async function buildContractPdfData(db: Awaited<ReturnType<typeof getDb>>, contr
     rentals: rentalsWithBike,
     accessories: accWithSerial,
   };
+}
+
+/**
+ * Regera o PDF do contrato a partir do estado ATUAL e atualiza `pdfUrl`.
+ * Nunca derruba a operação que chamou: o PDF é subproduto, o dado é o banco.
+ */
+async function regenerateContractPdf(db: any, contractId: number, contexto: string): Promise<void> {
+  try {
+    const { generateContractPdf } = await import("./pdf");
+    const { storagePut } = await import("./storage");
+    const data = await buildContractPdfData(db, contractId);
+    const pdfBuffer = await generateContractPdf(data, "pt");
+    const suffix = Date.now().toString(36);
+    const { url } = await storagePut(`contracts/contrato-${contractId}-${suffix}.pdf`, pdfBuffer, "application/pdf");
+    await db.update(contracts).set({ pdfUrl: url }).where(eq(contracts.id, contractId));
+  } catch (err) { console.warn(`[${contexto}] PDF regeneration error:`, err); }
 }
 
 /** Recalcula e persiste o status do contrato com base nos rentals vinculados */
@@ -2854,6 +2998,9 @@ const contractsRouter = router({
         observacao: z.string().optional(),
         fotoUrl: z.string().optional(),
       })).optional(),
+      // F10 — encerrar antes do combinado: recalcula cada aluguel pelos dias usados.
+      recalculate: z.boolean().optional(),
+      returnDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
@@ -2939,6 +3086,7 @@ const contractsRouter = router({
         );
       }
       // Mark all active/overdue bike rentals as returned (releases stock)
+      const recalculados: EarlyReturnPreview[] = [];
       {
         const activeRentals = await db
           .select({ id: rentalsTable.id })
@@ -2951,14 +3099,27 @@ const contractsRouter = router({
               drizzleSql`${rentalsTable.status} IN ('active','overdue')`,
             )
           );
+        const quando = input.returnDate ?? todaySaoPaulo();
         for (const r of activeRentals) {
+          // F10: recalcular ANTES de marcar devolvido (o preview ignora devolvidos)
+          if (input.recalculate) {
+            const pv = await recalcEarlyReturn(db, r.id, quando, (ctx as any).adminUser?.id ?? null);
+            if (pv) recalculados.push(pv);
+          }
           await updateRental(r.id, { status: "returned", returnedAt: new Date() } as any);
         }
       }
       // Recalc status (may set to encerrado if all rentals returned)
       await recalcContractStatus(input.id);
+      // Valor mudou ⇒ regera o PDF UMA vez (o loop acima pode ter recalculado N).
+      if (recalculados.length > 0) await regenerateContractPdf(db, input.id, "contracts.close");
       await createAuditLog({ adminId: (ctx as any).adminUser?.id ?? null, acao: "encerrou_contrato", tabela: "contracts", registroId: input.id });
-      return { success: true, hasPendencia };
+      return {
+        success: true,
+        hasPendencia,
+        recalculated: recalculados,
+        creditAmount: recalculados.reduce((s, p) => s + parseFloat(p.creditAmount), 0).toFixed(2),
+      };
     }),
   // Soft delete do contrato (com cascata nos rentals e release de unidades)
   delete: adminAuthProcedure
@@ -3534,21 +3695,7 @@ const contractsRouter = router({
       }
 
       // Regenerate PDF (non-blocking)
-      try {
-        const { generateContractPdf } = await import("./pdf");
-        const { storagePut } = await import("./storage");
-        const { contracts: cTable2, clients: clTable2, accessories: accTable2, contractAccessories: caTable3, accessoryUnits: auTable3 } = await import("../drizzle/schema");
-        const { eq: eqPdf, and: andPdf, isNull: isNullPdf } = await import("drizzle-orm");
-        const [contractRow] = await db.select().from(cTable2).where(eqPdf(cTable2.id, input.id));
-        const [clientRow] = contractRow?.clientId
-          ? await db.select().from(clTable2).where(eqPdf(clTable2.id, contractRow.clientId))
-          : [null];
-        const data = await buildContractPdfData(db, input.id);
-        const pdfBuffer = await generateContractPdf(data, "pt");
-        const suffix = Date.now().toString(36);
-        const { url } = await storagePut(`contracts/contrato-${input.id}-${suffix}.pdf`, pdfBuffer, "application/pdf");
-        await db.update(cTable2).set({ pdfUrl: url }).where(eqPdf(cTable2.id, input.id));
-      } catch (err) { console.warn("[contracts.update] PDF regeneration error:", err); }
+      await regenerateContractPdf(db, input.id, "contracts.update");
 
       await createAuditLog({
         adminId: (ctx as any).adminUser?.id ?? null,
