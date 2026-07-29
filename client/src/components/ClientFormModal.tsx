@@ -30,24 +30,7 @@ import {
   dateDisplayToISO, dateISOToDisplay,
 } from "@/hooks/useMask";
 import { friendlyError } from "@/lib/utils";
-
-const DDI_LIST = [
-  { code: "+55", label: "🇧🇷 +55 Brasil" },
-  { code: "+1",  label: "🇺🇸 +1 EUA/Canadá" },
-  { code: "+54", label: "🇦🇷 +54 Argentina" },
-  { code: "+56", label: "🇨🇱 +56 Chile" },
-  { code: "+598", label: "🇺🇾 +598 Uruguai" },
-  { code: "+595", label: "🇵🇾 +595 Paraguai" },
-  { code: "+34", label: "🇪🇸 +34 Espanha" },
-  { code: "+351", label: "🇵🇹 +351 Portugal" },
-  { code: "+44", label: "🇬🇧 +44 Reino Unido" },
-  { code: "+49", label: "🇩🇪 +49 Alemanha" },
-  { code: "+33", label: "🇫🇷 +33 França" },
-  { code: "+39", label: "🇮🇹 +39 Itália" },
-  { code: "+81", label: "🇯🇵 +81 Japão" },
-  { code: "+86", label: "🇨🇳 +86 China" },
-  { code: "+91", label: "🇮🇳 +91 Índia" },
-];
+import { DdiPicker } from "@/components/DdiPicker";
 
 // Extrai o DDI de um telefone salvo como "+XX numero"
 function parseDDI(phone: string | null | undefined): { ddi: string; number: string } {
@@ -424,16 +407,11 @@ export function ClientFormModal({ open, onClose, onSuccess, client }: ClientForm
                   <div>
                     <Label className={labelCls}>Telefone/WhatsApp {!isEdit && "*"}</Label>
                     <div className="flex gap-2">
-                      <Select value={form.ddi} onValueChange={(v) => set("ddi", v)}>
-                        <SelectTrigger className={`${inputCls} w-44 flex-shrink-0`}>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {DDI_LIST.map((d) => (
-                            <SelectItem key={d.code} value={d.code}>{d.label}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      <DdiPicker
+                        value={form.ddi}
+                        onChange={(v) => set("ddi", v)}
+                        className={`${inputCls} w-32 flex-shrink-0`}
+                      />
                       <Input
                         value={form.phone}
                         onChange={(e) => set("phone", form.ddi === "+55" ? maskPhone(e.target.value) : e.target.value)}

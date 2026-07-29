@@ -14,7 +14,7 @@ import {
 } from "lucide-react";
 import { translations, languages, type Language } from "@/lib/i18n";
 import { maskCPF, maskRG, maskCEP, maskPhone, maskDate, isValidCPF } from "@/hooks/useMask";
-import { COUNTRIES, countryOptionValue } from "@/lib/countries";
+import { COUNTRIES, countryOptionValue, DDI_OPTIONS } from "@/lib/countries";
 
 // ─── Logo URL via env ─────────────────────────────────────────────────────────
 const LOGO_URL = (import.meta as any).env?.VITE_LOGO_URL as string | undefined;
@@ -169,7 +169,12 @@ export default function PublicReservation() {
   const [origin, setOrigin] = useState("");
 
   // Step 1 — Contato
+  // DDI separado do número (turista estrangeiro): o telefone é salvo como
+  // "+DDI número", o mesmo formato do cadastro do admin. Só o +55 recebe
+  // máscara brasileira; o resto o próprio turista digita como usa.
+  const [phoneDdi, setPhoneDdi] = useState("+55");
   const [phone, setPhone] = useState("");
+  const isBrPhone = phoneDdi === "+55";
   const [email, setEmail] = useState("");
   const [instagram, setInstagram] = useState("");
   const [accommodation, setAccommodation] = useState("");
@@ -288,7 +293,12 @@ export default function PublicReservation() {
       case "birthDate": return (!birthDate || birthDate.length < 10) ? t.invalidDate : undefined;
       case "height": return (!height || !height.trim()) ? (lang === "pt" ? "Altura obrigatória" : lang === "en" ? "Height required" : "Altura obligatoria") : undefined;
       case "weight": return (!weight || !weight.trim()) ? (lang === "pt" ? "Peso obrigatório" : lang === "en" ? "Weight required" : "Peso obligatorio") : undefined;
-      case "phone": return (!phone || phone.replace(/\D/g, "").length < 10) ? t.invalidPhone : undefined;
+      // Número BR tem DDD + 8/9 dígitos; fora do Brasil o tamanho varia demais
+      // (Portugal 9, França 9, EUA 10), então exige só um mínimo plausível.
+      case "phone": {
+        const digitos = phone.replace(/\D/g, "").length;
+        return digitos < (isBrPhone ? 10 : 6) ? t.invalidPhone : undefined;
+      }
       case "email":
         if (!email || !email.trim()) return lang === "pt" ? "E-mail obrigatório" : lang === "en" ? "Email required" : "Correo obligatorio";
         if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return t.invalidEmail;
@@ -372,7 +382,9 @@ export default function PublicReservation() {
         weight: weight ? String(parseFloat(weight) || 0) : "0",
         pedalFreq,
         howFound: origin,
-        phone,
+        // Mesmo formato do cadastro do admin ("+DDI número"), pra o telefone do
+        // lead virar link de WhatsApp sem adivinhação de país.
+        phone: `${phoneDdi} ${phone}`.trim(),
         email,
         instagram,
         accommodation,
@@ -739,8 +751,32 @@ export default function PublicReservation() {
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <Field label={t.whatsapp} required {...fieldProps("phone")}>
-                <input className={errors.phone ? inputError : inputNormal} placeholder={t.whatsappPlaceholder}
-                  value={phone} onChange={e => setPhone(maskPhone(e.target.value))} />
+                {/* Larguras nos WRAPPERS: o `inputBase` já traz `w-full`, que
+                    vence um `w-28` solto no próprio campo (mesma classe, ordem
+                    do CSS decide) e espremia o número a 34px no celular. */}
+                <div className="flex gap-2">
+                  <div className="w-28 shrink-0">
+                    <select
+                      className={selectBase}
+                      value={phoneDdi}
+                      onChange={e => setPhoneDdi(e.target.value)}
+                      aria-label="DDI"
+                    >
+                      {DDI_OPTIONS.map(o => (
+                        <option key={`${o.name}-${o.code}`} value={o.code}>
+                          {o.flag} {o.code} {o.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <input className={errors.phone ? inputError : inputNormal}
+                      placeholder={isBrPhone ? t.whatsappPlaceholder : "912 345 678"}
+                      inputMode="tel"
+                      value={phone}
+                      onChange={e => setPhone(isBrPhone ? maskPhone(e.target.value) : e.target.value)} />
+                  </div>
+                </div>
               </Field>
               <Field label={t.email} required {...fieldProps("email")}>
                 <input className={errors.email ? inputError : inputNormal} placeholder={t.emailPlaceholder}

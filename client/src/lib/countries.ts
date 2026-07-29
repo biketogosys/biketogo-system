@@ -218,9 +218,29 @@ const REST: Country[] = [
 ].sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
 
 export const COUNTRIES: Country[] = [
-  { name: "Brasil", ddi: "55", flag: "🇧🇷" }, // default — não mover (isBrazilian)
+  { name: "Brasil", ddi: "55", flag: "🇧🇷" }, // default, não mover (isBrazilian)
   ...REST,
 ];
 
 /** Valor da opção usado pelo <select> (e persistido em docOrigin). */
 export const countryOptionValue = (c: Country) => `${c.name} (+${c.ddi})`;
+
+/**
+ * Opções de DDI do telefone (mesma fonte da lista de países, mundo inteiro).
+ * O valor guardado é só o código (`+351`), então países que dividem o mesmo
+ * código (EUA/Canadá, Reino Unido/Escócia, Rússia/Cazaquistão) aparecem
+ * separados na busca mas salvam a mesma coisa. Brasil primeiro por ser o caso
+ * comum; o resto segue a ordem alfabética da lista de países.
+ */
+export type DdiOption = { code: string; name: string; flag: string };
+
+export const DDI_OPTIONS: DdiOption[] = COUNTRIES.map((c) => ({
+  code: `+${c.ddi}`,
+  name: c.name,
+  flag: c.flag,
+}));
+
+/** País mostrado para um DDI salvo (o primeiro da lista, Brasil vence o +55). */
+export function ddiLabel(code: string): DdiOption | undefined {
+  return DDI_OPTIONS.find((o) => o.code === code);
+}
