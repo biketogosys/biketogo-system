@@ -1271,18 +1271,53 @@ const accessoriesRouter = router({
       // Paginar ANTES de enriquecer: breakdown só dos itens da página, em UMA
       // query batch (antes era 1 query por acessório da tabela inteira).
       const pageItems = allItems.slice(offset, offset + limit);
+      const ids = pageItems.map((i) => i.id);
       const { getAccessoryBreakdowns } = await import("./db");
-      const bdMap = await getAccessoryBreakdowns(pageItems.map((i) => i.id));
+      const bdMap = await getAccessoryBreakdowns(ids);
+
+      // ⚠️ Bug achado pela Cassiana (2026-07-29): o estoque da lista vinha do
+      // STATUS da unidade, e `alugado` virou INERTE em 2026-07-23 (a ocupação é
+      // por DATA). Resultado: reserva de setembro deixava "0 / 2" em julho, e
+      // unidade marcada antes daquele fix ficava presa pra sempre. A lista passa
+      // a mostrar a disponibilidade de HOJE, derivada do overlap de contratos.
+      const hoje = todaySaoPaulo();
+      const dbPeriodo = await getDb();
+      const { getAccessoryAvailabilityByPeriod } = await import("./accessory-availability");
+      const porPeriodo = dbPeriodo
+        ? await getAccessoryAvailabilityByPeriod(dbPeriodo, {
+            accessoryIds: ids, startDate: hoje, endDate: hoje,
+          })
+        : [];
+      const hojeMap = new Map(porPeriodo.map((p) => [p.accessoryId, p]));
+
       const data = pageItems.map((item) => {
         const breakdown = bdMap.get(item.id)!;
+        const doDia = hojeMap.get(item.id);
+        // `breakdown` (status) segue indo pro detalhe: manutenção/perdido/roubado
+        // continuam sendo verdade absoluta e a tela mostra no tooltip.
+        const emCirculacao = doDia?.total ?? breakdown.total;
+        const livresHoje = doDia?.disponivel ?? breakdown.disponivel;
         return {
           ...item,
-          quantidadeTotal: breakdown.total > 0 ? breakdown.total : (item.quantidadeTotal ?? item.quantity ?? 0),
-          quantidadeDisponivel: breakdown.disponivel,
-          breakdown,
+          quantidadeTotal: emCirculacao > 0 ? emCirculacao : (item.quantidadeTotal ?? item.quantity ?? 0),
+          quantidadeDisponivel: livresHoje,
+          breakdown: {
+            ...breakdown,
+            // O que a tela mostra em destaque agora é a foto de HOJE.
+            disponivel: livresHoje,
+            total: emCirculacao > 0 ? emCirculacao : breakdown.total,
+            byVariante: breakdown.byVariante.map((v) => {
+              const vHoje = doDia?.byVariante.find((x) => x.variante === v.variante);
+              return vHoje
+                ? { ...v, disponivel: vHoje.disponivel, total: vHoje.total }
+                : v;
+            }),
+            // Guarda a contagem crua por status, pra quem precisar do detalhe.
+            porStatus: { disponivel: breakdown.disponivel, alugado: breakdown.alugado, manutencao: breakdown.manutencao, perdido: breakdown.perdido, roubado: breakdown.roubado },
+          },
         };
       });
-      return { data, total, totalPages, page };
+      return { data, total, totalPages, page, referencia: hoje };
     }),
   listByCategory: adminAuthProcedure
     .query(async () => {
@@ -1421,9 +1456,47 @@ const accessoriesRouter = router({
       const { eq, asc } = await import("drizzle-orm");
       const db = await (await import("./db")).getDb();
       if (!db) return [];
-      return db.select().from(accessoryUnits)
+      const units = await db.select().from(accessoryUnits)
         .where(eq(accessoryUnits.accessoryId, input.accessoryId))
         .orderBy(asc(accessoryUnits.id));
+      if (units.length === 0) return units;
+
+      // "Não consigo ver onde ele ta alugado" (Cassiana, 2026-07-29). A cadeia
+      // existe no banco mas não aparecia em tela nenhuma: unidade → contrato →
+      // aluguel → datas. Aqui ela vira `reservas` por unidade, ordenadas.
+      const ids = units.map((u) => u.id);
+      const { contractAccessories: caT, rentals: rT } = await import("../drizzle/schema");
+      const { inArray: inArr2, and: and2, isNull: isNull2, sql: sqlRaw } = await import("drizzle-orm");
+      const rows = await db
+        .select({
+          unitId: caT.unitId,
+          contractId: caT.contractId,
+          startDate: sqlRaw<string>`min(${rT.startDate})`,
+          endDate: sqlRaw<string>`max(${rT.endDate})`,
+        })
+        .from(caT)
+        .innerJoin(rT, eq(rT.contractId, caT.contractId))
+        .where(and2(
+          inArr2(caT.unitId, ids),
+          isNull2(rT.deletedAt),
+          sqlRaw`${rT.status} IN ('pending','active','overdue')`,
+        ))
+        .groupBy(caT.unitId, caT.contractId);
+
+      const porUnidade = new Map<number, Array<{ contractId: number; startDate: string; endDate: string }>>();
+      for (const r of rows) {
+        if (r.unitId == null) continue;
+        const lista = porUnidade.get(r.unitId) ?? [];
+        lista.push({ contractId: r.contractId, startDate: r.startDate, endDate: r.endDate });
+        porUnidade.set(r.unitId, lista);
+      }
+      const hoje = todaySaoPaulo();
+      return units.map((u) => {
+        const reservas = (porUnidade.get(u.id) ?? []).sort((a, b) => a.startDate.localeCompare(b.startDate));
+        const emUsoHoje = reservas.find((r) => r.startDate <= hoje && (!r.endDate || r.endDate >= hoje)) ?? null;
+        const proxima = reservas.find((r) => r.startDate > hoje) ?? null;
+        return { ...u, reservas, emUsoHoje, proxima };
+      });
     }),
 
   availability: adminAuthProcedure
@@ -2409,8 +2482,6 @@ import {
 } from "../drizzle/schema";
 import { getDb } from "./db";
 
-// Reserva UMA unidade disponível de (accessoryId, variante|null), marca "alugado".
-// Retorna o unitId reservado, ou null se não houver disponível.
 /**
  * Reserva UMA unidade de acessório livre NO PERÍODO.
  *

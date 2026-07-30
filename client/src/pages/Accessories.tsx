@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -56,6 +57,10 @@ import type { ColumnDef } from "@tanstack/react-table";
 
 type AccessoryStatus = "available" | "rented" | "maintenance" | "lost";
 type UnitStatus = BikeUnitStatus;
+
+// "2026-09-14" vira "14/09". Formata como STRING de propósito: `new Date(ymd)`
+// vira meia-noite UTC e volta um dia no fuso BR (mesma regra do PDF).
+const fmtDiaMes = (ymd?: string | null) => (ymd ? `${ymd.slice(8, 10)}/${ymd.slice(5, 7)}` : "?");
 
 const STATUS_LABELS: Record<AccessoryStatus, string> = {
   available: "Disponível",
@@ -219,10 +224,23 @@ function AccessoryUnitsPanel({ accessoryId, onClose }: { accessoryId: number; on
                 return acc;
               }, {} as Record<string, number>);
               const total = varianteUnits.length;
-              const disponivel = counts["disponivel"] ?? 0;
 
-              // Exception units (non-disponivel)
-              const exceptionUnits = varianteUnits.filter((u: any) => u.status !== "disponivel");
+              // Ocupação é por DATA (2026-07-23), não por status: `alugado` é
+              // inerte. A contagem aqui espelha a da listagem, senão o painel
+              // dizia "1 alug" enquanto a tela dizia "5 / 5 disponíveis".
+              const foraDeCirculacao = (u: any) => ["manutencao", "perdido", "roubado"].includes(u.status);
+              const emCirculacao = varianteUnits.filter((u: any) => !foraDeCirculacao(u));
+              const emUsoHoje = emCirculacao.filter((u: any) => u.emUsoHoje).length;
+              const reservadas = emCirculacao.filter((u: any) => !u.emUsoHoje && (u.reservas?.length ?? 0) > 0).length;
+              const disponivel = emCirculacao.length - emUsoHoje;
+
+              // Exceções REAIS de status (as que tiram a unidade de circulação
+              // em qualquer data). `alugado` sai daqui: quando tem contrato, vira
+              // o bloco de reservas; quando não tem, é status fantasma.
+              const exceptionUnits = varianteUnits.filter(foraDeCirculacao);
+              const fantasmas = varianteUnits.filter(
+                (u: any) => u.status === "alugado" && (u.reservas?.length ?? 0) === 0,
+              );
 
               return (
                 <div key={key} className="border border-border rounded-lg overflow-hidden hover:border-primary/40 transition-colors">
@@ -236,8 +254,9 @@ function AccessoryUnitsPanel({ accessoryId, onClose }: { accessoryId: number; on
                       <span className="text-sm font-medium">{varianteName}</span>
                       {/* Color-coded breakdown */}
                       <span className="flex flex-wrap gap-1 ml-1 font-mono text-[10px] text-muted-foreground">
-                        {disponivel > 0 && <span className="text-emerald-600 dark:text-emerald-400 font-semibold">{disponivel} disp</span>}
-                        {(counts["alugado"] ?? 0) > 0 && <span className="text-amber-600 dark:text-amber-400 font-semibold">{counts["alugado"]} alug</span>}
+                        {disponivel > 0 && <span className="text-emerald-600 dark:text-emerald-400 font-semibold">{disponivel} disp hoje</span>}
+                        {emUsoHoje > 0 && <span className="text-amber-600 dark:text-amber-400 font-semibold">{emUsoHoje} em uso</span>}
+                        {reservadas > 0 && <span className="text-sky-600 dark:text-sky-400 font-semibold">{reservadas} c/ reserva futura</span>}
                         {(counts["manutencao"] ?? 0) > 0 && <span className="text-orange-600 dark:text-orange-400 font-semibold">{counts["manutencao"]} manut</span>}
                         {(counts["perdido"] ?? 0) > 0 && <span className="text-slate-600 dark:text-slate-400 font-semibold">{counts["perdido"]} perd</span>}
                         {(counts["roubado"] ?? 0) > 0 && <span className="text-red-600 dark:text-red-400 font-semibold">{counts["roubado"]} roub</span>}
@@ -373,6 +392,57 @@ function AccessoryUnitsPanel({ accessoryId, onClose }: { accessoryId: number; on
                       {disponivel > 0 && (
                         <p className="text-xs text-muted-foreground">{disponivel} unidade{disponivel !== 1 ? "s" : ""} no estoque</p>
                       )}
+
+                      {/* Onde a unidade está comprometida. Pedido da Cassiana
+                          (2026-07-29): "não consigo ver onde ele ta alugado".
+                          Reserva futura NÃO é exceção de status, então a unidade
+                          não aparecia em lugar nenhum. */}
+                      {varianteUnits.filter((u: any) => (u.reservas?.length ?? 0) > 0).map((u: any) => (
+                        <div key={`res-${u.id}`} className="rounded-md border border-border bg-card px-3 py-2 space-y-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            {u.serialNumber && <span className="text-xs font-mono text-muted-foreground">{u.serialNumber}</span>}
+                            <span className={`inline-flex items-center rounded-md border px-1.5 py-0.5 text-[10px] font-medium ${
+                              u.emUsoHoje
+                                ? "bg-amber-500/20 text-amber-600 border-amber-500/30 dark:text-amber-400"
+                                : "bg-sky-500/20 text-sky-600 border-sky-500/30 dark:text-sky-400"
+                            }`}>
+                              {u.emUsoHoje ? "Em uso hoje" : "Reservada"}
+                            </span>
+                          </div>
+                          {u.reservas.map((r: any) => (
+                            <Link
+                              key={`${u.id}-${r.contractId}`}
+                              href="/contratos"
+                              className="block text-xs text-muted-foreground hover:text-primary transition-colors"
+                            >
+                              Contrato #{r.contractId} · {fmtDiaMes(r.startDate)} a {fmtDiaMes(r.endDate)}
+                            </Link>
+                          ))}
+                        </div>
+                      ))}
+                      {/* Status fantasma: marcada "alugada" mas sem contrato
+                          vivo segurando. Vem de antes de 2026-07-23, quando
+                          reservar marcava status. Deixa ela resolver na hora. */}
+                      {fantasmas.map((u: any) => (
+                        <div key={`fant-${u.id}`} className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 flex items-center justify-between gap-2 flex-wrap">
+                          <div className="min-w-0">
+                            {u.serialNumber && <span className="text-xs font-mono text-muted-foreground mr-2">{u.serialNumber}</span>}
+                            <span className="text-xs text-amber-700 dark:text-amber-300">
+                              Marcada como alugada, mas nenhum contrato ativo usa esta unidade.
+                            </span>
+                          </div>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-6 text-xs gap-1 text-emerald-600 hover:text-emerald-500 dark:text-emerald-400"
+                            disabled={updateMut.isPending}
+                            onClick={() => updateMut.mutate({ unitId: u.id, status: "disponivel", observacao: u.observacao ?? "", variante: u.variante ?? undefined })}
+                          >
+                            <Check className="w-3 h-3" />Liberar
+                          </Button>
+                        </div>
+                      ))}
+
                       {/* Exception units individually */}
                       {exceptionUnits.map((unit: any) => (
                         <div key={unit.id} className="border border-border rounded-md overflow-hidden bg-card">
