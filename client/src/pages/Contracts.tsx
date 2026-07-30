@@ -23,6 +23,7 @@ import {
   Check,
   Trash2,
   Copy,
+  Link as LinkIcon,
 } from "lucide-react";
 import { SegmentedTabs } from "@/components/ui/segmented-tabs";
 import { DataTable } from "@/components/ui/data-table";
@@ -493,6 +494,14 @@ function ContractDetail({
     onError: (e) => toast.error(friendlyError(e, "Erro ao confirmar pagamento.")),
   });
 
+  // Link público de acompanhamento (o mesmo que vai nos e-mails). Buscado só
+  // quando ela clica: não precisa pesar o detalhe de todo contrato.
+  const [linkAberto, setLinkAberto] = useState(false);
+  const { data: tracking } = trpc.contracts.trackingLink.useQuery(
+    { id: contractId },
+    { enabled: linkAberto },
+  );
+
   const generatePdfMutation = trpc.contracts.generatePdf.useMutation({
     onSuccess: (res) => {
       window.open(res.pdfUrl, "_blank");
@@ -639,6 +648,24 @@ function ContractDetail({
           >
             <RefreshCw className={`h-4 w-4 mr-1 ${recalcMutation.isPending ? "animate-spin" : ""}`} />
             Recalcular status
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            title="Link para o cliente acompanhar o contrato (sem login)"
+            onClick={async () => {
+              setLinkAberto(true);
+              // O link já pode estar em cache; se não, busca e copia.
+              const res = tracking ?? (await utils.contracts.trackingLink.fetch({ id: contractId }));
+              try {
+                await navigator.clipboard.writeText(res.url || res.path);
+                toast.success("Link do cliente copiado.");
+              } catch {
+                toast.info(res.url || res.path);
+              }
+            }}
+          >
+            <LinkIcon className="h-4 w-4 mr-1" /> Link do cliente
           </Button>
           {data.status !== "encerrado" && data.status !== "cancelado" && data.status !== "pendente" && (
             <Button

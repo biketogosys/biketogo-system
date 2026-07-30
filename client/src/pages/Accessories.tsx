@@ -242,6 +242,42 @@ function AccessoryUnitsPanel({ accessoryId, onClose }: { accessoryId: number; on
                 (u: any) => u.status === "alugado" && (u.reservas?.length ?? 0) === 0,
               );
 
+              // Uma entrada por situação, na ordem de leitura da Cassiana:
+              // o que dá pra alugar hoje primeiro, problema por último.
+              // Número na cor da situação, rótulo em muted: sem parede colorida.
+              const plural = (n: number, um: string, muitos: string) => (n === 1 ? um : muitos);
+              const resumo: Array<{ n: number; label: string; cls: string; title: string }> = [];
+              if (disponivel > 0) resumo.push({
+                n: disponivel, label: plural(disponivel, "livre", "livres"),
+                cls: "text-emerald-600 dark:text-emerald-400",
+                title: "Disponível para alugar hoje",
+              });
+              if (emUsoHoje > 0) resumo.push({
+                n: emUsoHoje, label: "em uso",
+                cls: "text-amber-600 dark:text-amber-400",
+                title: "Com o cliente agora, em contrato ativo",
+              });
+              if (reservadas > 0) resumo.push({
+                n: reservadas, label: plural(reservadas, "reservada", "reservadas"),
+                cls: "text-sky-600 dark:text-sky-400",
+                title: "Livre hoje, mas com reserva em data futura",
+              });
+              if ((counts["manutencao"] ?? 0) > 0) resumo.push({
+                n: counts["manutencao"], label: "manut.",
+                cls: "text-orange-600 dark:text-orange-400",
+                title: "Em manutenção, fora de circulação",
+              });
+              if ((counts["perdido"] ?? 0) > 0) resumo.push({
+                n: counts["perdido"], label: plural(counts["perdido"], "perdida", "perdidas"),
+                cls: "text-slate-600 dark:text-slate-400",
+                title: "Perdida, fora de circulação",
+              });
+              if ((counts["roubado"] ?? 0) > 0) resumo.push({
+                n: counts["roubado"], label: plural(counts["roubado"], "roubada", "roubadas"),
+                cls: "text-red-600 dark:text-red-400",
+                title: "Roubada, fora de circulação",
+              });
+
               return (
                 <div key={key} className="border border-border rounded-lg overflow-hidden hover:border-primary/40 transition-colors">
                   {/* Collapsed row */}
@@ -252,14 +288,17 @@ function AccessoryUnitsPanel({ accessoryId, onClose }: { accessoryId: number; on
                     >
                       {isExpanded ? <ChevronUp className="w-3.5 h-3.5 text-muted-foreground" /> : <ChevronDown className="w-3.5 h-3.5 text-muted-foreground" />}
                       <span className="text-sm font-medium">{varianteName}</span>
-                      {/* Color-coded breakdown */}
-                      <span className="flex flex-wrap gap-1 ml-1 font-mono text-[10px] text-muted-foreground">
-                        {disponivel > 0 && <span className="text-emerald-600 dark:text-emerald-400 font-semibold">{disponivel} disp hoje</span>}
-                        {emUsoHoje > 0 && <span className="text-amber-600 dark:text-amber-400 font-semibold">{emUsoHoje} em uso</span>}
-                        {reservadas > 0 && <span className="text-sky-600 dark:text-sky-400 font-semibold">{reservadas} c/ reserva futura</span>}
-                        {(counts["manutencao"] ?? 0) > 0 && <span className="text-orange-600 dark:text-orange-400 font-semibold">{counts["manutencao"]} manut</span>}
-                        {(counts["perdido"] ?? 0) > 0 && <span className="text-slate-600 dark:text-slate-400 font-semibold">{counts["perdido"]} perd</span>}
-                        {(counts["roubado"] ?? 0) > 0 && <span className="text-red-600 dark:text-red-400 font-semibold">{counts["roubado"]} roub</span>}
+                      {/* Contagem por situação. Uma entrada por SITUAÇÃO com o
+                          número na frente (nunca repete chip), separadas por "·"
+                          como no resto da casa. Rótulo curto: a linha precisa
+                          caber a 375px com 3 ou 4 situações. */}
+                      <span className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 ml-1 text-[11px]">
+                        {resumo.map((c, i) => (
+                          <span key={c.label} className="text-muted-foreground" title={c.title}>
+                            {i > 0 && <span className="text-muted-foreground/40 mr-1.5">·</span>}
+                            <span className={`font-semibold tabular-nums ${c.cls}`}>{c.n}</span>{" "}{c.label}
+                          </span>
+                        ))}
                       </span>
                     </button>
                     {/* Stepper */}

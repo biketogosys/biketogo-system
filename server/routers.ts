@@ -1975,8 +1975,168 @@ if (!ENV.cookieSecret) {
   console.warn("[SEC-1] WARNING: cookieSecret is empty — upload tokens will be insecure!");
 }
 
+// ─── Token de acompanhamento do contrato (HMAC, sem estado) ──────────────────
+// O cliente abre o contrato pelo LINK, sem login: o link É a credencial. Por
+// isso nunca pode ser `/contrato/5` (trocar o número veria contrato alheio) —
+// vai assinado, mesmo padrão do token de upload do pré-cadastro.
+//
+// Sem TTL de propósito: é o contrato DELE, e o e-mail fica na caixa de entrada
+// por meses. O prefixo "contract." separa este token do de upload, para uma
+// assinatura nunca valer para o outro propósito.
+export function signContractToken(contractId: number): string {
+  const sig = crypto.createHmac("sha256", ENV.cookieSecret).update(`contract.${contractId}`).digest("hex");
+  return `${contractId}.${sig}`;
+}
+
+function verifyContractToken(token: string): number | null {
+  const parts = token.split(".");
+  if (parts.length !== 2) return null;
+  const [idStr, sig] = parts;
+  const expected = crypto.createHmac("sha256", ENV.cookieSecret).update(`contract.${idStr}`).digest("hex");
+  const a = Buffer.from(sig);
+  const b = Buffer.from(expected);
+  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
+  const id = Number(idStr);
+  return Number.isInteger(id) && id > 0 ? id : null;
+}
+
 // ─── Public API (for Shopify integration) ────────────────────────────────────
 const publicApiRouter = router({
+  /**
+   * Acompanhamento do contrato pelo cliente, por LINK assinado (sem login).
+   * É o destino do botão dos e-mails de reserva e de recibo.
+   *
+   * ⚠️ O link pode ser encaminhado, então aqui só entra o que o cliente precisa
+   * ver: nome, CPF OFUSCADO, período, itens, valor e status. Telefone, e-mail,
+   * endereço e documento completo ficam de fora de propósito.
+   */
+  contractByToken: publicProcedure
+    .input(z.object({ token: z.string().min(3) }))
+    .query(async ({ input }) => {
+      const contractId = verifyContractToken(input.token);
+      if (!contractId) throw new TRPCError({ code: "NOT_FOUND", message: "Link inválido ou expirado." });
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+
+      const [contract] = await db.select().from(contracts).where(eq(contracts.id, contractId));
+      if (!contract || contract.deletedAt) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Contrato não encontrado." });
+      }
+
+      // ⚠️ Decisão do Matheus (2026-07-29): a página mostra os dados do
+      // locatário como no sistema antigo (documento, CPF, e-mail, telefone).
+      // O risco está registrado: o link pode ser encaminhado e quem tiver o
+      // link vê esses dados. Para voltar a ofuscar, é só mascarar aqui — nada
+      // além deste bloco depende do valor cru.
+      const [client] = contract.clientId
+        ? await db.select({
+            name: clientsTable.name, cpf: clientsTable.cpf, rg: clientsTable.rg,
+            passaporte: clientsTable.numeroPassaporte,
+            email: clientsTable.email, phone: clientsTable.phone,
+          })
+            .from(clientsTable).where(eq(clientsTable.id, contract.clientId))
+        : [null];
+
+      const rentalRows = await db.select()
+        .from(rentalsTable)
+        .where(and(eq(rentalsTable.contractId, contractId), isNull(rentalsTable.deletedAt)));
+
+      const { bikes: bikesT, bikeSizes: bkSizesT, rentalBikeUnits: rbuT, bikeUnits: buT,
+              contractAccessories: caT, accessories: accT } = await import("../drizzle/schema");
+      const itens = await Promise.all(rentalRows.map(async (r) => {
+        const [bike] = r.bikeId
+          ? await db.select({ model: bikesT.model, brand: bikesT.brand, category: bikesT.category, color: bikesT.color })
+              .from(bikesT).where(eq(bikesT.id, r.bikeId))
+          : [null];
+        let tamanho: string | null = null;
+        if (r.bikeSizeId) {
+          const [sz] = await db.select({ tamanho: bkSizesT.tamanho }).from(bkSizesT).where(eq(bkSizesT.id, r.bikeSizeId));
+          tamanho = sz?.tamanho ?? null;
+        }
+        const unidades = await db.select({ numero: buT.numeroSistema })
+          .from(rbuT).innerJoin(buT, eq(buT.id, rbuT.bikeUnitId))
+          .where(eq(rbuT.rentalId, r.id));
+        return {
+          modelo: [bike?.brand, bike?.model].filter(Boolean).join(" ") || "Bicicleta",
+          categoria: bike?.category ?? null,
+          cor: bike?.color ?? null,
+          tamanho,
+          numerosSistema: unidades.map((u) => u.numero).filter(Boolean),
+          quantidade: r.quantity ?? 1,
+          inicio: r.startDate,
+          fim: r.endDate,
+          diaria: r.dailyRate,
+          desconto: r.discountPercent,
+          total: r.totalAmount,
+          status: r.status,
+        };
+      }));
+
+      const acessorios = await db
+        .select({ nome: accT.name, qty: caT.qty })
+        .from(caT).leftJoin(accT, eq(caT.accessoryId, accT.id))
+        .where(eq(caT.contractId, contractId));
+
+      // Período do contrato = menor início e maior fim entre os aluguéis.
+      const inicios = itens.map((i) => i.inicio).filter(Boolean).sort() as string[];
+      const fins = itens.map((i) => i.fim).filter(Boolean).sort() as string[];
+
+      const waRaw = (await getSetting("whatsapp_reservas")) || (await getSetting("whatsapp_number")) || "";
+      const waDigits = waRaw.replace(/\D/g, "");
+      const empresa = {
+        nome: (await getSetting("company_name")) ?? "",
+        cnpj: (await getSetting("company_cnpj")) ?? "",
+        endereco: (await getSetting("company_address")) ?? "",
+        cidade: (await getSetting("company_city")) ?? "",
+        telefone: (await getSetting("company_phone")) ?? "",
+        email: (await getSetting("company_email")) ?? "",
+        logoUrl: (await getSetting("company_logo_url")) ?? null,
+        // WhatsApp da loja: o turista abre isto no celular, no meio da viagem.
+        // Falar com a loja tem que ser um toque (mesmo número do /reservar).
+        whatsapp: waDigits.length >= 10 ? waDigits : "",
+      };
+
+      // Cláusulas nos 3 idiomas: a MESMA cadeia do PDF (setting por idioma →
+      // setting legado só em pt → default embutido). O cliente tem que poder ler
+      // os termos antes de confirmar (pedido da Cassiana: teve gente que
+      // cancelou por não aceitar), então esta seção nunca pode sair vazia.
+      const { DEFAULT_OBJETO, DEFAULT_TERMOS } = await import("./contract-defaults");
+      const objetoLegacy = (await getSetting("company_object")) ?? "";
+      const termosLegacy = (await getSetting("company_terms")) ?? "";
+      const clausulas: Record<string, { objeto: string; termos: string }> = {};
+      for (const lang of ["pt", "en", "es"] as const) {
+        const objetoLang = (await getSetting(`company_object_${lang}`)) ?? "";
+        const termosLang = (await getSetting(`company_terms_${lang}`)) ?? "";
+        clausulas[lang] = {
+          objeto: objetoLang.trim() || (lang === "pt" && objetoLegacy.trim() ? objetoLegacy : DEFAULT_OBJETO[lang]),
+          termos: termosLang.trim() || (lang === "pt" && termosLegacy.trim() ? termosLegacy : DEFAULT_TERMOS[lang]),
+        };
+      }
+
+      const soDigitos = (client?.cpf ?? "").replace(/\D/g, "");
+      return {
+        contractId,
+        status: contract.status,
+        criadoEm: contract.criadoEm,
+        valorTotal: contract.valorTotal,
+        cliente: {
+          nome: client?.name ?? "",
+          cpf: soDigitos.length === 11
+            ? `${soDigitos.slice(0, 3)}.${soDigitos.slice(3, 6)}.${soDigitos.slice(6, 9)}-${soDigitos.slice(9)}`
+            : (client?.cpf ?? null),
+          documento: client?.rg || client?.passaporte || null,
+          email: client?.email ?? null,
+          telefone: client?.phone ?? null,
+        },
+        periodo: { inicio: inicios[0] ?? null, fim: fins[fins.length - 1] ?? null },
+        itens,
+        acessorios,
+        empresa,
+        clausulas,
+        pdfUrl: contract.pdfUrl ?? null,
+      };
+    }),
+
   // Get bike sizes with real-time availability
   bikeSizes: publicProcedure
     .input(z.object({ bikeId: z.number() }))
@@ -3114,6 +3274,18 @@ const contractsRouter = router({
     .mutation(async ({ input }) => {
       await recalcContractStatus(input.id);
       return { success: true };
+    }),
+
+  /**
+   * Link de acompanhamento do contrato (o que vai nos e-mails e que a Cassiana
+   * pode mandar no WhatsApp). Assinado: sem login, mas impossível de adivinhar.
+   */
+  trackingLink: adminAuthProcedure
+    .input(z.object({ id: z.number() }))
+    .query(({ input }) => {
+      const token = signContractToken(input.id);
+      const base = (ENV.appUrl ?? "").replace(/\/+$/, "");
+      return { token, path: `/contrato/${token}`, url: `${base}/contrato/${token}` };
     }),
 
   // Encerra contrato: atualiza checklist de acessórios e recalcula status
