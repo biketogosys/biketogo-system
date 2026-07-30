@@ -62,6 +62,18 @@ export interface ContractPdfData {
     valorReposicao?: string | null;
     periodo?: string | null;      // período do aluguel (aplica aos acessórios também)
   }>;
+  /**
+   * F10: recálculos por devolução antecipada já aplicados neste contrato.
+   * Sem esta linha o PDF regerado mostra um valor menor que o papel assinado
+   * sem explicar por quê, e os dois documentos passam a se contradizer.
+   */
+  ajustes?: Array<{
+    data: Date | string;      // quando o recálculo foi feito
+    diariasDe: number;
+    diariasPara: number;
+    valorDe: string;
+    valorPara: string;
+  }>;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -146,6 +158,9 @@ const PDF_LABELS: Record<PdfLanguage, {
   locadora: string;
   locatario: string;
   periodo: string;
+  /** F10: explica por que o valor difere do papel assinado. Placeholders:
+   *  {data} {de} {para} {valorDe} {valorPara} */
+  ajusteDevolucao: string;
 }> = {
   pt: {
     contractTitle: "CONTRATO DE LOCAÇÃO DE BICICLETA",
@@ -175,6 +190,7 @@ const PDF_LABELS: Record<PdfLanguage, {
     locadora:  "LOCADORA",
     locatario: "LOCATÁRIO(A)",
     periodo:   "a",
+    ajusteDevolucao: "Devolução antecipada em {data}: período ajustado de {de} para {para} diárias e valor de {valorDe} para {valorPara}.",
     contractObject: "Objeto do contrato",
   },
   en: {
@@ -205,6 +221,7 @@ const PDF_LABELS: Record<PdfLanguage, {
     locadora:  "LESSOR",
     locatario: "LESSEE",
     periodo:   "to",
+    ajusteDevolucao: "Early return on {data}: rental period adjusted from {de} to {para} daily rates and amount from {valorDe} to {valorPara}.",
     contractObject: "Object of the contract",
   },
   es: {
@@ -235,6 +252,7 @@ const PDF_LABELS: Record<PdfLanguage, {
     locadora:  "ARRENDADOR",
     locatario: "ARRENDATARIO",
     periodo:   "a",
+    ajusteDevolucao: "Devolución anticipada el {data}: período ajustado de {de} a {para} días y valor de {valorDe} a {valorPara}.",
     contractObject: "Objeto del contrato",
   },
 };
@@ -658,6 +676,20 @@ export async function generateContractPdf(
         doc.fillColor(INK).font("Helvetica").fontSize(8.5)
           .text(L.pm[data.paymentMethod] ?? data.paymentMethod, M, rowY, { width: CW, align: "right", lineBreak: false });
         rowY += 14;
+      }
+      // F10: por que o total mudou depois de assinado. Quebra em várias linhas
+      // (sem lineBreak:false) porque a frase é longa e pode ter mais de um
+      // ajuste, um por bike devolvida antes.
+      for (const aj of data.ajustes ?? []) {
+        const txt = L.ajusteDevolucao
+          .replace("{data}", formatDate(aj.data))
+          .replace("{de}", String(aj.diariasDe))
+          .replace("{para}", String(aj.diariasPara))
+          .replace("{valorDe}", formatCurrency(aj.valorDe))
+          .replace("{valorPara}", formatCurrency(aj.valorPara));
+        doc.fillColor(MUTED).font("Helvetica-Oblique").fontSize(8);
+        doc.text(txt, M, rowY, { width: CW });
+        rowY = doc.y + 2;
       }
       doc.y = rowY + 7; doc.x = M;
     }

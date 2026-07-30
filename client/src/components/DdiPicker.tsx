@@ -34,7 +34,11 @@ export function DdiPicker({
           role="combobox"
           aria-expanded={open}
           disabled={disabled}
-          className={`justify-between font-normal ${className ?? ""}`}
+          // h-11 = 44px: o campo do lado é um <input>, que a regra global do
+          // index.css leva pra 44px. Botão NÃO entra nessa regra (infla Switch
+          // e ícone-botão), então a altura vem daqui, senão os dois campos da
+          // mesma linha ficam desalinhados e o alvo de toque fica pequeno.
+          className={`h-11 justify-between font-normal ${className ?? ""}`}
         >
           <span className="truncate">
             {atual ? `${atual.flag} ${atual.code}` : value || "DDI"}

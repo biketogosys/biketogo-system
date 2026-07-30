@@ -54,6 +54,37 @@ async function startServer() {
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
   // Cookie parser — required for reading session cookies (btg_session, app_session_id)
   app.use(cookieParser());
+  // ─── Atalho de sessão do harness LOCAL (nunca existe em produção) ─────────
+  // O preview do Claude Code recria o navegador a cada restart do servidor e a
+  // sessão cai; sem isto, toda verificação visual de tela autenticada exige
+  // login manual. Dupla trava: só existe com DEV_PGLITE (que apenas o
+  // `dev:local` define) E fora de produção. Loga o admin SEMEADO do banco de
+  // demonstração, que só existe no PGlite local.
+  if (process.env.DEV_PGLITE && process.env.NODE_ENV !== "production") {
+    app.get("/__dev-login", async (_req, res) => {
+      try {
+        const { getAdminUserByEmail } = await import("../db");
+        const jwt = (await import("jsonwebtoken")).default;
+        const email = process.env.DEV_LOGIN_EMAIL || "admin@dev.local";
+        const user = await getAdminUserByEmail(email);
+        if (!user) return res.status(404).send(`Admin de dev não encontrado: ${email}`);
+        const token = jwt.sign(
+          { userId: user.id, role: user.role },
+          process.env.JWT_SECRET || "",
+          { expiresIn: "7d" },
+        );
+        res.cookie("btg_session", token, {
+          httpOnly: true, secure: false, sameSite: "lax",
+          maxAge: 7 * 24 * 60 * 60 * 1000, path: "/",
+        });
+        res.redirect("/");
+      } catch (err) {
+        res.status(500).send(`Falha no login de dev: ${String(err)}`);
+      }
+    });
+    console.log("[dev-local] Atalho de sessão ativo: http://localhost:" + (process.env.PORT || 3000) + "/__dev-login");
+  }
+
   // Storage proxy for /manus-storage/* paths
   registerStorageProxy(app);
   // OAuth callback under /api/oauth/callback

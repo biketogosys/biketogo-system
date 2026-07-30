@@ -2639,6 +2639,10 @@ async function recalcEarlyReturn(
       devolucaoCombinada: pv.oldEndDate,
       devolucaoReal: pv.newEndDate,
       diasNaoUsados: pv.removedDays,
+      // Diárias cobradas antes/depois: é o que o PDF do contrato exibe pra
+      // explicar a diferença em relação ao papel assinado.
+      diariasAntes: pv.oldDays,
+      diariasDepois: pv.newDays,
       valorAnterior: pv.oldTotal,
       novoValor: pv.newTotal,
       credito: pv.creditAmount,
@@ -2705,6 +2709,44 @@ async function buildContractPdfData(db: Awaited<ReturnType<typeof getDb>>, contr
     return s === e ? s : `${s} a ${e}`;
   })();
 
+  // F10: recálculos por devolução antecipada deste contrato. A fonte é a
+  // AUDITORIA (é lá que o "valor anterior" existe; o aluguel só guarda o atual).
+  // Sem isto, o PDF regerado mostraria um total menor que o papel assinado sem
+  // dizer por quê.
+  const ajustesPdf = await (async () => {
+    const ids = rentalsForPdf.map((r) => r.id).filter(Boolean);
+    if (ids.length === 0) return [];
+    const { auditLogs } = await import("../drizzle/schema");
+    const { inArray: inArrayAudit } = await import("drizzle-orm");
+    const rows = await db
+      .select({ registroId: auditLogs.registroId, dados: auditLogs.dadosDepois, criadoEm: auditLogs.criadoEm })
+      .from(auditLogs)
+      .where(and(
+        eq(auditLogs.acao, "devolucao_antecipada_recalculada"),
+        inArrayAudit(auditLogs.registroId, ids),
+      ))
+      .orderBy(auditLogs.id);
+    const inicioPorRental = new Map(rentalsForPdf.map((r) => [r.id, r.startDate as string | null]));
+    const { billableDays } = await import("./rental-period");
+    return rows
+      .map((row) => {
+        const d = (row.dados ?? {}) as Record<string, any>;
+        if (!d.valorAnterior || !d.novoValor) return null;
+        // Registros anteriores a 2026-07-28 não gravavam as diárias: reconstrói
+        // pelas datas, com a mesma régua do recálculo.
+        const inicio = inicioPorRental.get(row.registroId as number) ?? null;
+        const diariasDe = d.diariasAntes ?? (inicio && d.devolucaoCombinada ? billableDays(inicio, d.devolucaoCombinada) : 0);
+        const diariasPara = d.diariasDepois ?? (inicio && d.devolucaoReal ? billableDays(inicio, d.devolucaoReal) : 0);
+        return {
+          data: row.criadoEm as Date,
+          diariasDe, diariasPara,
+          valorDe: String(d.valorAnterior),
+          valorPara: String(d.novoValor),
+        };
+      })
+      .filter(Boolean) as Array<{ data: Date; diariasDe: number; diariasPara: number; valorDe: string; valorPara: string }>;
+  })();
+
   const accWithSerial = await Promise.all(caRows.map(async (ca) => {
     let serialNumber: string | null = null;
     if (ca.unitId) {
@@ -2742,6 +2784,7 @@ async function buildContractPdfData(db: Awaited<ReturnType<typeof getDb>>, contr
     paymentMethod: rentalsForPdf[0]?.paymentMethod ?? null,
     rentals: rentalsWithBike,
     accessories: accWithSerial,
+    ajustes: ajustesPdf,
   };
 }
 
