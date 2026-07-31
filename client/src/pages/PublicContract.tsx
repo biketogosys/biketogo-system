@@ -10,11 +10,11 @@
 // ⚠️ Dados do locatário (documento, CPF, e-mail, telefone) aparecem aqui por
 // decisão do Matheus (2026-07-29), para igualar o sistema antigo. Como o link
 // pode ser encaminhado, quem tiver o link vê esses dados.
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRoute } from "wouter";
 import {
   Bike, CalendarClock, FileText, MessageCircle, Package, User,
-  AlertTriangle, Download, Search,
+  AlertTriangle, Download, Search, Moon, Sun,
 } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -40,7 +40,7 @@ const T = {
     email: "E-mail", telefone: "Telefone",
     detalhes: "Detalhes da locação",
     calculado: "Calculado para o seguinte período de uso:",
-    retirada: "Retirada", ciclo: "Ciclo de locação", ciclos: "Dias",
+    retirada: "Retirada",
     tempo: "Tempo contratado", devolucao: "Devolução prevista",
     contrato: "Contrato", situacao: "Situação do contrato",
     verContrato: "Visualizar contrato", baixarPdf: "Baixar PDF",
@@ -80,7 +80,7 @@ const T = {
     email: "Email", telefone: "Phone",
     detalhes: "Rental details",
     calculado: "Calculated for the following usage period:",
-    retirada: "Pick-up", ciclo: "Rental cycle", ciclos: "Days",
+    retirada: "Pick-up",
     tempo: "Contracted time", devolucao: "Expected return",
     contrato: "Contract", situacao: "Contract status",
     verContrato: "View contract", baixarPdf: "Download PDF",
@@ -120,7 +120,7 @@ const T = {
     email: "Correo", telefone: "Teléfono",
     detalhes: "Detalles del alquiler",
     calculado: "Calculado para el siguiente período de uso:",
-    retirada: "Retiro", ciclo: "Ciclo de alquiler", ciclos: "Días",
+    retirada: "Retiro",
     tempo: "Tiempo contratado", devolucao: "Devolución prevista",
     contrato: "Contrato", situacao: "Situación del contrato",
     verContrato: "Ver contrato", baixarPdf: "Descargar PDF",
@@ -218,6 +218,26 @@ export default function PublicContract() {
   const [contratoAberto, setContratoAberto] = useState(false);
   const t = T[lang];
 
+  // Dark-first (padrão da casa): só sai do dark se o visitante escolher light.
+  // Mesma mecânica do /reservar — o tema desta página vive na classe .dark do
+  // <html> (mesmos tokens do app) e, ao sair, restaura o tema do painel admin.
+  const [isDark, setIsDark] = useState(
+    () => localStorage.getItem("btg_contrato_theme") !== "light",
+  );
+  useEffect(() => {
+    const root = document.documentElement;
+    root.classList.toggle("dark", isDark);
+    return () => {
+      root.classList.toggle("dark", localStorage.getItem("theme") === "dark");
+    };
+  }, [isDark]);
+  const alternarTema = () =>
+    setIsDark((prev) => {
+      const next = !prev;
+      localStorage.setItem("btg_contrato_theme", next ? "dark" : "light");
+      return next;
+    });
+
   const { data, isLoading, error } = trpc.publicApi.contractByToken.useQuery(
     { token },
     { enabled: token.length > 3, retry: false },
@@ -286,18 +306,28 @@ export default function PublicContract() {
           ) : (
             <span className="font-semibold text-primary text-sm">{empresa.nome || "Bike To Go"}</span>
           )}
-          <div className="flex gap-0.5 rounded-lg bg-background/40 p-0.5">
-            {IDIOMAS.map((i) => (
-              <button
-                key={i.key}
-                onClick={() => setLang(i.key)}
-                className={`px-2 py-1 rounded-md text-[11px] font-semibold transition-colors ${
-                  lang === i.key ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                {i.label}
-              </button>
-            ))}
+          <div className="flex items-center gap-2">
+            <div className="flex gap-0.5 rounded-lg bg-background/40 p-0.5">
+              {IDIOMAS.map((i) => (
+                <button
+                  key={i.key}
+                  onClick={() => setLang(i.key)}
+                  className={`px-2 py-1 rounded-md text-[11px] font-semibold transition-colors ${
+                    lang === i.key ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  {i.label}
+                </button>
+              ))}
+            </div>
+            <button
+              onClick={alternarTema}
+              title={isDark ? "Modo claro" : "Modo escuro"}
+              aria-label={isDark ? "Modo claro" : "Modo escuro"}
+              className="p-2 rounded-lg border border-border bg-background/40 text-muted-foreground hover:text-foreground transition-[color,background-color,transform] duration-150 ease-out active:scale-95"
+            >
+              {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+            </button>
           </div>
         </div>
       </header>
@@ -328,7 +358,6 @@ export default function PublicContract() {
             <div className="space-y-1.5 text-sm">
               <p className="text-xs text-muted-foreground mb-2">{t.calculado}</p>
               <Linha rotulo={t.retirada} valor={fmtData(data.periodo.inicio)} />
-              <Linha rotulo={t.ciclo} valor={t.ciclos} />
               <Linha
                 rotulo={t.tempo}
                 valor={mesmoPeriodo ? t.diarias(totalDiarias) : t.periodosVariados}
