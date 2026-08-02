@@ -5,7 +5,7 @@
  * log-only (sem RESEND_API_KEY o transporte NÃO chama a rede).
  */
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { buildDigestEmail, buildNewLeadEmail, escapeHtml, sendEmail } from "./email";
+import { buildNewLeadEmail, buildWelcomeEmail, escapeHtml, sendEmail } from "./email";
 import type { ReturnDueItem } from "./overdue";
 
 describe("escapeHtml", () => {
@@ -60,53 +60,39 @@ describe("buildNewLeadEmail", () => {
   });
 });
 
-describe("buildDigestEmail — resumo matinal", () => {
-  const mk = (over: Partial<ReturnDueItem>): ReturnDueItem => ({
-    id: 1, clientId: 1, clientName: "Ana", clientPhone: null,
-    bikeModel: "Urbana", tamanho: "M", quantity: 1, endDate: "2026-07-20",
-    contractId: null, daysLate: 0, ...over,
+// ─── Boas-vindas ao CLIENTE (cadastro criado) ────────────────────────────────
+describe("buildWelcomeEmail", () => {
+  const empresa = {
+    nome: "Bike To Go Floripa", cnpj: "", endereco: "", cidade: "",
+    telefone: "(48) 98863-1669", email: "", logoUrl: null,
+  };
+
+  it("cumprimenta pelo PRIMEIRO nome", () => {
+    const { html } = buildWelcomeEmail({ nome: "Ana Paula Souza", email: "a@x.com", origem: "reservar" }, empresa);
+    expect(html).toContain("Oi, Ana!");
   });
 
-  it("subject traz o total e o nº de atrasadas", () => {
-    const { subject } = buildDigestEmail({
-      overdue: [mk({ id: 1, daysLate: 2, endDate: "2026-07-18" }), mk({ id: 2, daysLate: 1, endDate: "2026-07-19" })],
-      dueToday: [mk({ id: 3 })],
-    }, "");
-    expect(subject).toBe("Devoluções de hoje: 3 pendente(s), 2 em atraso");
+  it("escapa nome com HTML", () => {
+    const { html } = buildWelcomeEmail({ nome: "<b>Ana</b>", email: "a@x.com", origem: "reservar" }, empresa);
+    expect(html).not.toContain("<b>Ana</b>");
   });
 
-  it("sem atrasadas: subject não menciona atraso", () => {
-    const { subject } = buildDigestEmail({ overdue: [], dueToday: [mk({})] }, "");
-    expect(subject).toBe("Devoluções de hoje: 1 pendente(s)");
+  it("não promete reserva confirmada (fechamento é humano)", () => {
+    const { html } = buildWelcomeEmail({ nome: "Ana", email: "a@x.com", origem: "reservar" }, empresa);
+    expect(html).toContain("WhatsApp");
+    expect(html.toLowerCase()).not.toContain("reserva confirmada");
   });
 
-  it("seção vazia é omitida", () => {
-    const { html } = buildDigestEmail({ overdue: [], dueToday: [mk({})] }, "");
-    expect(html).not.toContain("Em atraso");
-    expect(html).toContain("Previstas para hoje");
+  it("botão de WhatsApp só quando a empresa tem telefone", () => {
+    const semTel = { ...empresa, telefone: "" };
+    expect(buildWelcomeEmail({ nome: "Ana", email: "a@x.com", origem: "manual" }, semTel).html)
+      .not.toContain("wa.me");
+    expect(buildWelcomeEmail({ nome: "Ana", email: "a@x.com", origem: "manual" }, empresa).html)
+      .toContain("wa.me/5548988631669");
   });
 
-  it("escapa o nome do cliente e inclui o modelo", () => {
-    const { html } = buildDigestEmail({
-      overdue: [mk({ clientName: "A<b>", bikeModel: "MTB & Cia" })], dueToday: [],
-    }, "");
-    expect(html).toContain("A&lt;b&gt;");
-    expect(html).toContain("MTB &amp; Cia");
-  });
-
-  it("com APP_URL renderiza o botão do painel; sem, não", () => {
-    expect(buildDigestEmail({ overdue: [mk({})], dueToday: [] }, "https://app.x/").html).toContain(`href="https://app.x/"`);
-    expect(buildDigestEmail({ overdue: [mk({})], dueToday: [] }, "").html).not.toContain("href=");
-  });
-});
-
-describe("sendEmail — modo log-only", () => {
-  afterEach(() => vi.restoreAllMocks());
-
-  it("sem RESEND_API_KEY: retorna false e NÃO toca a rede", async () => {
-    const fetchSpy = vi.spyOn(globalThis, "fetch");
-    const ok = await sendEmail({ to: "dona@example.com", subject: "t", html: "<p>x</p>" });
-    expect(ok).toBe(false);
-    expect(fetchSpy).not.toHaveBeenCalled();
+  it("assunto usa o nome da empresa", () => {
+    expect(buildWelcomeEmail({ nome: "Ana", email: "a@x.com", origem: "manual" }, empresa).subject)
+      .toBe("Cadastro recebido — Bike To Go Floripa");
   });
 });

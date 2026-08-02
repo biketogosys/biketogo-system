@@ -90,7 +90,7 @@ import {
   // Audit
   createAuditLog,
 } from "./db";
-import { escapeHtml, sendNewLeadEmail, sendOwnerEmail } from "./email";
+import { escapeHtml, sendNewLeadEmail, sendOwnerEmail, sendWelcomeEmail } from "./email";
 import { COOKIE_NAME } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
@@ -400,6 +400,9 @@ const clientsRouter = router({
         lgpdConsent: input.lgpdConsent ?? false,
         lgpdConsentAt: input.lgpdConsent ? new Date() : null,
       });
+      // Boas-vindas pro cliente cadastrado na mão pela Cassiana (2026-07-30).
+      // Silencioso quando o cadastro veio sem e-mail, que é comum aqui.
+      await sendWelcomeEmail({ nome: input.name, email: input.email, origem: "manual" });
       return { id };
     }),
   update: adminAuthProcedure
@@ -1926,6 +1929,16 @@ const settingsRouter = router({
       }
       return { success: true };
     }),
+  /**
+   * Dispara um e-mail de teste para a caixa das Configurações e DEVOLVE o
+   * motivo quando falha. Existe porque o envio é não-fatal por construção: sem
+   * isto, "não chegou" e "nem tentou" são a mesma coisa na tela.
+   */
+  sendTestEmail: adminOnlyProcedure.mutation(async () => {
+    const { enviarEmailDeTeste } = await import("./email");
+    return enviarEmailDeTeste();
+  }),
+
   uploadLogo: adminOnlyProcedure
     .input(z.object({
       base64: z.string(),
@@ -2324,6 +2337,9 @@ const publicApiRouter = router({
         city: input.city,
         source: "site",
       });
+      // Boas-vindas pro CLIENTE (pedido do Matheus, 2026-07-30). Não confirma
+      // reserva: quem fecha o aluguel é a Cassiana no WhatsApp.
+      await sendWelcomeEmail({ nome: input.name, email: input.email, origem: "reservar" });
 
       return { clientId, success: true, uploadToken: signUploadToken(clientId) };
     }),

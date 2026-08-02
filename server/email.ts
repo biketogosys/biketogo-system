@@ -4,27 +4,35 @@
 // NUNCA propaga erro — notificação não pode derrubar o fluxo que a disparou
 // (mesmo princípio do upload não-fatal do /reservar).
 import { ENV } from "./_core/env";
-import { getDb, getSetting, setSetting } from "./db";
-import { getReturnsDue, todaySaoPaulo, type ReturnDueItem } from "./overdue";
+import { getSetting } from "./db";
+import {
+  CORES, EMPRESA_VAZIA, botao, cartao, carregarEmpresa, escapeHtml, linha,
+  montarEmail, type DadosEmpresa,
+} from "./email-layout";
 
 const RESEND_ENDPOINT = "https://api.resend.com/emails";
 const SEND_TIMEOUT_MS = 8_000;
+const FONTE = "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
 
-export function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
+// Reexportado: já era importado daqui por `routers.ts` antes do layout existir.
+export { escapeHtml };
 
 export type EmailPayload = { to: string; subject: string; html: string };
 
-/** Transporte cru. Retorna true só quando o Resend aceitou o envio. */
-export async function sendEmail({ to, subject, html }: EmailPayload): Promise<boolean> {
+export type ResultadoEnvio = { ok: boolean; motivo?: string };
+
+/**
+ * Transporte cru, versão que DEVOLVE O MOTIVO da falha.
+ *
+ * O `sendEmail` engole o erro de propósito (notificação não pode derrubar o
+ * cadastro que a disparou), e o efeito colateral é que sucesso e falha ficam
+ * indistinguíveis para quem usa o sistema — foi exatamente o que travou o
+ * Matheus em 2026-07-30. Quem quiser mostrar o erro na tela usa esta.
+ */
+export async function sendEmailDetalhado({ to, subject, html }: EmailPayload): Promise<ResultadoEnvio> {
   if (!ENV.resendApiKey) {
     console.log(`[Email] (log-only, sem RESEND_API_KEY) para=${to} assunto="${subject}"`);
-    return false;
+    return { ok: false, motivo: "RESEND_API_KEY não está configurada no ambiente." };
   }
   try {
     const res = await fetch(RESEND_ENDPOINT, {
@@ -39,13 +47,50 @@ export async function sendEmail({ to, subject, html }: EmailPayload): Promise<bo
     if (!res.ok) {
       const detail = await res.text().catch(() => "");
       console.warn(`[Email] Falha no envio (${res.status})${detail ? `: ${detail}` : ""}`);
-      return false;
+      return { ok: false, motivo: `Resend recusou (${res.status})${detail ? `: ${detail}` : ""}` };
     }
-    return true;
+    return { ok: true };
   } catch (err) {
     console.warn("[Email] Erro ao enviar:", err);
-    return false;
+    return { ok: false, motivo: `Erro de rede ao falar com o Resend: ${String(err)}` };
   }
+}
+
+/** Transporte cru. Retorna true só quando o Resend aceitou o envio. */
+export async function sendEmail(payload: EmailPayload): Promise<boolean> {
+  return (await sendEmailDetalhado(payload)).ok;
+}
+
+/**
+ * Envio de teste para a caixa configurada em Configurações. Devolve o motivo
+ * quando falha, para a tela mostrar em vez de o erro morrer no log.
+ */
+export async function enviarEmailDeTeste(): Promise<ResultadoEnvio & { destinatario?: string }> {
+  const to = (await getSetting("notification_email")) || (await getSetting("company_email"));
+  if (!to || !to.trim()) {
+    return { ok: false, motivo: "Nenhum e-mail configurado no campo acima. Preencha e salve antes de testar." };
+  }
+  const empresa = await carregarEmpresa().catch(() => EMPRESA_VAZIA);
+  const html = montarEmail({
+    titulo: "Teste de envio",
+    preheader: "Se você recebeu isto, o envio de e-mail está funcionando.",
+    empresa,
+    corpoHtml: cartao(
+      "Teste",
+      `
+<h1 style="margin:0 0 10px;font-family:${FONTE};font-size:22px;line-height:1.25;color:${CORES.dark};font-weight:700">Deu certo!</h1>
+<p style="margin:0;font-family:${FONTE};font-size:14px;line-height:1.6;color:${CORES.ink}">
+  Se esta mensagem chegou, o envio de e-mail do sistema está configurado e funcionando.
+  É assim que os avisos da loja vão aparecer para você.
+</p>
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;margin-top:14px">
+  ${linha("Remetente", ENV.emailFrom)}
+  ${linha("Enviado para", to.trim())}
+</table>`.trim(),
+    ),
+  });
+  const r = await sendEmailDetalhado({ to: to.trim(), subject: "Teste de envio — Bike To Go", html });
+  return { ...r, destinatario: to.trim() };
 }
 
 /**
@@ -76,101 +121,114 @@ export type NewLeadInfo = {
   source: "site" | "shopify";
 };
 
-export function buildNewLeadEmail(lead: NewLeadInfo, appUrl: string = ENV.appUrl): { subject: string; html: string } {
-  const row = (label: string, value: string | null | undefined) =>
-    value && value.trim()
-      ? `<tr><td style="padding:4px 12px 4px 0;color:#71717a;white-space:nowrap">${label}</td><td style="padding:4px 0;color:#18181b;font-weight:600">${escapeHtml(value)}</td></tr>`
-      : "";
+export function buildNewLeadEmail(
+  lead: NewLeadInfo,
+  appUrl: string = ENV.appUrl,
+  empresa: DadosEmpresa = EMPRESA_VAZIA,
+): { subject: string; html: string } {
   const origem = lead.source === "shopify" ? "Site (Shopify)" : "Página de reserva";
   const link = appUrl ? `${appUrl.replace(/\/$/, "")}/clientes/${lead.clientId}` : "";
+
+  const corpo = cartao(
+    "Novo pré-cadastro",
+    `
+<h1 style="margin:0 0 14px;font-family:${FONTE};font-size:22px;line-height:1.25;color:${CORES.dark};font-weight:700">${escapeHtml(lead.name)}</h1>
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse">
+  ${linha("Telefone", lead.phone)}
+  ${linha("E-mail", lead.email)}
+  ${linha("Cidade", lead.city)}
+  ${linha("Origem", origem)}
+</table>
+${link
+  ? botao("Abrir no painel", link)
+  : `<p style="margin:20px 0 0;font-family:${FONTE};font-size:13px;color:${CORES.muted}">Abra o painel em <strong>/clientes</strong> para validar o cadastro.</p>`}
+`.trim(),
+  );
+
   return {
     subject: `Novo pré-cadastro: ${lead.name}`,
-    html: `
-<div style="font-family:system-ui,-apple-system,Segoe UI,sans-serif;max-width:520px;margin:0 auto;padding:24px">
-  <p style="font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:#b45309;margin:0 0 4px">Bike To Go · novo lead</p>
-  <h1 style="font-size:20px;color:#18181b;margin:0 0 16px">${escapeHtml(lead.name)}</h1>
-  <table style="border-collapse:collapse;font-size:14px">
-    ${row("Telefone", lead.phone)}
-    ${row("E-mail", lead.email)}
-    ${row("Cidade", lead.city)}
-    ${row("Origem", origem)}
-  </table>
-  ${link
-    ? `<p style="margin:20px 0 0"><a href="${link}" style="display:inline-block;background:#d97706;color:#fff;text-decoration:none;font-size:14px;font-weight:600;padding:10px 18px;border-radius:8px">Abrir no painel</a></p>`
-    : `<p style="margin:20px 0 0;font-size:14px;color:#71717a">Abra o painel em <strong>/clientes</strong> para validar o cadastro.</p>`}
-</div>`.trim(),
+    html: montarEmail({
+      titulo: "Novo lead",
+      preheader: [lead.name, lead.city].filter(Boolean).join(" · "),
+      corpoHtml: corpo,
+      empresa,
+    }),
   };
 }
 
 /** Dispara o e-mail de novo lead pro dono. Fire-safe: nunca lança. */
 export async function sendNewLeadEmail(lead: NewLeadInfo): Promise<boolean> {
-  const { subject, html } = buildNewLeadEmail(lead);
+  const empresa = await carregarEmpresa().catch(() => EMPRESA_VAZIA);
+  const { subject, html } = buildNewLeadEmail(lead, ENV.appUrl, empresa);
   return sendOwnerEmail(subject, html);
 }
 
-// ─── Template: digest matinal (devoluções de hoje + atrasadas) ───────────────
-const fmtDay = (d: string | null) => (d ? `${d.slice(8, 10)}/${d.slice(5, 7)}` : "—");
+// ─── Template: boas-vindas para o CLIENTE (cadastro criado) ──────────────────
+// Primeiro e-mail que o cliente recebe da loja. Vale para os dois caminhos de
+// cadastro: o `/reservar` (ele mesmo preenche) e o cadastro manual da Cassiana.
+// Não promete reserva confirmada: quem fecha o aluguel é ela, no WhatsApp
+// (decisão de produto — reserva online é VETADA).
+export type BoasVindasInfo = {
+  nome: string;
+  email: string;
+  origem: "reservar" | "manual";
+};
 
-export function buildDigestEmail(
-  returns: { overdue: ReturnDueItem[]; dueToday: ReturnDueItem[] },
-  appUrl: string = ENV.appUrl,
+export function buildWelcomeEmail(
+  info: BoasVindasInfo,
+  empresa: DadosEmpresa = EMPRESA_VAZIA,
 ): { subject: string; html: string } {
-  const { overdue, dueToday } = returns;
-  const link = appUrl ? appUrl.replace(/\/$/, "") : "";
-  const total = overdue.length + dueToday.length;
+  const primeiroNome = info.nome.trim().split(/\s+/)[0] || info.nome;
+  const wa = (empresa.telefone || "").replace(/\D/g, "");
+  const waUrl = wa.length >= 10
+    ? `https://wa.me/${wa.length <= 11 ? `55${wa}` : wa}?text=${encodeURIComponent(`Oi! Sou ${info.nome} e acabei de fazer meu cadastro.`)}`
+    : "";
 
-  const row = (x: ReturnDueItem, late: boolean) => `
-    <tr>
-      <td style="padding:6px 12px 6px 0;color:#18181b;font-weight:600">${escapeHtml(x.clientName)}</td>
-      <td style="padding:6px 12px 6px 0;color:#3f3f46">${escapeHtml(x.bikeModel)}${x.tamanho ? ` · ${escapeHtml(x.tamanho)}` : ""}</td>
-      <td style="padding:6px 0;color:${late ? "#dc2626" : "#b45309"};white-space:nowrap;text-align:right">${late ? `${x.daysLate}d atraso` : "hoje"} · ${fmtDay(x.endDate)}</td>
-    </tr>`;
-  const section = (title: string, items: ReturnDueItem[], late: boolean) =>
-    items.length === 0
-      ? ""
-      : `<h2 style="font-size:15px;color:#18181b;margin:18px 0 6px">${title} (${items.length})</h2>
-         <table style="border-collapse:collapse;font-size:14px;width:100%">${items.map((x) => row(x, late)).join("")}</table>`;
+  const corpo = cartao(
+    "Cadastro recebido",
+    `
+<h1 style="margin:0 0 12px;font-family:${FONTE};font-size:22px;line-height:1.25;color:${CORES.dark};font-weight:700">Oi, ${escapeHtml(primeiroNome)}!</h1>
+<p style="margin:0 0 10px;font-family:${FONTE};font-size:14px;line-height:1.6;color:${CORES.ink}">
+  ${info.origem === "reservar"
+    ? "Recebemos o seu cadastro. Obrigado por escolher a gente para o seu passeio."
+    : "Seu cadastro foi criado aqui na loja. Obrigado por escolher a gente para o seu passeio."}
+</p>
+<p style="margin:0;font-family:${FONTE};font-size:14px;line-height:1.6;color:${CORES.ink}">
+  A partir daqui é com a gente: vamos conferir seus dados e falar com você pelo
+  WhatsApp para combinar <strong>a bike, as datas e o local de entrega</strong>.
+  Se preferir adiantar, é só chamar.
+</p>
+${waUrl ? botao("Falar no WhatsApp", waUrl) : ""}
+`.trim(),
+  );
 
   return {
-    subject: `Devoluções de hoje: ${total} pendente(s)${overdue.length ? `, ${overdue.length} em atraso` : ""}`,
-    html: `
-<div style="font-family:system-ui,-apple-system,Segoe UI,sans-serif;max-width:560px;margin:0 auto;padding:24px">
-  <p style="font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:#b45309;margin:0 0 4px">Bike To Go · resumo do dia</p>
-  <h1 style="font-size:20px;color:#18181b;margin:0 0 4px">Devoluções pendentes</h1>
-  <p style="font-size:14px;color:#71717a;margin:0">${total} no total${overdue.length ? ` · ${overdue.length} em atraso` : ""}.</p>
-  ${section("Em atraso", overdue, true)}
-  ${section("Previstas para hoje", dueToday, false)}
-  ${link ? `<p style="margin:22px 0 0"><a href="${link}/" style="display:inline-block;background:#d97706;color:#fff;text-decoration:none;font-size:14px;font-weight:600;padding:10px 18px;border-radius:8px">Abrir o painel</a></p>` : ""}
-</div>`.trim(),
+    subject: `Cadastro recebido — ${empresa.nome || "Bike To Go Floripa"}`,
+    html: montarEmail({
+      titulo: "Cadastro recebido",
+      preheader: `Oi ${primeiroNome}! Recebemos o seu cadastro e já vamos falar com você.`,
+      corpoHtml: corpo,
+      empresa,
+    }),
   };
 }
 
 /**
- * Digest matinal pro dono: devoluções de hoje + atrasadas. Fire-safe.
- * Guarda anti-duplicação por dia (setting `digest_last_sent` = data SP) — se
- * o servidor reiniciar no dia, não reenvia. Não manda e-mail quando não há
- * nada pendente. Marca o dia como processado mesmo em log-only.
+ * Manda as boas-vindas pro cliente. Fire-safe e silencioso quando não há
+ * e-mail no cadastro (cadastro manual da Cassiana costuma vir sem).
  */
-export async function sendMorningDigest(): Promise<boolean> {
+export async function sendWelcomeEmail(info: Partial<BoasVindasInfo>): Promise<boolean> {
   try {
-    const db = await getDb();
-    if (!db) return false;
-    const today = todaySaoPaulo();
-    if ((await getSetting("digest_last_sent")) === today) {
-      console.log("[Digest] Já processado hoje, pulando.");
-      return false;
-    }
-    const returns = await getReturnsDue(db);
-    if (returns.overdue.length + returns.dueToday.length === 0) {
-      console.log("[Digest] Nada pendente hoje, nenhum e-mail enviado.");
-      return false;
-    }
-    const { subject, html } = buildDigestEmail(returns);
-    const sent = await sendOwnerEmail(subject, html);
-    await setSetting("digest_last_sent", today); // dia processado (mesmo log-only)
-    return sent;
+    const email = (info.email ?? "").trim();
+    if (!email || !email.includes("@")) return false;
+    const empresa = await carregarEmpresa().catch(() => EMPRESA_VAZIA);
+    const { subject, html } = buildWelcomeEmail(
+      { nome: info.nome || "tudo bem", email, origem: info.origem ?? "manual" },
+      empresa,
+    );
+    return await sendEmail({ to: email, subject, html });
   } catch (err) {
-    console.warn("[Digest] Erro:", err);
+    console.warn("[Email] Erro nas boas-vindas ao cliente:", err);
     return false;
   }
 }

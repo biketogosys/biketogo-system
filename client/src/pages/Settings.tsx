@@ -117,6 +117,19 @@ export default function Settings() {
   const [companyName, setCompanyName] = useState("");
   const [companyLogoUrl, setCompanyLogoUrl] = useState("");
   const [uploadingLogo, setUploadingLogo] = useState(false);
+  // Teste de envio: mostra o motivo real da falha na tela (antes o erro só
+  // existia no log do servidor, e "não chegou" virava adivinhação).
+  const testEmail = trpc.settings.sendTestEmail.useMutation({
+    onSuccess: (r) => {
+      if (r.ok) {
+        toast.success(`E-mail de teste enviado para ${r.destinatario}. Confira a caixa (e o spam).`, { duration: 8000 });
+      } else {
+        toast.error(r.motivo ?? "Não foi possível enviar.", { duration: 15000 });
+      }
+    },
+    onError: (e) => toast.error(friendlyError(e, "Não foi possível enviar o teste.")),
+  });
+
   const uploadLogoMutation = trpc.settings.uploadLogo.useMutation({
     // ⚠️ O invalidate NÃO é opcional (bug 2026-07-27 "a logo some"): o endpoint
     // já gravou `company_logo_url` no banco, mas o cache da query continuava sem
@@ -532,13 +545,33 @@ export default function Settings() {
               placeholder="(48) 99999-9999"
               hint="Exibido no formulário público /reservar após o cadastro. DDD + número."
             />
+            {/* O rótulo dizia "remetente" e enganava (2026-07-30): este campo é o
+                DESTINATÁRIO dos avisos da loja (`sendOwnerEmail` usa como `to`).
+                O remetente real é o EMAIL_FROM do ambiente, que exige domínio
+                verificado no Resend e não se configura por aqui. */}
             <Field
-              label="Email de contato / remetente"
+              label="E-mail que recebe os avisos da loja"
               value={notificationEmail}
               onChange={setNotificationEmail}
               placeholder="biketogo.floripa@gmail.com"
-              hint="Email usado como remetente nas confirmações de reserva para clientes"
+              hint="Caixa onde chegam o aviso de lead novo e o resumo matinal de devoluções. Não é o remetente: pode ser um Gmail comum."
             />
+            {/* Sem isto, "não chegou" e "nem tentou" ficam iguais na tela: o
+                envio é não-fatal e o erro só existia no log do servidor. */}
+            <div className="flex flex-wrap items-center gap-3">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={testEmail.isPending}
+                onClick={() => testEmail.mutate()}
+              >
+                <Mail className="w-4 h-4 mr-1.5" />
+                {testEmail.isPending ? "Enviando..." : "Enviar e-mail de teste"}
+              </Button>
+              <span className="text-xs text-muted-foreground">
+                Salve a seção antes de testar.
+              </span>
+            </div>
 
           </div>
         </div>
