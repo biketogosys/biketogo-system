@@ -89,6 +89,29 @@ export function linha(rotulo: string, valor: string | null | undefined): string 
 </tr>`.trim();
 }
 
+/**
+ * Bloco no padrão da PÁGINA PÚBLICA do contrato (`PublicContract.tsx`): faixa de
+ * título em caixa alta sobre o cartão branco. É o que faz o e-mail e a página
+ * parecerem o mesmo documento, que era o pedido do Matheus.
+ */
+export function bloco(titulo: string, conteudoHtml: string): string {
+  return `
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 14px;background:${CORES.white};border:1px solid ${CORES.line};border-radius:12px">
+  <tr><td style="padding:11px 18px;background:${CORES.alt};border-bottom:1px solid ${CORES.line};border-radius:12px 12px 0 0;font-family:${FONTE};font-size:11px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:${CORES.muted}">${escapeHtml(titulo)}</td></tr>
+  <tr><td style="padding:18px">${conteudoHtml}</td></tr>
+</table>`.trim();
+}
+
+/** Selo de status, no espírito dos badges da casa (sem oklch, que e-mail ignora). */
+export function selo(texto: string, cor: { fundo: string; texto: string; borda: string }): string {
+  return `<span style="display:inline-block;padding:3px 9px;border-radius:6px;background:${cor.fundo};border:1px solid ${cor.borda};font-family:${FONTE};font-size:11px;font-weight:700;color:${cor.texto}">${escapeHtml(texto)}</span>`;
+}
+
+/** Chip de acessório, espelho dos chips da página pública. */
+export function chip(texto: string): string {
+  return `<span style="display:inline-block;margin:0 6px 6px 0;padding:3px 9px;border-radius:6px;border:1px solid ${CORES.line};background:${CORES.alt};font-family:${FONTE};font-size:12px;color:${CORES.muted}">${escapeHtml(texto)}</span>`;
+}
+
 /** Bloco branco com título opcional, onde o conteúdo de cada e-mail entra. */
 export function cartao(titulo: string | null, conteudoHtml: string): string {
   const cabecalho = titulo

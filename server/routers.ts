@@ -91,9 +91,10 @@ import {
   createAuditLog,
 } from "./db";
 import { escapeHtml, sendNewLeadEmail, sendOwnerEmail, sendWelcomeEmail } from "./email";
+import { sendReceiptEmail, sendReservationEmail } from "./email-contract";
+import { carregarAjustesDevolucao } from "./contract-adjustments";
 import { COOKIE_NAME } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
-import { systemRouter } from "./_core/systemRouter";
 import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import { ENV } from "./_core/env";
 
@@ -2960,39 +2961,11 @@ async function buildContractPdfData(db: Awaited<ReturnType<typeof getDb>>, contr
   // AUDITORIA (é lá que o "valor anterior" existe; o aluguel só guarda o atual).
   // Sem isto, o PDF regerado mostraria um total menor que o papel assinado sem
   // dizer por quê.
-  const ajustesPdf = await (async () => {
-    const ids = rentalsForPdf.map((r) => r.id).filter(Boolean);
-    if (ids.length === 0) return [];
-    const { auditLogs } = await import("../drizzle/schema");
-    const { inArray: inArrayAudit } = await import("drizzle-orm");
-    const rows = await db
-      .select({ registroId: auditLogs.registroId, dados: auditLogs.dadosDepois, criadoEm: auditLogs.criadoEm })
-      .from(auditLogs)
-      .where(and(
-        eq(auditLogs.acao, "devolucao_antecipada_recalculada"),
-        inArrayAudit(auditLogs.registroId, ids),
-      ))
-      .orderBy(auditLogs.id);
-    const inicioPorRental = new Map(rentalsForPdf.map((r) => [r.id, r.startDate as string | null]));
-    const { billableDays } = await import("./rental-period");
-    return rows
-      .map((row) => {
-        const d = (row.dados ?? {}) as Record<string, any>;
-        if (!d.valorAnterior || !d.novoValor) return null;
-        // Registros anteriores a 2026-07-28 não gravavam as diárias: reconstrói
-        // pelas datas, com a mesma régua do recálculo.
-        const inicio = inicioPorRental.get(row.registroId as number) ?? null;
-        const diariasDe = d.diariasAntes ?? (inicio && d.devolucaoCombinada ? billableDays(inicio, d.devolucaoCombinada) : 0);
-        const diariasPara = d.diariasDepois ?? (inicio && d.devolucaoReal ? billableDays(inicio, d.devolucaoReal) : 0);
-        return {
-          data: row.criadoEm as Date,
-          diariasDe, diariasPara,
-          valorDe: String(d.valorAnterior),
-          valorPara: String(d.novoValor),
-        };
-      })
-      .filter(Boolean) as Array<{ data: Date; diariasDe: number; diariasPara: number; valorDe: string; valorPara: string }>;
-  })();
+  const ajustesPdf = await carregarAjustesDevolucao(
+    db,
+    rentalsForPdf.map((r) => r.id),
+    new Map(rentalsForPdf.map((r) => [r.id, r.startDate as string | null])),
+  );
 
   const accWithSerial = await Promise.all(caRows.map(async (ca) => {
     let serialNumber: string | null = null;
@@ -3429,6 +3402,10 @@ const contractsRouter = router({
       await recalcContractStatus(input.id);
       // Valor mudou ⇒ regera o PDF UMA vez (o loop acima pode ter recalculado N).
       if (recalculados.length > 0) await regenerateContractPdf(db, input.id, "contracts.close");
+      // E-mail B da leva: o recibo, "quando encerra" (palavras dela). Guarda
+      // anti-duplicação dentro do sender — encerrar e confirmar pagamento são
+      // ações separadas e a ordem varia; quem chega por último manda.
+      await sendReceiptEmail(db, input.id, signContractToken(input.id));
       await createAuditLog({ adminId: (ctx as any).adminUser?.id ?? null, acao: "encerrou_contrato", tabela: "contracts", registroId: input.id });
       return {
         success: true,
@@ -3699,6 +3676,11 @@ const contractsRouter = router({
         await db.update(cTableUpd).set({ pdfUrl: pdfS3Url }).where(eqPdf(cTableUpd.id, contract.id));
       } catch (pdfErr) { console.warn("[createManual] PDF generation error:", pdfErr); }
 
+      // E-mail A da leva: reserva registrada, com os termos do contrato dentro
+      // (pedido da Cassiana — teve cliente que cancelou por não aceitar os
+      // termos, e ela quer que ele leia antes). Não-fatal: contrato criado é
+      // contrato criado, mesmo com o Resend fora do ar.
+      await sendReservationEmail(db, contract.id, signContractToken(contract.id));
 
       await createAuditLog({
         adminId: (ctx as any).adminUser?.id ?? null,
@@ -4172,7 +4154,16 @@ const contractsRouter = router({
           } as any);
         }
       } catch (err) { console.warn("[confirmPayment] Revenue error:", err); }
-      
+
+      // NÃO existe e-mail de "aviso de pagamento" (decisão do Matheus). O que
+      // existe é o recibo do encerramento — e ele só sai daqui quando o contrato
+      // JÁ está encerrado, ou seja, quando o pagamento entrou depois da
+      // devolução e o e-mail do `close` saiu sem a forma de pagamento. O sender
+      // tem guarda própria, então isto nunca duplica.
+      if (contract.status === "encerrado") {
+        await sendReceiptEmail(db, input.contractId, signContractToken(input.contractId));
+      }
+
       await createAuditLog({
         adminId: (ctx as any).adminUser?.id ?? null,
         acao: "confirmou_pagamento_presencial",
@@ -4358,7 +4349,6 @@ const bikeUnitsRouter = router({
 });
 
 export const appRouter = router({
-  system: systemRouter,
   auth: authRouter,
   clients: clientsRouter,
   bikes: bikesRouter,

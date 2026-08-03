@@ -40,10 +40,6 @@ vi.mock("./db", () => ({
   getArchivedRentals: vi.fn().mockResolvedValue({ items: [], total: 0, totalPages: 1 }),
 }));
 
-vi.mock("./_core/notification", () => ({
-  notifyOwner: vi.fn().mockResolvedValue(true),
-}));
-
 // ─── Context helpers ──────────────────────────────────────────────────────────
 function makeAdminCtx(): TrpcContext {
   return {
