@@ -767,6 +767,91 @@ export async function getRevenues(opts?: { categoryId?: number; startDate?: stri
   return { items, total: Number(countResult[0]?.count ?? 0) };
 }
 
+/**
+ * Q6 — lançamentos do período, LINHA A LINHA, para o contador.
+ *
+ * O export antigo mandava só 5 linhas de totais, que não serve para lançar em
+ * lugar nenhum. Aqui saem receitas e despesas juntas, com o NOME da categoria
+ * (o resto do app trabalha com `categoryId`) e sem paginação: quem exporta
+ * quer o período inteiro, não a página que está na tela.
+ *
+ * `dbOverride` existe para o teste rodar em PGlite.
+ */
+export async function getFinancialEntries(
+  opts: { startDate?: string; endDate?: string; limit?: number },
+  dbOverride?: any,
+): Promise<Array<{
+  date: string;
+  tipo: "receita" | "despesa";
+  categoria: string;
+  descricao: string;
+  valor: string;
+  formas: string | null;
+}>> {
+  const db = dbOverride ?? (await getDb());
+  if (!db) return [];
+  const teto = opts.limit ?? 10_000;
+
+  const janela = (col: any) => {
+    const c = [];
+    if (opts.startDate) c.push(gte(col, opts.startDate));
+    if (opts.endDate) c.push(lte(col, opts.endDate));
+    return c.length > 0 ? and(...c) : undefined;
+  };
+
+  const [recRows, despRows] = await Promise.all([
+    db.select({
+      date: revenues.date,
+      categoria: revenueCategories.name,
+      descricao: revenues.description,
+      valor: revenues.amount,
+      meta: revenues.meta,
+    })
+      .from(revenues)
+      .leftJoin(revenueCategories, eq(revenues.categoryId, revenueCategories.id))
+      .where(janela(revenues.date))
+      .orderBy(desc(revenues.date))
+      .limit(teto),
+    db.select({
+      date: expenses.date,
+      categoria: expenseCategories.name,
+      descricao: expenses.description,
+      valor: expenses.amount,
+    })
+      .from(expenses)
+      .leftJoin(expenseCategories, eq(expenses.categoryId, expenseCategories.id))
+      .where(janela(expenses.date))
+      .orderBy(desc(expenses.date))
+      .limit(teto),
+  ]);
+
+  const linhas = [
+    ...recRows.map((r: any) => ({
+      date: r.date as string,
+      tipo: "receita" as const,
+      categoria: r.categoria ?? "Sem categoria",
+      descricao: r.descricao ?? "",
+      valor: r.valor ?? "0",
+      // Pagamento dividido: o contador precisa saber que R$225 entraram como
+      // Pix + Dinheiro, senão não bate com o extrato.
+      formas: r.meta?.kind === "contract_payment" && Array.isArray(r.meta.breakdown)
+        ? r.meta.breakdown.map((b: any) => `${b.method}:${b.amount}`).join(" | ")
+        : null,
+    })),
+    ...despRows.map((d: any) => ({
+      date: d.date as string,
+      tipo: "despesa" as const,
+      categoria: d.categoria ?? "Sem categoria",
+      descricao: d.descricao ?? "",
+      valor: d.valor ?? "0",
+      formas: null,
+    })),
+  ];
+
+  // Data crescente: é a ordem em que o contador lança.
+  return linhas.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+}
+
 export async function createRevenue(data: InsertRevenue): Promise<number> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");

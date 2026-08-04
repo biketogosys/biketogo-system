@@ -701,28 +701,86 @@ export default function Financial() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   ], [categoryMap, isExpense, deleteExpense.isPending, deleteRevenue.isPending]);
 
-  // ─── CSV ───────────────────────────────────────────────────────────────────
-  const exportCSV = () => {
+  // ─── CSV (Q6) ──────────────────────────────────────────────────────────────
+  // O export antigo mandava 5 linhas de totais, que não dá para lançar em lugar
+  // nenhum. Agora sai LINHA A LINHA (receitas + despesas do período), com o
+  // resumo no rodapé do arquivo, separado por uma linha em branco para não
+  // atrapalhar quem for filtrar a planilha.
+  //
+  // ⚠️ Formatado para o Excel em português, que é onde o contador abre:
+  // separador `;` (com `,` ele joga tudo numa coluna só), decimal com vírgula e
+  // BOM no começo (sem ele, "Manutenção" vira "ManutenÃ§Ã£o").
+  const [exportando, setExportando] = useState(false);
+  const utilsFin = trpc.useUtils();
+
+  const exportCSV = async () => {
     if (!report) return;
-    const rentalRevenue = Number(report.rentalRevenue);
-    const extraRevenue = Number(report.extraRevenue);
-    const totalExpenses = Number(report.totalExpenses);
-    const rows = [
-      "Tipo,Valor",
-      `Receita de Alugueis,${rentalRevenue.toFixed(2)}`,
-      `Receitas Extras,${extraRevenue.toFixed(2)}`,
-      `Total Receitas,${(rentalRevenue + extraRevenue).toFixed(2)}`,
-      `Total Despesas,${totalExpenses.toFixed(2)}`,
-      `Lucro Líquido,${(rentalRevenue + extraRevenue - totalExpenses).toFixed(2)}`,
-    ];
-    const blob = new Blob([rows.join("\n")], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `relatorio-financeiro-${startDate}-${endDate}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-    toast.success("CSV exportado");
+    setExportando(true);
+    try {
+      const linhas = await utilsFin.financial.entries.fetch({ startDate, endDate });
+
+      const escapar = (v: string) => {
+        const s = String(v ?? "");
+        return /[";\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+      };
+      const dataBr = (iso: string) => (iso ? iso.split("-").reverse().join("/") : "");
+      const numeroBr = (v: string) => (Number(v) || 0).toFixed(2).replace(".", ",");
+      const rotuloForma: Record<string, string> = {
+        pix: "Pix", credit_card: "Cartão de crédito", debit_card: "Cartão de débito",
+        cash: "Dinheiro", other: "Outra forma",
+      };
+      const formasBr = (f: string | null) =>
+        !f ? "" : f.split(" | ")
+          .map((p) => {
+            const [m, v] = p.split(":");
+            return `${rotuloForma[m] ?? m} ${numeroBr(v)}`;
+          })
+          .join(" + ");
+
+      const rows = [
+        ["Data", "Tipo", "Categoria", "Descrição", "Formas de pagamento", "Valor"].join(";"),
+        ...linhas.map((l) => [
+          dataBr(l.date),
+          l.tipo === "receita" ? "Receita" : "Despesa",
+          escapar(l.categoria),
+          escapar(l.descricao),
+          escapar(formasBr(l.formas)),
+          // Despesa entra com o sinal invertido: somar a coluna inteira dá o
+          // resultado do período. Inverter (em vez de prefixar "-") mantém certo
+          // o caso raro do valor já negativo — estorno de receita continua
+          // negativo, reembolso de despesa vira positivo.
+          numeroBr(String(l.tipo === "despesa" ? -(Number(l.valor) || 0) : l.valor)),
+        ].join(";")),
+      ];
+
+      const totalReceitas = linhas.filter((l) => l.tipo === "receita").reduce((s, l) => s + (Number(l.valor) || 0), 0);
+      const totalDespesas = linhas.filter((l) => l.tipo === "despesa").reduce((s, l) => s + (Number(l.valor) || 0), 0);
+      rows.push(
+        "",
+        `Período;${dataBr(startDate)} a ${dataBr(endDate)}`,
+        `Total de receitas;;;;;${numeroBr(String(totalReceitas))}`,
+        // sinal só quando há despesa: "-0,00" no rodapé parece erro de conta
+        `Total de despesas;;;;;${totalDespesas > 0 ? "-" : ""}${numeroBr(String(totalDespesas))}`,
+        `Resultado;;;;;${numeroBr(String(totalReceitas - totalDespesas))}`,
+      );
+
+      const blob = new Blob(["﻿" + rows.join("\r\n")], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `financeiro-${startDate}-a-${endDate}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success(
+        linhas.length > 0
+          ? `CSV exportado: ${linhas.length} ${linhas.length === 1 ? "lançamento" : "lançamentos"}.`
+          : "Nenhum lançamento no período. O arquivo saiu só com o resumo.",
+      );
+    } catch (err) {
+      toast.error(friendlyError(err, "Não foi possível exportar o CSV."));
+    } finally {
+      setExportando(false);
+    }
   };
 
   const tabOptions = [
@@ -744,8 +802,8 @@ export default function Financial() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={exportCSV} disabled={!report}>
-            <Download className="size-4 mr-1" /> Exportar CSV
+          <Button variant="outline" size="sm" onClick={exportCSV} disabled={!report || exportando}>
+            <Download className="size-4 mr-1" /> {exportando ? "Exportando..." : "Exportar CSV"}
           </Button>
           <Button size="sm" onClick={() => { setEditItem(null); setShowForm(true); }}>
             <Plus className="size-4 mr-1" /> {isExpense ? "Nova despesa" : "Nova receita"}

@@ -83,6 +83,7 @@ import {
   updateRevenue,
   deleteRevenue,
   getFinancialReport,
+  getFinancialEntries,
   // Settings
   getSetting,
   setSetting,
@@ -1829,6 +1830,18 @@ const financialRouter = router({
       offset: z.number().min(0).default(0),
     }))
     .query(({ input }) => getRevenues(input)),
+
+  /**
+   * Q6 — lançamentos do período para exportar (receitas + despesas, linha a
+   * linha, com nome de categoria). Sem paginação de propósito: o CSV do
+   * contador é do período inteiro, não da página que está na tela.
+   */
+  entries: adminAuthProcedure
+    .input(z.object({
+      startDate: z.string().optional(),
+      endDate: z.string().optional(),
+    }))
+    .query(({ input }) => getFinancialEntries(input)),
 
   createRevenue: adminAuthProcedure
     .input(z.object({
