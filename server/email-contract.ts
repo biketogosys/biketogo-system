@@ -23,7 +23,7 @@ import {
 } from "../drizzle/schema";
 import { carregarAjustesDevolucao, type AjusteDevolucao } from "./contract-adjustments";
 import { getSetting } from "./db";
-import { sendEmail } from "./email";
+import { resolverReplyTo, sendEmail } from "./email";
 import {
   CORES, EMPRESA_VAZIA, bloco, botao, carregarEmpresa, chip, escapeHtml,
   montarEmail, selo, type DadosEmpresa,
@@ -514,12 +514,15 @@ export async function sendReservationEmail(db: any, contractId: number, token: s
     const dados = await carregarDadosContrato(db, contractId);
     const email = dados?.cliente.email?.trim();
     if (!dados || !email || !email.includes("@")) return false;
-    const [empresa, clausulas] = await Promise.all([
+    const [empresa, clausulas, replyTo] = await Promise.all([
       carregarEmpresa().catch(() => EMPRESA_VAZIA),
       carregarClausulasPt(),
+      resolverReplyTo(),
     ]);
     const { subject, html } = buildReservationEmail(dados, clausulas, empresa, linkDoContrato(contractId, token));
-    return await sendEmail({ to: email, subject, html });
+    // Resposta do cliente vai para a caixa da loja, não para o remetente de
+    // envio (que não tem caixa: o MX do domínio aponta para o Shopify).
+    return await sendEmail({ to: email, subject, html, replyTo });
   } catch (err) {
     console.warn("[Email] Erro no e-mail de reserva:", err);
     return false;
@@ -551,9 +554,12 @@ export async function sendReceiptEmail(db: any, contractId: number, token: strin
     const email = dados?.cliente.email?.trim();
     if (!dados || !dados.pago || !email || !email.includes("@")) return false;
 
-    const empresa = await carregarEmpresa().catch(() => EMPRESA_VAZIA);
+    const [empresa, replyTo] = await Promise.all([
+      carregarEmpresa().catch(() => EMPRESA_VAZIA),
+      resolverReplyTo(),
+    ]);
     const { subject, html } = buildReceiptEmail(dados, empresa, linkDoContrato(contractId, token));
-    const ok = await sendEmail({ to: email, subject, html });
+    const ok = await sendEmail({ to: email, subject, html, replyTo });
     if (ok) {
       // Só registra quando saiu de verdade: se o Resend recusou, a próxima ação
       // (confirmar pagamento, por exemplo) ainda tem chance de mandar.

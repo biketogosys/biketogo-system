@@ -17,9 +17,37 @@ const FONTE = "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Aria
 // Reexportado: já era importado daqui por `routers.ts` antes do layout existir.
 export { escapeHtml };
 
-export type EmailPayload = { to: string; subject: string; html: string };
+export type EmailPayload = {
+  to: string;
+  subject: string;
+  html: string;
+  /**
+   * Caixa que recebe a RESPOSTA do cliente. Sem isto a resposta vai para o
+   * remetente (`EMAIL_FROM`), que é só identidade de envio: o MX do domínio da
+   * loja aponta para o Shopify, então a mensagem se perde sem ninguém notar.
+   */
+  replyTo?: string | null;
+};
 
 export type ResultadoEnvio = { ok: boolean; motivo?: string };
+
+/**
+ * Para onde vai a resposta do cliente: o e-mail que a Cassiana lê de verdade,
+ * configurado em Configurações → "E-mail que recebe os avisos da loja"
+ * (`notification_email`), com o `company_email` como reserva.
+ *
+ * É o mesmo destino dos avisos da loja de propósito: se ela trocar de caixa,
+ * troca num lugar só e vale para aviso e para resposta de cliente.
+ */
+export async function resolverReplyTo(): Promise<string | null> {
+  try {
+    const to = (await getSetting("notification_email")) || (await getSetting("company_email"));
+    const limpo = (to ?? "").trim();
+    return limpo.includes("@") ? limpo : null;
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Transporte cru, versão que DEVOLVE O MOTIVO da falha.
@@ -29,9 +57,9 @@ export type ResultadoEnvio = { ok: boolean; motivo?: string };
  * indistinguíveis para quem usa o sistema — foi exatamente o que travou o
  * Matheus em 2026-07-30. Quem quiser mostrar o erro na tela usa esta.
  */
-export async function sendEmailDetalhado({ to, subject, html }: EmailPayload): Promise<ResultadoEnvio> {
+export async function sendEmailDetalhado({ to, subject, html, replyTo }: EmailPayload): Promise<ResultadoEnvio> {
   if (!ENV.resendApiKey) {
-    console.log(`[Email] (log-only, sem RESEND_API_KEY) para=${to} assunto="${subject}"`);
+    console.log(`[Email] (log-only, sem RESEND_API_KEY) para=${to} assunto="${subject}"${replyTo ? ` reply-to=${replyTo}` : ""}`);
     return { ok: false, motivo: "RESEND_API_KEY não está configurada no ambiente." };
   }
   try {
@@ -41,7 +69,14 @@ export async function sendEmailDetalhado({ to, subject, html }: EmailPayload): P
         Authorization: `Bearer ${ENV.resendApiKey}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ from: ENV.emailFrom, to: [to], subject, html }),
+      body: JSON.stringify({
+        from: ENV.emailFrom,
+        to: [to],
+        subject,
+        html,
+        // `reply_to` é o nome do campo na API do Resend.
+        ...(replyTo ? { reply_to: replyTo } : {}),
+      }),
       signal: AbortSignal.timeout(SEND_TIMEOUT_MS),
     });
     if (!res.ok) {
@@ -70,7 +105,10 @@ export async function enviarEmailDeTeste(): Promise<ResultadoEnvio & { destinata
   if (!to || !to.trim()) {
     return { ok: false, motivo: "Nenhum e-mail configurado no campo acima. Preencha e salve antes de testar." };
   }
-  const empresa = await carregarEmpresa().catch(() => EMPRESA_VAZIA);
+  const [empresa, replyTo] = await Promise.all([
+    carregarEmpresa().catch(() => EMPRESA_VAZIA),
+    resolverReplyTo(),
+  ]);
   const html = montarEmail({
     titulo: "Teste de envio",
     preheader: "Se você recebeu isto, o envio de e-mail está funcionando.",
@@ -86,16 +124,21 @@ export async function enviarEmailDeTeste(): Promise<ResultadoEnvio & { destinata
 <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;margin-top:14px">
   ${linha("Remetente", ENV.emailFrom)}
   ${linha("Enviado para", to.trim())}
+  ${linha("Resposta do cliente vai para", replyTo ?? "ninguém (nenhum e-mail configurado)")}
 </table>`.trim(),
     ),
   });
-  const r = await sendEmailDetalhado({ to: to.trim(), subject: "Teste de envio — Bike To Go", html });
+  const r = await sendEmailDetalhado({ to: to.trim(), subject: "Teste de envio — Bike To Go", html, replyTo });
   return { ...r, destinatario: to.trim() };
 }
 
 /**
  * E-mail para o dono: destinatário vem de Configurações → notification_email
  * (fallback company_email). Não-fatal de ponta a ponta.
+ *
+ * Sem `replyTo` de propósito: este e-mail JÁ vai para a caixa da loja, então
+ * responder a ele seria responder a si mesma. O Reply-To existe para os
+ * e-mails ao CLIENTE, que são os que recebem resposta.
  */
 export async function sendOwnerEmail(subject: string, html: string): Promise<boolean> {
   try {
@@ -221,12 +264,15 @@ export async function sendWelcomeEmail(info: Partial<BoasVindasInfo>): Promise<b
   try {
     const email = (info.email ?? "").trim();
     if (!email || !email.includes("@")) return false;
-    const empresa = await carregarEmpresa().catch(() => EMPRESA_VAZIA);
+    const [empresa, replyTo] = await Promise.all([
+      carregarEmpresa().catch(() => EMPRESA_VAZIA),
+      resolverReplyTo(),
+    ]);
     const { subject, html } = buildWelcomeEmail(
       { nome: info.nome || "tudo bem", email, origem: info.origem ?? "manual" },
       empresa,
     );
-    return await sendEmail({ to: email, subject, html });
+    return await sendEmail({ to: email, subject, html, replyTo });
   } catch (err) {
     console.warn("[Email] Erro nas boas-vindas ao cliente:", err);
     return false;

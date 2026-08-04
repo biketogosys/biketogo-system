@@ -4,9 +4,15 @@
  * Unit tests puros (sem PGlite): template, escaping e o contrato do modo
  * log-only (sem RESEND_API_KEY o transporte NÃO chama a rede).
  */
-import { describe, it, expect, vi, afterEach } from "vitest";
-import { buildNewLeadEmail, buildWelcomeEmail, escapeHtml, sendEmail } from "./email";
+import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
+import { buildNewLeadEmail, buildWelcomeEmail, escapeHtml, sendEmail, sendEmailDetalhado, resolverReplyTo } from "./email";
+import { ENV } from "./_core/env";
+import { getSetting } from "./db";
 import type { ReturnDueItem } from "./overdue";
+
+// `resolverReplyTo` lê as Configurações; aqui só interessa o que ele faz com o
+// valor, não o banco.
+vi.mock("./db", () => ({ getSetting: vi.fn() }));
 
 describe("escapeHtml", () => {
   it("escapa &, <, > e aspas", () => {
@@ -94,5 +100,76 @@ describe("buildWelcomeEmail", () => {
   it("assunto usa o nome da empresa", () => {
     expect(buildWelcomeEmail({ nome: "Ana", email: "a@x.com", origem: "manual" }, empresa).subject)
       .toBe("Cadastro recebido — Bike To Go Floripa");
+  });
+});
+
+// ─── Item 12: Reply-To ───────────────────────────────────────────────────────
+// O MX do domínio da loja aponta para o Shopify e o remetente (EMAIL_FROM) é só
+// identidade de envio: sem Reply-To, resposta de cliente cai no vazio.
+describe("resolverReplyTo", () => {
+  beforeEach(() => vi.mocked(getSetting).mockReset());
+
+  it("usa o e-mail que recebe os avisos da loja", async () => {
+    vi.mocked(getSetting).mockImplementation(async (k: string) =>
+      k === "notification_email" ? "loja@gmail.com" : "outro@x.com");
+    expect(await resolverReplyTo()).toBe("loja@gmail.com");
+  });
+
+  it("cai no e-mail da empresa quando o de avisos está vazio", async () => {
+    vi.mocked(getSetting).mockImplementation(async (k: string) =>
+      k === "notification_email" ? "" : "contato@empresa.com");
+    expect(await resolverReplyTo()).toBe("contato@empresa.com");
+  });
+
+  it("devolve null quando não há e-mail configurado ou o valor não é e-mail", async () => {
+    vi.mocked(getSetting).mockResolvedValue("");
+    expect(await resolverReplyTo()).toBeNull();
+    vi.mocked(getSetting).mockResolvedValue("não é e-mail");
+    expect(await resolverReplyTo()).toBeNull();
+  });
+
+  it("não derruba o envio se a leitura das Configurações falhar", async () => {
+    vi.mocked(getSetting).mockImplementationOnce(() => Promise.reject(new Error("db fora")));
+    await expect(resolverReplyTo()).resolves.toBeNull();
+  });
+});
+
+describe("sendEmailDetalhado — reply_to no payload do Resend", () => {
+  const keyOriginal = ENV.resendApiKey;
+  let corpoEnviado: any = null;
+
+  beforeEach(() => {
+    corpoEnviado = null;
+    ENV.resendApiKey = "re_teste";
+    vi.stubGlobal("fetch", vi.fn(async (_url: string, init: any) => {
+      corpoEnviado = JSON.parse(init.body);
+      return { ok: true, text: async () => "" } as any;
+    }));
+  });
+  afterEach(() => {
+    ENV.resendApiKey = keyOriginal;
+    vi.unstubAllGlobals();
+  });
+
+  it("manda reply_to quando há caixa configurada", async () => {
+    const r = await sendEmailDetalhado({
+      to: "cliente@x.com", subject: "Reserva", html: "<p>oi</p>", replyTo: "loja@gmail.com",
+    });
+    expect(r.ok).toBe(true);
+    expect(corpoEnviado.reply_to).toBe("loja@gmail.com");
+  });
+
+  it("omite o campo quando não há caixa (em vez de mandar vazio)", async () => {
+    await sendEmailDetalhado({ to: "cliente@x.com", subject: "Reserva", html: "<p>oi</p>", replyTo: null });
+    expect("reply_to" in corpoEnviado).toBe(false);
+
+    await sendEmailDetalhado({ to: "cliente@x.com", subject: "Reserva", html: "<p>oi</p>" });
+    expect("reply_to" in corpoEnviado).toBe(false);
+  });
+
+  it("o remetente continua sendo o EMAIL_FROM do ambiente", async () => {
+    await sendEmailDetalhado({ to: "c@x.com", subject: "s", html: "h", replyTo: "loja@gmail.com" });
+    expect(corpoEnviado.from).toBe(ENV.emailFrom);
+    expect(corpoEnviado.to).toEqual(["c@x.com"]);
   });
 });
