@@ -202,6 +202,9 @@ type EditPrefill = {
   clientName: string;
   bikes: BikeEntry[];
   accessories: Array<{ accessoryId: number; variante: string | null; qty: number }>;
+  /** Desconto manual já gravado no contrato (percentual) e o motivo. */
+  descontoPercent?: string | null;
+  descontoMotivo?: string | null;
 };
 
 /**
@@ -252,6 +255,11 @@ export function NewContractModal({
   const [clientStatus, setClientStatus] = useState("verified"); // prefill always verified
   const [bikeEntries, setBikeEntries] = useState<BikeEntry[]>([]);
   const [notes, setNotes] = useState("");
+  // Desconto MANUAL do contrato (Cassiana: "se eu precisar dar um desconto
+  // diferente pra algum cliente"). Percentual, vale para o contrato inteiro e
+  // SUBSTITUI o desconto de faixa por dias.
+  const [descontoManual, setDescontoManual] = useState("");
+  const [descontoMotivo, setDescontoMotivo] = useState("");
   const [accSelections, setAccSelections] = useState<Record<number, Record<string, number>>>({});
   const [prefillSelections, setPrefillSelections] = useState<Record<number, Record<string, number>>>({});
 
@@ -270,6 +278,9 @@ export function NewContractModal({
       }
       setAccSelections(sel);
       setPrefillSelections(sel);
+      const pct = editPrefill.descontoPercent != null ? parseFloat(editPrefill.descontoPercent) : 0;
+      setDescontoManual(pct > 0 ? String(pct) : "");
+      setDescontoMotivo(editPrefill.descontoMotivo ?? "");
       // Editar já sabe de quem é o contrato: abre direto nas BIKES (pedido
       // Matheus 2026-07-28). O passo 1 continua alcançável pelo "Voltar" para
       // quem realmente precisa trocar o cliente do contrato.
@@ -295,6 +306,14 @@ export function NewContractModal({
   const { data: dupRules } = trpc.bikes.discountRulesBatch.useQuery(
     { bikeIds: Array.from(new Set((duplicateFrom?.bikes ?? []).map((b) => b.bikeId))) },
     { enabled: open && isDuplicateMode },
+  );
+
+  // Regras de faixa de TODAS as bikes já no carrinho: sem elas, tirar o desconto
+  // manual não teria como devolver o desconto por dias que valia antes.
+  const bikeIdsNoCarrinho = Array.from(new Set(bikeEntries.map((b) => b.bikeId)));
+  const { data: rulesCarrinho } = trpc.bikes.discountRulesBatch.useQuery(
+    { bikeIds: bikeIdsNoCarrinho },
+    { enabled: open && bikeIdsNoCarrinho.length > 0 },
   );
 
   useEffect(() => {
@@ -482,9 +501,16 @@ export function NewContractModal({
 
   const selectedBike = bikes.find((b) => b.id === Number(selBikeId));
 
+  /** Desconto manual válido (0 a 100) ou null. Fonte única da leitura do campo. */
+  const descontoManualNum = (() => {
+    const n = parseFloat(descontoManual.replace(",", "."));
+    return Number.isFinite(n) && n > 0 ? Math.min(n, 100) : null;
+  })();
+
   function calcTotal(
     entry: Omit<BikeEntry, "totalAmount" | "numDays">,
     rules: Array<{ minDays: number; discountPercent: string }> = [],
+    manualPercent: number | null = descontoManualNum,
   ): { numDays: number; totalAmount: string; discountPercent?: number } {
     if (!entry.startDate || !entry.endDate) return { numDays: 0, totalAmount: "0.00" };
     const start = new Date(entry.startDate);
@@ -496,10 +522,33 @@ export function NewContractModal({
     const rule = rules
       .filter((r) => numDays >= r.minDays)
       .sort((a, b) => b.minDays - a.minDays)[0];
-    const pct = rule ? parseFloat(String(rule.discountPercent)) : 0;
-    const totalAmount = (base * (1 - (isNaN(pct) ? 0 : pct) / 100)).toFixed(2);
+    const faixa = rule ? parseFloat(String(rule.discountPercent)) : 0;
+    // ⚠️ O manual SUBSTITUI a faixa, não soma (decisão do Matheus, 2026-08-03).
+    // Espelha o `effectiveDiscountPercent` do servidor: se divergirem, o crédito
+    // da devolução antecipada não bate com o que o contrato cobrou.
+    const pct = manualPercent != null ? manualPercent : (isNaN(faixa) ? 0 : faixa);
+    const totalAmount = (base * (1 - pct / 100)).toFixed(2);
     return { numDays, totalAmount, discountPercent: pct > 0 ? pct : undefined };
   }
+
+  // Mexeu no desconto manual ⇒ TODAS as bikes do carrinho recalculam. Sem isto,
+  // o desconto só valeria para o que fosse adicionado depois e o total exibido
+  // mentiria em relação ao que o servidor grava.
+  useEffect(() => {
+    if (bikeEntries.length === 0) return;
+    setBikeEntries((prev) => {
+      let mudou = false;
+      const proximo = prev.map((entry) => {
+        const rules = ((rulesCarrinho?.[entry.bikeId] ?? []) as any[]);
+        const { numDays, totalAmount, discountPercent } = calcTotal(entry, rules, descontoManualNum);
+        if (totalAmount === entry.totalAmount && discountPercent === entry.discountPercent) return entry;
+        mudou = true;
+        return { ...entry, numDays, totalAmount, discountPercent };
+      });
+      return mudou ? proximo : prev;
+    });
+    // `calcTotal` é estável o bastante: depende só do que está nas dependências.
+  }, [descontoManualNum, rulesCarrinho]);
 
   function handleAddBike() {
     if (!selBikeId || !selStartDate || !selEndDate) {
@@ -601,6 +650,7 @@ export function NewContractModal({
   function handleReset() {
     setStep(1); setClientId(""); setClientName(""); setClientStatus("");
     setBikeEntries([]); setAccSelections({}); setPrefillSelections({}); setNotes("");
+    setDescontoManual(""); setDescontoMotivo("");
     setDupStart(""); setDupEnd(""); dupAccClampedRef.current = false;
     setSelCategory("all");
     setSelBikeId(""); setSelBikeSizeId(""); setSelStartDate(""); setSelEndDate(""); setSelQty(1);
@@ -631,12 +681,19 @@ export function NewContractModal({
     for (const [idStr, byKey] of Object.entries(accSelections))
       for (const [key, qty] of Object.entries(byKey))
         if (qty > 0) accPayload.push({ accessoryId: Number(idStr), variante: key === "__sem__" ? undefined : key, qty });
+    // Sempre enviado (inclusive 0) para que APAGAR o desconto na edição chegue
+    // ao servidor: `undefined` ali significa "não mexe".
+    const descontoPayload = {
+      descontoPercent: descontoManualNum ?? 0,
+      descontoMotivo: descontoManualNum != null ? (descontoMotivo.trim() || undefined) : undefined,
+    };
     if (isEditMode && editPrefill) {
       updateMutation.mutate({
         id: editPrefill.contractId,
         clientId: Number(clientId),
         bikes: bikePayload,
         accessories: accPayload,
+        ...descontoPayload,
       });
     } else {
       createMutation.mutate({
@@ -644,6 +701,7 @@ export function NewContractModal({
         bikes: bikePayload,
         accessories: accPayload,
         notes: notes || undefined,
+        ...descontoPayload,
       });
     }
   }
@@ -1074,6 +1132,45 @@ export function NewContractModal({
                   </div>
                 ) : null;
               })()}
+            {/* Desconto manual: percentual, vale para o contrato todo e
+                SUBSTITUI o desconto por faixa de dias. */}
+            <div className="rounded-md border border-border p-3 space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <Label className="text-xs">Desconto do contrato (opcional)</Label>
+                <div className="flex items-center gap-1.5">
+                  <Input
+                    type="number"
+                    min={0}
+                    max={100}
+                    step="0.5"
+                    inputMode="decimal"
+                    value={descontoManual}
+                    onChange={(e) => setDescontoManual(e.target.value)}
+                    placeholder="0"
+                    className="h-9 w-20 text-sm text-right tabular-nums"
+                  />
+                  <span className="text-sm text-muted-foreground">%</span>
+                </div>
+              </div>
+              {descontoManualNum != null ? (
+                <>
+                  <Input
+                    value={descontoMotivo}
+                    onChange={(e) => setDescontoMotivo(e.target.value)}
+                    placeholder="Motivo (opcional): cliente antigo, combinado no WhatsApp..."
+                    maxLength={200}
+                    className="h-9 text-sm"
+                  />
+                  <p className="text-xs text-amber-600 dark:text-amber-400">
+                    Substitui o desconto por dias em todas as bikes deste contrato.
+                  </p>
+                </>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  Em branco, vale o desconto automático por quantidade de dias.
+                </p>
+              )}
+            </div>
             <div className="flex justify-between font-bold text-base pt-2 border-t">
               <span>Total</span>
               <span className="text-primary">R$ {grandTotal.toFixed(2)}</span>

@@ -1039,6 +1039,8 @@ function ContractDetail({
             contractStatus: data.status,
             clientId: data.clientId,
             clientName: data.clientName ?? `Cliente #${data.clientId}`,
+            descontoPercent: (data as any).descontoPercent ?? null,
+            descontoMotivo: (data as any).descontoMotivo ?? null,
             bikes: (data.rentals ?? []).map((r: any) => ({
               rentalId: r.id,
               locked: r.status === "returned",

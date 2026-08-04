@@ -3061,6 +3061,23 @@ async function recalcContractStatus(contractId: number): Promise<void> {
 // entradas com períodos sobrepostos. O app é NÃO-transacional — sem esta checagem
 // prévia o conflito só estourava no meio da gravação (assignBikeUnits) e deixava
 // o contrato pela metade. Bug exposto pela duplicação na edição (2026-07-22).
+/**
+ * Campos do desconto MANUAL para o UPDATE do contrato.
+ *
+ * Só entra no `set` quando o campo veio no payload: a edição de contrato tem
+ * dois ramos e vários chamadores, e um `undefined` aqui apagaria em silêncio um
+ * desconto que a Cassiana já tinha combinado. Zero (ou vazio) é o jeito de
+ * REMOVER o desconto — aí o motivo cai junto, para não sobrar explicação órfã.
+ */
+function descontoManualSet(input: { descontoPercent?: number; descontoMotivo?: string }) {
+  if (input.descontoPercent === undefined) return {};
+  const pct = input.descontoPercent > 0 ? input.descontoPercent.toFixed(2) : null;
+  return {
+    descontoPercent: pct,
+    descontoMotivo: pct ? (input.descontoMotivo?.trim() || null) : null,
+  };
+}
+
 function assertNoIntraPayloadUnitConflicts(
   bikes: Array<{ startDate: string; endDate: string; unitIds?: number[] }>,
 ): void {
@@ -3175,6 +3192,10 @@ const contractsRouter = router({
         clientId: contracts.clientId,
         status: contracts.status,
         valorTotal: contracts.valorTotal,
+        // Sem isto, editar um contrato com desconto manual reenviaria o
+        // formulário sem ele e o desconto sumiria na primeira edição.
+        descontoPercent: contracts.descontoPercent,
+        descontoMotivo: contracts.descontoMotivo,
         pdfUrl: contracts.pdfUrl,
         criadoEm: contracts.criadoEm,
         encerradoEm: contracts.encerradoEm,
@@ -3545,6 +3566,9 @@ const contractsRouter = router({
       })).optional(),
       notes: z.string().optional(),
       paymentMethod: z.enum(["pix", "credit_card", "debit_card", "cash", "other"]).optional(),
+      // Desconto MANUAL do contrato (percentual). Substitui a faixa por dias.
+      descontoPercent: z.number().min(0).max(100).optional(),
+      descontoMotivo: z.string().max(200).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
@@ -3598,10 +3622,15 @@ const contractsRouter = router({
       }
 
       // Create contract with status "pendente" (not yet paid)
+      const descontoManual = input.descontoPercent && input.descontoPercent > 0
+        ? input.descontoPercent.toFixed(2)
+        : null;
       const [contract] = await db.insert(contracts).values({
         clientId: input.clientId,
         valorTotal: totalValue > 0 ? totalValue.toFixed(2) : null,
         status: "pendente",
+        descontoPercent: descontoManual,
+        descontoMotivo: descontoManual ? (input.descontoMotivo?.trim() || null) : null,
       }).returning({ id: contracts.id });
 
       // Create one rental per bike entry with status "pending" (not yet active)
@@ -3687,7 +3716,14 @@ const contractsRouter = router({
         acao: "criou_contrato_manual",
         tabela: "contracts",
         registroId: contract.id,
-        dadosDepois: { clientId: input.clientId, bikes: input.bikes.length, accessories: input.accessories?.length ?? 0 },
+        dadosDepois: {
+          clientId: input.clientId,
+          bikes: input.bikes.length,
+          accessories: input.accessories?.length ?? 0,
+          // Desconto fora da tabela fica registrado com o motivo: sem isso,
+          // quem abrir o contrato meses depois vê um valor menor sem explicação.
+          ...(descontoManual ? { descontoPercent: descontoManual, descontoMotivo: input.descontoMotivo?.trim() || null } : {}),
+        },
       });
 
       return { id: contract.id };
@@ -3718,6 +3754,9 @@ const contractsRouter = router({
         unitId: z.number().optional(),
       })).optional(),
       paymentMethod: z.enum(["pix", "credit_card", "debit_card", "cash", "other"]).optional(),
+      // Desconto MANUAL do contrato (percentual). Substitui a faixa por dias.
+      descontoPercent: z.number().min(0).max(100).optional(),
+      descontoMotivo: z.string().max(200).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
@@ -3766,7 +3805,11 @@ const contractsRouter = router({
 
         // Update contract header
         await db.update(contracts)
-          .set({ clientId: input.clientId, valorTotal: totalValue > 0 ? totalValue.toFixed(2) : null })
+          .set({
+            clientId: input.clientId,
+            valorTotal: totalValue > 0 ? totalValue.toFixed(2) : null,
+            ...descontoManualSet(input),
+          })
           .where(eq(contracts.id, input.id));
 
         // Liberar ligações de unidades físicas dos rentals antigos (BU-3A)
@@ -3966,7 +4009,11 @@ const contractsRouter = router({
 
       // Update contract header with new total
       await db.update(contracts)
-        .set({ clientId: input.clientId, valorTotal: newTotal > 0 ? newTotal.toFixed(2) : null })
+        .set({
+          clientId: input.clientId,
+          valorTotal: newTotal > 0 ? newTotal.toFixed(2) : null,
+          ...descontoManualSet(input),
+        })
         .where(eq(contracts.id, input.id));
 
       // Financial adjustment (delta)

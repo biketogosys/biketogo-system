@@ -184,18 +184,40 @@ export function pickDiscountPercent(rules: DiscountRule[], numDays: number): num
   return Number.isFinite(pct) && pct > 0 ? pct : 0;
 }
 
-/** Preço de um aluguel: diária × dias × qtd, menos o desconto da faixa. */
+/**
+ * Percentual que vale de fato: o desconto MANUAL do contrato, quando existe,
+ * SUBSTITUI a faixa por dias (decisão do Matheus, 2026-08-03 — não soma).
+ *
+ * Fonte única dos dois descontos. Espelhada no `calcTotal` do NewContractModal:
+ * se divergirem, o crédito da devolução antecipada não bate com o que o
+ * contrato cobrou.
+ */
+export function effectiveDiscountPercent(
+  rules: DiscountRule[],
+  numDays: number,
+  manualPercent?: number | string | null,
+): number {
+  const manual = manualPercent == null || manualPercent === ""
+    ? NaN
+    : parseFloat(String(manualPercent));
+  if (Number.isFinite(manual) && manual > 0) return Math.min(manual, 100);
+  return pickDiscountPercent(rules, numDays);
+}
+
+/** Preço de um aluguel: diária × dias × qtd, menos o desconto que valer. */
 export function computeRentalTotal(opts: {
   dailyRate: string | null;
   quantity: number | null;
   startDate: string;
   endDate: string;
   rules?: DiscountRule[];
+  /** Desconto manual do contrato; presente, manda no lugar da faixa. */
+  manualPercent?: number | string | null;
 }): { numDays: number; discountPercent: number; totalAmount: string } {
   const numDays = billableDays(opts.startDate, opts.endDate);
   const rate = parseFloat(opts.dailyRate ?? "0") || 0;
   const qty = opts.quantity ?? 1;
-  const pct = pickDiscountPercent(opts.rules ?? [], numDays);
+  const pct = effectiveDiscountPercent(opts.rules ?? [], numDays, opts.manualPercent);
   return {
     numDays,
     discountPercent: pct,
@@ -255,14 +277,27 @@ export async function previewEarlyReturn(
   const rulesMap = await getBikeDiscountRulesBatch(db, rental.bikeId ? [rental.bikeId] : []);
   const rules = (rulesMap[rental.bikeId] ?? []) as DiscountRule[];
 
+  // Desconto manual do contrato acompanha o recálculo: ele substitui a faixa,
+  // então devolver antes NÃO pode ressuscitar o desconto por dias nem apagar o
+  // desconto que a Cassiana combinou com o cliente.
+  let manualPercent: string | null = null;
+  if (rental.contractId) {
+    const [c] = await db
+      .select({ desconto: contracts.descontoPercent })
+      .from(contracts)
+      .where(eq(contracts.id, rental.contractId));
+    manualPercent = c?.desconto ?? null;
+  }
+
   const oldDays = billableDays(rental.startDate, rental.endDate);
-  const oldDiscountPercent = pickDiscountPercent(rules, oldDays);
+  const oldDiscountPercent = effectiveDiscountPercent(rules, oldDays, manualPercent);
   const recalc = computeRentalTotal({
     dailyRate: rental.dailyRate,
     quantity: rental.quantity,
     startDate: rental.startDate,
     endDate: newEndDate,
     rules,
+    manualPercent,
   });
 
   const oldTotal = parseFloat(rental.totalAmount ?? "0") || 0;

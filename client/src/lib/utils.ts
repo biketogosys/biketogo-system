@@ -23,6 +23,21 @@ export function friendlyError(
     TOO_MANY_REQUESTS: "Muitas tentativas. Aguarde um instante.",
   };
   const msg = typeof e?.message === "string" ? e.message.trim() : "";
+
+  // ERRO DE REDE, antes de tudo: aqui a promessa do fetch rejeita ANTES de
+  // existir resposta, então não há `data.code` nem mensagem do servidor — a tela
+  // mostrava o "Failed to fetch" cru do navegador, que não diz o que aconteceu e
+  // ainda dá a impressão de que a culpa foi de quem clicou. Cada navegador tem
+  // seu texto: Chrome "Failed to fetch", Firefox "NetworkError...", Safari
+  // "Load failed", iOS "The Internet connection appears to be offline".
+  const causa = typeof e?.cause?.message === "string" ? e.cause.message : "";
+  const pareceRede = /failed to fetch|networkerror|network request failed|load failed|connection appears to be offline|err_internet_disconnected/i;
+  if (!code && (pareceRede.test(msg) || pareceRede.test(causa))) {
+    return typeof navigator !== "undefined" && navigator.onLine === false
+      ? "Você está sem internet. Reconecte e tente de novo."
+      : "Sem conexão com o servidor. Verifique a internet e tente de novo em alguns instantes.";
+  }
+
   // JSON do zod (começa com "[" ou contém "code":) => mensagem genérica de validação
   if (msg.startsWith("[") || msg.includes('"code"'))
     return "Dados inválidos. Verifique os campos e tente novamente.";

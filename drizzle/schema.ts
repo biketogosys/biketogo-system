@@ -315,6 +315,12 @@ export const contracts = pgTable("contracts", {
   clientId: integer("clientId").notNull(),
   status: contractStatusEnum("status").default("ativo").notNull(),
   valorTotal: numeric("valorTotal", { precision: 10, scale: 2 }),
+  // Desconto MANUAL do contrato (Cassiana: "se eu precisar dar um desconto
+  // diferente pra algum cliente"). Percentual, por contrato, e SUBSTITUI o
+  // desconto de faixa por dias (decisão do Matheus, 2026-08-03) — não soma.
+  // Null = sem desconto manual, vale a faixa das `bike_discount_rules`.
+  descontoPercent: numeric("descontoPercent", { precision: 5, scale: 2 }),
+  descontoMotivo: text("descontoMotivo"),
   pdfUrl: text("pdfUrl"),
   criadoEm: timestamp("criadoEm").defaultNow().notNull(),
   encerradoEm: timestamp("encerradoEm"),

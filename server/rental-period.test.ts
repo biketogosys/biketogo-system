@@ -10,7 +10,7 @@ import { createTestDb, seedBasics, makeRental } from "./test-helpers/pglite-db";
 import {
   computeExtension, daysBetween, extendRental, findExtensionConflicts,
   applyEarlyReturn, previewEarlyReturn, pickDiscountPercent, computeRentalTotal,
-  contractOpenRentalIds,
+  contractOpenRentalIds, effectiveDiscountPercent,
 } from "./rental-period";
 import * as schema from "../drizzle/schema";
 
@@ -161,6 +161,40 @@ describe("regra de desconto (pura)", () => {
   });
 });
 
+describe("desconto MANUAL do contrato (Item 6)", () => {
+  const regras = [
+    { minDays: 3, discountPercent: "5.00" },
+    { minDays: 5, discountPercent: "10.00" },
+  ];
+
+  it("substitui a faixa, não soma (decisão do Matheus)", () => {
+    // 5 dias dariam 10% pela faixa; o manual de 25% entra no lugar
+    expect(effectiveDiscountPercent(regras, 5, 25)).toBe(25);
+    // manual MENOR que a faixa também vence: quem manda é a decisão dela
+    expect(effectiveDiscountPercent(regras, 5, 3)).toBe(3);
+  });
+
+  it("sem manual, vale a faixa", () => {
+    expect(effectiveDiscountPercent(regras, 5, null)).toBe(10);
+    expect(effectiveDiscountPercent(regras, 5, undefined)).toBe(10);
+    expect(effectiveDiscountPercent(regras, 5, "")).toBe(10);
+    expect(effectiveDiscountPercent(regras, 5, 0)).toBe(10);
+  });
+
+  it("aceita string (o banco devolve numeric como string) e trava em 100", () => {
+    expect(effectiveDiscountPercent(regras, 5, "12.50")).toBe(12.5);
+    expect(effectiveDiscountPercent(regras, 5, 150)).toBe(100);
+  });
+
+  it("entra no preço no lugar do desconto por dias", () => {
+    expect(computeRentalTotal({
+      dailyRate: "100.00", quantity: 1,
+      startDate: "2026-07-20", endDate: "2026-07-25", rules: regras,
+      manualPercent: 30,
+    })).toEqual({ numDays: 5, discountPercent: 30, totalAmount: "350.00" });
+  });
+});
+
 describe("devolução antecipada (F10)", () => {
   let db: any;
   let clientId: number, bikeId: number, bikeSizeId: number;
@@ -287,5 +321,50 @@ describe("devolução antecipada — trava anti-aumento", () => {
     expect(pv).toMatchObject({
       capped: true, newTotal: "350.00", creditAmount: "0.00", newDiscountPercent: 30,
     });
+  });
+});
+
+describe("devolução antecipada com desconto MANUAL", () => {
+  let db: any;
+  let clientId: number, bikeId: number, bikeSizeId: number;
+
+  beforeAll(async () => {
+    db = await createTestDb();
+    const seed = await seedBasics(db);
+    clientId = seed.clientId; bikeId = seed.bikeId; bikeSizeId = seed.bikeSizeId;
+    // faixa de 10% para 5 dias — é a que o desconto manual substitui
+    await db.insert(schema.bikeDiscountRules).values({ bikeId, minDays: 5, discountPercent: "10.00" });
+  });
+
+  /** Contrato com desconto manual de 20% e um aluguel de 5 dias a R$100. */
+  const cenario = async (descontoManual: string | null) => {
+    const [contract] = await db.insert(schema.contracts)
+      .values({ clientId, valorTotal: "400.00", status: "ativo", descontoPercent: descontoManual })
+      .returning({ id: schema.contracts.id });
+    const id = await makeRental(db, {
+      clientId, bikeId, bikeSizeId, quantity: 1,
+      startDate: "2026-07-20", endDate: "2026-07-25", status: "active", contractId: contract.id,
+    });
+    await db.update(schema.rentals)
+      .set({ dailyRate: "100.00", totalAmount: "400.00", discountPercent: descontoManual ?? "10.00" })
+      .where(eq(schema.rentals.id, id));
+    return id;
+  };
+
+  it("mantém o desconto combinado ao encurtar (não volta pra faixa por dias)", async () => {
+    const id = await cenario("20.00"); // 5d × 100 − 20% = 400
+    const pv = await previewEarlyReturn(db, id, "2026-07-22");
+    // 2 diárias × 100 − 20% = 160. Com a faixa (0% em 2 dias) daria 200 — ou
+    // seja, sem o manual o cliente pagaria MAIS por devolver antes.
+    expect(pv).toMatchObject({
+      newDays: 2, newTotal: "160.00", creditAmount: "240.00",
+      oldDiscountPercent: 20, newDiscountPercent: 20, capped: false,
+    });
+  });
+
+  it("sem desconto manual no contrato, continua valendo a faixa", async () => {
+    const id = await cenario(null);
+    const pv = await previewEarlyReturn(db, id, "2026-07-22");
+    expect(pv).toMatchObject({ newDays: 2, newDiscountPercent: 0, newTotal: "200.00" });
   });
 });
