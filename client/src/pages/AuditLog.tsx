@@ -1,6 +1,10 @@
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { trpc } from "@/lib/trpc";
-import { Shield, ChevronLeft, ChevronRight, Search, Filter } from "lucide-react";
+import { Shield, ChevronLeft, ChevronRight, Search, Filter, ChevronDown } from "lucide-react";
+import {
+  descreverAuditoria, familiaAcao, rotuloAcao, rotuloRegistro, rotuloTabela,
+  type AuditLogItem,
+} from "@/lib/auditoria";
 import { EmptyState } from "@/components/EmptyState";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -13,41 +17,16 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
-const ACOES = [
-  "arquivou_cliente",
-  "restaurou_cliente",
-  "arquivou_aluguel",
-  "restaurou_aluguel",
-  "encerrou_contrato",
-  "arquivou_contrato",
-  "atualizou_bike",
-  "confirmou_reserva",
-];
-
 const TABELAS = ["clients", "rentals", "contracts", "bikes"];
 
-function formatAcao(acao: string) {
-  return acao
-    .replace(/_/g, " ")
-    .replace(/\b\w/g, (c) => c.toUpperCase());
-}
-
-function formatTabela(tabela: string) {
-  const map: Record<string, string> = {
-    clients: "Clientes",
-    rentals: "Aluguéis",
-    contracts: "Contratos",
-    bikes: "Bicicletas",
-  };
-  return map[tabela] ?? tabela;
-}
-
-function badgeColor(acao: string) {
-  if (acao.includes("restaurou")) return "bg-emerald-500/15 text-emerald-400 border-emerald-500/20";
-  if (acao.includes("arquivou")) return "bg-red-500/15 text-red-400 border-red-500/20";
-  if (acao.includes("encerrou")) return "bg-amber-500/15 text-amber-400 border-amber-500/20";
-  return "bg-sky-500/15 text-sky-400 border-sky-500/20";
-}
+// Padrão de status theme-adaptive da casa (nada de paleta clara, que some no dark).
+const COR_FAMILIA: Record<string, string> = {
+  positiva: "bg-emerald-500/20 text-emerald-600 border-emerald-500/30 dark:text-emerald-400",
+  destrutiva: "bg-red-500/20 text-red-600 border-red-500/30 dark:text-red-400",
+  dinheiro: "bg-amber-500/20 text-amber-600 border-amber-500/30 dark:text-amber-400",
+  aviso: "bg-orange-500/20 text-orange-600 border-orange-500/30 dark:text-orange-400",
+  neutra: "bg-sky-500/20 text-sky-600 border-sky-500/30 dark:text-sky-400",
+};
 
 export default function AuditLog() {
   const [page, setPage] = useState(1);
@@ -55,6 +34,10 @@ export default function AuditLog() {
   const [tabela, setTabela] = useState<string>("");
   const [dataInicio, setDataInicio] = useState("");
   const [dataFim, setDataFim] = useState("");
+  const [aberto, setAberto] = useState<number | null>(null);
+
+  // Ações que EXISTEM no banco (a lista fixa tinha 8 e o sistema grava 20).
+  const { data: acoesDisponiveis = [] } = trpc.auditLogs.acoes.useQuery();
 
   const { data, isLoading } = trpc.auditLogs.list.useQuery({
     page,
@@ -110,8 +93,8 @@ export default function AuditLog() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Todas as ações</SelectItem>
-              {ACOES.map((a) => (
-                <SelectItem key={a} value={a}>{formatAcao(a)}</SelectItem>
+              {acoesDisponiveis.map((a) => (
+                <SelectItem key={a} value={a}>{rotuloAcao(a)}</SelectItem>
               ))}
             </SelectContent>
           </Select>
@@ -126,7 +109,7 @@ export default function AuditLog() {
             <SelectContent>
               <SelectItem value="all">Todas as tabelas</SelectItem>
               {TABELAS.map((t) => (
-                <SelectItem key={t} value={t}>{formatTabela(t)}</SelectItem>
+                <SelectItem key={t} value={t}>{rotuloTabela(t)}</SelectItem>
               ))}
             </SelectContent>
           </Select>
@@ -177,34 +160,79 @@ export default function AuditLog() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-border bg-secondary/30">
-                    <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Data/Hora</th>
+                    <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap">Quando</th>
                     <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Ação</th>
-                    <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Tabela</th>
-                    <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Registro ID</th>
-                    <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Admin ID</th>
-                    <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">IP</th>
+                    <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">O que aconteceu</th>
+                    <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Quem</th>
+                    <th className="w-10 px-2 py-3"><span className="sr-only">Detalhes técnicos</span></th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
-                  {logs.map((log) => (
-                    <tr key={log.id} className="hover:bg-secondary/20 transition-colors">
-                      <td data-label="Data/Hora" className="px-4 py-3 text-muted-foreground whitespace-nowrap">
-                        {new Date(log.criadoEm).toLocaleString("pt-BR", {
-                          day: "2-digit", month: "2-digit", year: "numeric",
-                          hour: "2-digit", minute: "2-digit",
-                        })}
-                      </td>
-                      <td data-label="Ação" className="px-4 py-3">
-                        <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium border ${badgeColor(log.acao)}`}>
-                          {formatAcao(log.acao)}
-                        </span>
-                      </td>
-                      <td data-label="Tabela" className="px-4 py-3 text-foreground">{formatTabela(log.tabela)}</td>
-                      <td data-label="Registro ID" className="px-4 py-3 text-muted-foreground">{log.registroId ?? "—"}</td>
-                      <td data-label="Admin ID" className="px-4 py-3 text-muted-foreground">{log.adminId ?? "—"}</td>
-                      <td data-label="IP" className="px-4 py-3 text-muted-foreground font-mono text-xs">{log.ip ?? "—"}</td>
-                    </tr>
-                  ))}
+                  {logs.map((log) => {
+                    const item = log as unknown as AuditLogItem;
+                    const frase = descreverAuditoria(item);
+                    const temJson = !!item.dadosDepois || !!item.dadosAntes;
+                    const expandido = aberto === log.id;
+                    return (
+                      <Fragment key={log.id}>
+                        <tr className="hover:bg-secondary/20 transition-colors">
+                          <td data-label="Quando" className="px-4 py-3 text-muted-foreground whitespace-nowrap">
+                            {new Date(log.criadoEm).toLocaleString("pt-BR", {
+                              day: "2-digit", month: "2-digit", year: "numeric",
+                              hour: "2-digit", minute: "2-digit",
+                            })}
+                          </td>
+                          <td data-label="Ação" className="px-4 py-3">
+                            <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium border ${COR_FAMILIA[familiaAcao(log.acao)]}`}>
+                              {rotuloAcao(log.acao)}
+                            </span>
+                          </td>
+                          <td data-label="O que aconteceu" className="px-4 py-3 text-foreground">
+                            {frase || (
+                              <span className="text-muted-foreground">
+                                {rotuloRegistro(log.tabela, item.registroId)}
+                              </span>
+                            )}
+                          </td>
+                          <td data-label="Quem" className="px-4 py-3 text-muted-foreground">
+                            {item.adminNome ?? (item.adminId != null ? `Admin #${item.adminId}` : "Sistema")}
+                          </td>
+                          <td className="px-2 py-3 text-right">
+                            {temJson && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-7 w-7"
+                                onClick={() => setAberto(expandido ? null : log.id)}
+                                title={expandido ? "Ocultar detalhes técnicos" : "Ver detalhes técnicos"}
+                                aria-expanded={expandido}
+                              >
+                                <ChevronDown className={`w-4 h-4 transition-transform ${expandido ? "rotate-180" : ""}`} />
+                              </Button>
+                            )}
+                          </td>
+                        </tr>
+                        {expandido && (
+                          // Detalhe técnico continua acessível: a frase é para o
+                          // dia a dia, o JSON é para quando algo não bate.
+                          <tr className="bg-secondary/20">
+                            <td colSpan={5} className="px-4 py-3">
+                              <div className="text-xs text-muted-foreground space-y-2">
+                                <p>
+                                  {rotuloTabela(log.tabela)}
+                                  {item.registroId != null ? ` · registro #${item.registroId}` : ""}
+                                  {item.ip ? ` · IP ${item.ip}` : ""}
+                                </p>
+                                <pre className="overflow-x-auto rounded-md bg-background/60 border border-border p-3 font-mono text-[11px] leading-relaxed">
+{JSON.stringify(item.dadosDepois ?? item.dadosAntes, null, 2)}
+                                </pre>
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </Fragment>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

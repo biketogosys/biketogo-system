@@ -2648,13 +2648,50 @@ const auditLogsRouter = router({
       const where = conditions.length > 0 ? andOp(...conditions) : undefined;
       const offset = (input.page - 1) * input.limit;
       const { sql: sqlOp } = await import("drizzle-orm");
+      const { adminUsers: adminUsersTable } = await import("../drizzle/schema");
       const [data, countResult] = await Promise.all([
-        db.select().from(auditLogsTable).where(where).orderBy(descOp(auditLogsTable.criadoEm)).limit(input.limit).offset(offset),
+        // Q12: o nome do admin vem junto — "Admin ID: 1" não diz quem fez.
+        db.select({
+          id: auditLogsTable.id,
+          acao: auditLogsTable.acao,
+          tabela: auditLogsTable.tabela,
+          registroId: auditLogsTable.registroId,
+          dadosAntes: auditLogsTable.dadosAntes,
+          dadosDepois: auditLogsTable.dadosDepois,
+          ip: auditLogsTable.ip,
+          criadoEm: auditLogsTable.criadoEm,
+          adminId: auditLogsTable.adminId,
+          adminNome: adminUsersTable.name,
+        })
+          .from(auditLogsTable)
+          .leftJoin(adminUsersTable, eqOp(auditLogsTable.adminId, adminUsersTable.id))
+          .where(where)
+          .orderBy(descOp(auditLogsTable.criadoEm))
+          .limit(input.limit)
+          .offset(offset),
         db.select({ count: sqlOp<number>`count(*)` }).from(auditLogsTable).where(where),
       ]);
       const total = Number(countResult[0]?.count ?? 0);
       return { data, total, totalPages: Math.ceil(total / input.limit) };
     }),
+
+  /**
+   * Ações que EXISTEM no banco, para o filtro da tela.
+   *
+   * A lista era fixa no cliente com 8 ações e o sistema já grava 20 — filtrar
+   * por uma ação que não estava na lista era impossível, e as da lista podiam
+   * nem existir.
+   */
+  acoes: adminAuthProcedure.query(async () => {
+    const db = await getDb();
+    if (!db) return [] as string[];
+    const { auditLogs: auditLogsTable } = await import("../drizzle/schema");
+    const rows = await db
+      .selectDistinct({ acao: auditLogsTable.acao })
+      .from(auditLogsTable)
+      .orderBy(auditLogsTable.acao);
+    return rows.map((r: any) => r.acao as string);
+  }),
 });
 
 // ─── Contracts router ───────────────────────────────────────────────────────────────
