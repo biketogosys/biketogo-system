@@ -4,7 +4,7 @@
 import { describe, expect, it, vi } from "vitest";
 import * as schema from "../drizzle/schema";
 import {
-  ACAO_RECIBO_ENVIADO, buildReceiptEmail, buildReservationEmail,
+  ACAO_RECIBO_ENVIADO, buildReceiptEmail, buildReservationEmail, enviarEmailDeContrato,
   carregarDadosContrato, formatarData, sendReceiptEmail,
 } from "./email-contract";
 import { EMPRESA_VAZIA } from "./email-layout";
@@ -268,6 +268,49 @@ describe("sendReceiptEmail", () => {
     const db = await createTestDb();
     const { contractId } = await seedContrato(db, { pago: true, email: null });
     expect(await sendReceiptEmail(db, contractId, "tok")).toBe(false);
+  });
+});
+
+describe("enviarEmailDeContrato — reenvio manual", () => {
+  it("recusa o recibo de contrato não pago, com motivo legível", async () => {
+    const db = await createTestDb();
+    const { contractId } = await seedContrato(db, { pago: false, status: "encerrado" });
+    const r = await enviarEmailDeContrato(db, contractId, "recibo", "tok", { ignorarGuardaRecibo: true });
+    expect(r.ok).toBe(false);
+    expect(r.motivo).toMatch(/pagamento/i);
+  });
+
+  it("explica quando o cliente não tem e-mail no cadastro", async () => {
+    const db = await createTestDb();
+    const { contractId } = await seedContrato(db, { email: null });
+    const r = await enviarEmailDeContrato(db, contractId, "reserva", "tok");
+    expect(r.ok).toBe(false);
+    expect(r.motivo).toMatch(/não tem e-mail/i);
+  });
+
+  it("contrato inexistente devolve motivo em vez de estourar", async () => {
+    const db = await createTestDb();
+    const r = await enviarEmailDeContrato(db, 99999, "reserva", "tok");
+    expect(r).toMatchObject({ ok: false, motivo: "Contrato não encontrado." });
+  });
+
+  it("a guarda de duplicação vale no automático e NÃO no reenvio", async () => {
+    const db = await createTestDb();
+    const { contractId } = await seedContrato(db, { pago: true, status: "encerrado" });
+    await db.insert(schema.auditLogs).values({
+      acao: ACAO_RECIBO_ENVIADO, tabela: "contracts", registroId: contractId,
+      dadosDepois: { para: "ana@exemplo.com", pago: true },
+    });
+
+    // automático: barrado pela guarda
+    const auto = await enviarEmailDeContrato(db, contractId, "recibo", "tok");
+    expect(auto).toMatchObject({ ok: false, motivo: "O recibo deste contrato já foi enviado." });
+
+    // reenvio manual: passa da guarda e chega no transporte (que, sem
+    // RESEND_API_KEY no teste, falha por configuração — não pela guarda)
+    const manual = await enviarEmailDeContrato(db, contractId, "recibo", "tok", { ignorarGuardaRecibo: true });
+    expect(manual.motivo).not.toMatch(/já foi enviado/i);
+    expect(manual.destinatario).toBe("ana@exemplo.com");
   });
 });
 

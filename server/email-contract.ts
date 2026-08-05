@@ -23,7 +23,7 @@ import {
 } from "../drizzle/schema";
 import { carregarAjustesDevolucao, type AjusteDevolucao } from "./contract-adjustments";
 import { getSetting } from "./db";
-import { resolverReplyTo, sendEmail } from "./email";
+import { resolverReplyTo, sendEmailDetalhado } from "./email";
 import {
   CORES, EMPRESA_VAZIA, bloco, botao, carregarEmpresa, chip, escapeHtml,
   montarEmail, selo, type DadosEmpresa,
@@ -503,64 +503,68 @@ ${rodapeDocumento(empresa)}`.trim()),
   };
 }
 
-// ─── Disparos (fire-safe: nunca lançam) ──────────────────────────────────────
+// ─── Disparos ────────────────────────────────────────────────────────────────
+
+export type TipoEmailContrato = "reserva" | "recibo";
+
+export type ResultadoEmailContrato = {
+  ok: boolean;
+  /** Por que não saiu. Em português, para aparecer na tela do reenvio. */
+  motivo?: string;
+  destinatario?: string;
+};
 
 /**
- * E-mail de reserva, na criação do contrato. Silencioso quando o cliente não
- * tem e-mail no cadastro — comum no cadastro manual da Cassiana.
- */
-export async function sendReservationEmail(db: any, contractId: number, token: string): Promise<boolean> {
-  try {
-    const dados = await carregarDadosContrato(db, contractId);
-    const email = dados?.cliente.email?.trim();
-    if (!dados || !email || !email.includes("@")) return false;
-    const [empresa, clausulas, replyTo] = await Promise.all([
-      carregarEmpresa().catch(() => EMPRESA_VAZIA),
-      carregarClausulasPt(),
-      resolverReplyTo(),
-    ]);
-    const { subject, html } = buildReservationEmail(dados, clausulas, empresa, linkDoContrato(contractId, token));
-    // Resposta do cliente vai para a caixa da loja, não para o remetente de
-    // envio (que não tem caixa: o MX do domínio aponta para o Shopify).
-    return await sendEmail({ to: email, subject, html, replyTo });
-  } catch (err) {
-    console.warn("[Email] Erro no e-mail de reserva:", err);
-    return false;
-  }
-}
-
-/**
- * E-mail de recibo, no encerramento.
+ * Monta e envia um dos dois e-mails do contrato, devolvendo o MOTIVO quando não
+ * sai. Os disparos automáticos ignoram o motivo (não podem derrubar o fluxo que
+ * os chamou); o reenvio manual mostra na tela.
  *
- * ⚠️ Duas pré-condições, e as duas são de propósito:
- * 1. **Contrato PAGO.** Um "recibo" de contrato não pago é um documento errado.
- *    Como encerrar e receber são ações separadas e a ordem varia (no fluxo dela
- *    o pagamento é na devolução), quem completa o par dispara: o `close` manda
- *    se já estava pago, o `confirmPayment` manda se o contrato já estava
- *    encerrado. **Consequência aceita:** contrato encerrado e nunca marcado
- *    como pago não gera recibo nenhum.
- * 2. **Guarda anti-duplicação pela AUDITORIA**, porque os dois caminhos acima
- *    podem se cruzar. Sem ela o cliente receberia dois recibos iguais.
+ * `ignorarGuardaRecibo` existe para o botão de reenvio: a guarda de duplicação
+ * protege o disparo automático, mas quem clica "reenviar" está pedindo de novo
+ * de propósito, normalmente porque o primeiro envio falhou ou o cliente apagou.
  */
-export async function sendReceiptEmail(db: any, contractId: number, token: string): Promise<boolean> {
+export async function enviarEmailDeContrato(
+  db: any,
+  contractId: number,
+  tipo: TipoEmailContrato,
+  token: string,
+  opts: { ignorarGuardaRecibo?: boolean } = {},
+): Promise<ResultadoEmailContrato> {
   try {
-    const [jaEnviado] = await db.select({ id: auditLogs.id })
-      .from(auditLogs)
-      .where(and(eq(auditLogs.acao, ACAO_RECIBO_ENVIADO), eq(auditLogs.registroId, contractId)))
-      .limit(1);
-    if (jaEnviado) return false;
+    if (tipo === "recibo" && !opts.ignorarGuardaRecibo) {
+      const [jaEnviado] = await db.select({ id: auditLogs.id })
+        .from(auditLogs)
+        .where(and(eq(auditLogs.acao, ACAO_RECIBO_ENVIADO), eq(auditLogs.registroId, contractId)))
+        .limit(1);
+      if (jaEnviado) return { ok: false, motivo: "O recibo deste contrato já foi enviado." };
+    }
 
     const dados = await carregarDadosContrato(db, contractId);
-    const email = dados?.cliente.email?.trim();
-    if (!dados || !dados.pago || !email || !email.includes("@")) return false;
+    if (!dados) return { ok: false, motivo: "Contrato não encontrado." };
+
+    const email = dados.cliente.email?.trim();
+    if (!email || !email.includes("@")) {
+      return { ok: false, motivo: "O cliente não tem e-mail no cadastro. Preencha o e-mail e tente de novo." };
+    }
+    // Recibo de contrato não pago é documento errado — vale também no reenvio.
+    if (tipo === "recibo" && !dados.pago) {
+      return { ok: false, motivo: "O recibo só sai depois que o pagamento for confirmado." };
+    }
 
     const [empresa, replyTo] = await Promise.all([
       carregarEmpresa().catch(() => EMPRESA_VAZIA),
       resolverReplyTo(),
     ]);
-    const { subject, html } = buildReceiptEmail(dados, empresa, linkDoContrato(contractId, token));
-    const ok = await sendEmail({ to: email, subject, html, replyTo });
-    if (ok) {
+    const link = linkDoContrato(contractId, token);
+    const { subject, html } = tipo === "reserva"
+      ? buildReservationEmail(dados, await carregarClausulasPt(), empresa, link)
+      : buildReceiptEmail(dados, empresa, link);
+
+    // Resposta do cliente vai para a caixa da loja, não para o remetente de
+    // envio (que não tem caixa: o MX do domínio aponta para o Shopify).
+    const r = await sendEmailDetalhado({ to: email, subject, html, replyTo });
+
+    if (r.ok && tipo === "recibo") {
       // Só registra quando saiu de verdade: se o Resend recusou, a próxima ação
       // (confirmar pagamento, por exemplo) ainda tem chance de mandar.
       await db.insert(auditLogs).values({
@@ -570,9 +574,34 @@ export async function sendReceiptEmail(db: any, contractId: number, token: strin
         dadosDepois: { para: email, pago: dados.pago },
       });
     }
-    return ok;
+    return { ...r, destinatario: email };
   } catch (err) {
-    console.warn("[Email] Erro no e-mail de recibo:", err);
-    return false;
+    console.warn(`[Email] Erro no e-mail de ${tipo}:`, err);
+    return { ok: false, motivo: `Erro inesperado ao montar o e-mail: ${String(err)}` };
   }
+}
+
+/**
+ * E-mail de reserva, na criação do contrato. Silencioso quando o cliente não
+ * tem e-mail no cadastro (comum no cadastro manual feito na loja).
+ */
+export async function sendReservationEmail(db: any, contractId: number, token: string): Promise<boolean> {
+  return (await enviarEmailDeContrato(db, contractId, "reserva", token)).ok;
+}
+
+/**
+ * E-mail de recibo, no encerramento.
+ *
+ * ⚠️ Duas pré-condições, e as duas são de propósito:
+ * 1. **Contrato PAGO.** Um "recibo" de contrato não pago é um documento errado.
+ *    Como encerrar e receber são ações separadas e a ordem varia (no fluxo da
+ *    loja o pagamento é na devolução), quem completa o par dispara: o `close`
+ *    manda se já estava pago, o `confirmPayment` manda se o contrato já estava
+ *    encerrado. **Consequência aceita:** contrato encerrado e nunca marcado
+ *    como pago não gera recibo nenhum.
+ * 2. **Guarda anti-duplicação pela AUDITORIA**, porque os dois caminhos acima
+ *    podem se cruzar. Sem ela o cliente receberia dois recibos iguais.
+ */
+export async function sendReceiptEmail(db: any, contractId: number, token: string): Promise<boolean> {
+  return (await enviarEmailDeContrato(db, contractId, "recibo", token)).ok;
 }

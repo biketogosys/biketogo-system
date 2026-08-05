@@ -24,6 +24,7 @@ import {
   Trash2,
   Copy,
   Link as LinkIcon,
+  Mail,
 } from "lucide-react";
 import { SegmentedTabs } from "@/components/ui/segmented-tabs";
 import { DataTable } from "@/components/ui/data-table";
@@ -443,6 +444,20 @@ function ContractDetail({
     onError: (e) => toast.error("Erro: " + e.message),
   });
 
+  // Reenvio manual dos e-mails do contrato. Os disparos automáticos são
+  // não-fatais e engolem a falha, então sem este botão um e-mail que o Resend
+  // recusou simplesmente nunca chegava e ninguém ficava sabendo.
+  const resendEmailMutation = trpc.contracts.resendEmail.useMutation({
+    onSuccess: (res, vars) => {
+      toast.success(
+        `E-mail de ${vars.tipo} enviado${res.destinatario ? ` para ${res.destinatario}` : ""}.`,
+      );
+    },
+    // O servidor devolve o motivo real (sem e-mail no cadastro, contrato não
+    // pago, recusa do Resend): mostrar isso é o ponto do botão.
+    onError: (e) => toast.error(friendlyError(e, "Não foi possível enviar o e-mail.")),
+  });
+
   const confirmAllMutation = trpc.rentals.confirmAll.useMutation({
     onSuccess: (res) => {
       toast.success(`${res.confirmed} aluguéis confirmados`);
@@ -667,6 +682,43 @@ function ContractDetail({
           >
             <LinkIcon className="h-4 w-4 mr-1" /> Link do cliente
           </Button>
+          {(() => {
+            const semEmail = !data.clientEmail;
+            const rentaisPagos = (data.rentals ?? []) as any[];
+            const pago = rentaisPagos.length > 0 && rentaisPagos.every((r) => r.paymentStatus === "paid");
+            const podeRecibo = data.status === "encerrado" && pago;
+            return (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={semEmail || resendEmailMutation.isPending}
+                    title={semEmail
+                      ? "O cliente não tem e-mail no cadastro"
+                      : "Reenviar um dos e-mails do contrato para o cliente"}
+                  >
+                    <Mail className="h-4 w-4 mr-1" />
+                    {resendEmailMutation.isPending ? "Enviando..." : "Reenviar e-mail"}
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem
+                    onClick={() => resendEmailMutation.mutate({ id: contractId, tipo: "reserva" })}
+                  >
+                    Reserva (com os termos)
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    disabled={!podeRecibo}
+                    onClick={() => resendEmailMutation.mutate({ id: contractId, tipo: "recibo" })}
+                    title={podeRecibo ? undefined : "O recibo só existe com o contrato encerrado e pago"}
+                  >
+                    Recibo de pagamento
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            );
+          })()}
           {data.status !== "encerrado" && data.status !== "cancelado" && data.status !== "pendente" && (
             <Button
               size="sm"

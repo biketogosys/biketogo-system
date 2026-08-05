@@ -41,9 +41,19 @@ export function friendlyError(
   // JSON do zod (começa com "[" ou contém "code":) => mensagem genérica de validação
   if (msg.startsWith("[") || msg.includes('"code"'))
     return "Dados inválidos. Verifique os campos e tente novamente.";
+
+  // ⚠️ A mensagem do SERVIDOR vem antes do mapa por código: o servidor sabe o
+  // caso concreto, o mapa só sabe o código. Enquanto foi o contrário, qualquer
+  // PRECONDITION_FAILED virava "item indisponível no período" — inclusive
+  // "Este contrato já teve o pagamento confirmado" e "O cliente não tem e-mail
+  // no cadastro", que não têm nada a ver com disponibilidade.
+  // "Mensagem humana" = frase para gente ler. Não vale o próprio código do erro
+  // (`PRECONDITION_FAILED`), que alguns caminhos usam como mensagem — esse cai
+  // no mapa logo abaixo.
+  const pareceCodigo = /^[A-Z][A-Z0-9_]*$/.test(msg);
+  const humana = msg && msg.length <= 140 && !msg.includes("{") && !/error/i.test(msg) && !pareceCodigo;
+  if (humana) return msg;
+
   if (code && map[code]) return map[code];
-  // mensagens curtas e humanas do próprio servidor (pt) passam direto
-  if (msg && msg.length <= 140 && !msg.includes("{") && !/error/i.test(msg))
-    return msg;
   return fallback;
 }

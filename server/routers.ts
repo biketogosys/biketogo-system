@@ -92,7 +92,7 @@ import {
   createAuditLog,
 } from "./db";
 import { escapeHtml, sendNewLeadEmail, sendOwnerEmail, sendWelcomeEmail } from "./email";
-import { sendReceiptEmail, sendReservationEmail } from "./email-contract";
+import { enviarEmailDeContrato, sendReceiptEmail, sendReservationEmail } from "./email-contract";
 import { carregarAjustesDevolucao } from "./contract-adjustments";
 import { COOKIE_NAME } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
@@ -3309,6 +3309,45 @@ const contractsRouter = router({
       const token = signContractToken(input.id);
       const base = (ENV.appUrl ?? "").replace(/\/+$/, "");
       return { token, path: `/contrato/${token}`, url: `${base}/contrato/${token}` };
+    }),
+
+  /**
+   * Reenvio manual dos e-mails do contrato.
+   *
+   * Os disparos automáticos são não-fatais e engolem a falha, então quando o
+   * Resend recusa o e-mail simplesmente não chega e ninguém fica sabendo. Aqui
+   * o motivo volta para a TELA, e a guarda anti-duplicação do recibo é ignorada
+   * de propósito: quem clica está pedindo de novo.
+   */
+  resendEmail: adminAuthProcedure
+    .input(z.object({
+      id: z.number(),
+      tipo: z.enum(["reserva", "recibo"]),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+
+      const r = await enviarEmailDeContrato(
+        db, input.id, input.tipo, signContractToken(input.id),
+        { ignorarGuardaRecibo: true },
+      );
+
+      await createAuditLog({
+        adminId: (ctx as any).adminUser?.id ?? null,
+        acao: "reenviou_email_contrato",
+        tabela: "contracts",
+        registroId: input.id,
+        dadosDepois: { tipo: input.tipo, ok: r.ok, destinatario: r.destinatario ?? null, motivo: r.motivo ?? null },
+      });
+
+      if (!r.ok) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message: r.motivo ?? "Não foi possível enviar o e-mail.",
+        });
+      }
+      return { success: true, destinatario: r.destinatario };
     }),
 
   // Encerra contrato: atualiza checklist de acessórios e recalcula status
