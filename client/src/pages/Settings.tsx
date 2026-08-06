@@ -168,6 +168,8 @@ export default function Settings() {
 
   // ── Notifications ────────────────────────────────────────────────────────────
   const [whatsappReservas, setWhatsappReservas] = useState("");
+  const [whatsappLoja, setWhatsappLoja] = useState("");
+  const [siteUrl, setSiteUrl] = useState("");
   const [notificationEmail, setNotificationEmail] = useState("");
 
   // ── Archive ──────────────────────────────────────────────────────────────────
@@ -199,6 +201,8 @@ export default function Settings() {
     setOpeningTime(map["opening_time"] || "09:00");
     setClosingTime(map["closing_time"] || "19:00");
     setWhatsappReservas(map["whatsapp_reservas"] || "");
+    setWhatsappLoja(map["whatsapp_loja"] || "");
+    setSiteUrl(map["site_url"] || "");
     setNotificationEmail(map["notification_email"] || "");
     setArchiveRetentionDays(map["archive_retention_days"] || "5");
     setShopifyApiKey(map["shopify_api_key"] || "");
@@ -530,8 +534,15 @@ export default function Settings() {
                   toast.error("Número de WhatsApp para reservas inválido. Informe DDD + número.");
                   return;
                 }
+                const lojaDigits = whatsappLoja.replace(/\D/g, "");
+                if (whatsappLoja && lojaDigits.length < 10) {
+                  toast.error("Número de WhatsApp de atendimento inválido. Informe DDD + número.");
+                  return;
+                }
                 saveSection([
                   { key: "whatsapp_reservas", value: whatsappReservas },
+                  { key: "whatsapp_loja", value: whatsappLoja },
+                  { key: "site_url", value: siteUrl },
                   { key: "notification_email", value: notificationEmail },
                 ], setSavingNotifications);
               }}
@@ -543,7 +554,23 @@ export default function Settings() {
               value={whatsappReservas}
               onChange={(v) => setWhatsappReservas(maskPhone(v))}
               placeholder="(48) 99999-9999"
-              hint="Exibido no formulário público /reservar após o cadastro. DDD + número."
+              hint="Usado no /reservar, depois do cadastro. É o número do funil de reserva (chatbot). DDD + número."
+            />
+            {/* Separado do de reservas de propósito (2026-08-04): quem já tem
+                contrato e uma dúvida real não pode cair no chatbot. */}
+            <Field
+              label="WhatsApp de atendimento (falar com a loja)"
+              value={whatsappLoja}
+              onChange={(v) => setWhatsappLoja(maskPhone(v))}
+              placeholder="(48) 99999-9999"
+              hint="Usado no botão “Falar com a loja” da página que o cliente acompanha. Em branco, cai no número de reservas."
+            />
+            <Field
+              label="Endereço do site"
+              value={siteUrl}
+              onChange={setSiteUrl}
+              placeholder="https://biketogofloripa.com.br/collections/todos-os-modelos"
+              hint="Destino do “ou retornar ao site”, na tela de sucesso do /reservar."
             />
             {/* O rótulo dizia "remetente" e enganava (2026-07-30): este campo é o
                 DESTINATÁRIO dos avisos da loja (`sendOwnerEmail` usa como `to`).

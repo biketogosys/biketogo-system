@@ -211,6 +211,7 @@ export default function PublicReservation() {
   const submitMutation = trpc.publicApi.submitPreRegistration.useMutation();
   const uploadDocMutation = trpc.publicApi.uploadDocument.useMutation();
   const { data: waData } = trpc.publicApi.getReservationWhatsApp.useQuery();
+  const { data: siteUrl } = trpc.publicApi.getSiteUrl.useQuery();
   const { data: logoData } = trpc.publicApi.getCompanyLogo.useQuery();
   const logoSrc = LOGO_URL || logoData?.url || undefined;
 
@@ -477,6 +478,19 @@ export default function PublicReservation() {
               {lang === "pt" ? "Solicitar reserva pelo WhatsApp" : lang === "en" ? "Request reservation via WhatsApp" : "Solicitar reserva por WhatsApp"}
             </a>
           )}
+          {/* Saída do beco sem saída: a tela manda "escolha a bicicleta" e não
+              dava como voltar. Link de TEXTO sublinhado de propósito (pedido da
+              dona) — dois botões cheios competiriam com o do WhatsApp, que é a
+              ação principal. */}
+          <a
+            href={siteUrl?.url ?? "https://biketogofloripa.com.br/"}
+            // py-2: alvo de toque decente no celular (o texto sozinho dava 20px
+            // de altura). Sem fundo e sem borda, então continua sendo link, não
+            // um segundo botão competindo com o do WhatsApp.
+            className={`mt-3 inline-block px-2 py-2 text-sm underline underline-offset-4 ${textSecondary} hover:${textPrimary} transition-colors`}
+          >
+            {lang === "pt" ? "ou retornar ao site" : lang === "en" ? "or return to the website" : "o volver al sitio"}
+          </a>
         </div>
       </div>
     );

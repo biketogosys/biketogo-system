@@ -222,7 +222,12 @@ export function buildWelcomeEmail(
   empresa: DadosEmpresa = EMPRESA_VAZIA,
 ): { subject: string; html: string } {
   const primeiroNome = info.nome.trim().split(/\s+/)[0] || info.nome;
-  const wa = (empresa.telefone || "").replace(/\D/g, "");
+  // ⚠️ Número de ATENDIMENTO, não o do chatbot nem o telefone fixo do rodapé
+  // (correção do Matheus, 2026-08-04): "o chatbot é só para quando o cliente for
+  // conversar para fazer a reserva; suporte e dúvidas, e quando receber o
+  // e-mail, deve ser o outro". Cai no telefone da empresa só se o campo de
+  // atendimento estiver vazio.
+  const wa = (empresa.whatsappAtendimento || empresa.telefone || "").replace(/\D/g, "");
   const waUrl = wa.length >= 10
     ? `https://wa.me/${wa.length <= 11 ? `55${wa}` : wa}?text=${encodeURIComponent(`Oi! Sou ${info.nome} e acabei de fazer meu cadastro.`)}`
     : "";

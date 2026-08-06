@@ -71,6 +71,7 @@ describe("buildWelcomeEmail", () => {
   const empresa = {
     nome: "Bike To Go Floripa", cnpj: "", endereco: "", cidade: "",
     telefone: "(48) 98863-1669", email: "", logoUrl: null,
+    whatsappAtendimento: "",
   };
 
   it("cumprimenta pelo PRIMEIRO nome", () => {
@@ -95,6 +96,21 @@ describe("buildWelcomeEmail", () => {
       .not.toContain("wa.me");
     expect(buildWelcomeEmail({ nome: "Ana", email: "a@x.com", origem: "manual" }, empresa).html)
       .toContain("wa.me/5548988631669");
+  });
+
+
+  // A loja tem DOIS números: reservas (chatbot) e atendimento (humano). Quem
+  // recebe e-mail já passou da reserva, então o botão é o de atendimento.
+  it("usa o WhatsApp de ATENDIMENTO, não o telefone do rodapé", () => {
+    const comAtendimento = { ...empresa, telefone: "(48) 3333-4444", whatsappAtendimento: "(48) 98863-1669" };
+    const { html } = buildWelcomeEmail({ nome: "Ana", email: "a@x.com", origem: "manual" }, comAtendimento);
+    expect(html).toContain("wa.me/5548988631669");
+    expect(html).not.toContain("4833334444");
+  });
+
+  it("sem atendimento configurado, cai no telefone da empresa (não fica sem botão)", () => {
+    const { html } = buildWelcomeEmail({ nome: "Ana", email: "a@x.com", origem: "manual" }, empresa);
+    expect(html).toContain("wa.me/5548988631669");
   });
 
   it("assunto usa o nome da empresa", () => {

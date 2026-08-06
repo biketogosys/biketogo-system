@@ -103,6 +103,11 @@ import { ENV } from "./_core/env";
 const JWT_SECRET = process.env.JWT_SECRET || "biketogo-secret-key-change-me";
 const ADMIN_COOKIE = "btg_session";
 
+/** Site da loja: destino do "retornar ao site" quando o setting está vazio.
+ *  Aponta para os MODELOS, não para a home: é o passo que a tela de sucesso
+ *  pede em seguida ("escolha a bicicleta desejada"). */
+const SITE_PADRAO = "https://biketogofloripa.com.br/collections/todos-os-modelos";
+
 // ─── Validações de documento ─────────────────────────────────────────────────
 function validarCPF(cpf: string): boolean {
   const digits = cpf.replace(/\D/g, "");
@@ -2130,7 +2135,14 @@ const publicApiRouter = router({
       const inicios = itens.map((i) => i.inicio).filter(Boolean).sort() as string[];
       const fins = itens.map((i) => i.fim).filter(Boolean).sort() as string[];
 
-      const waRaw = (await getSetting("whatsapp_reservas")) || (await getSetting("whatsapp_number")) || "";
+      // ⚠️ "Falar com a loja" é ATENDIMENTO HUMANO, não o funil de reserva.
+      // `whatsapp_reservas` é o número do CHATBOT (pedido da dona, 2026-08-04:
+      // quem já tem contrato e uma dúvida real não pode cair no bot). A cadeia
+      // preserva o comportamento antigo enquanto o campo novo estiver vazio.
+      const waRaw = (await getSetting("whatsapp_loja"))
+        || (await getSetting("whatsapp_reservas"))
+        || (await getSetting("whatsapp_number"))
+        || "";
       const waDigits = waRaw.replace(/\D/g, "");
       const empresa = {
         nome: (await getSetting("company_name")) ?? "",
@@ -2287,6 +2299,19 @@ const publicApiRouter = router({
     const raw = await getSetting("whatsapp_reservas");
     const digits = (raw || "").replace(/\D/g, "");
     return { number: digits.length >= 10 ? digits : null };
+  }),
+
+  /**
+   * Endereço do site da loja, para o `/reservar` ter saída.
+   *
+   * Sem isto a tela de sucesso era um beco sem saída: ela manda "escolha a
+   * bicicleta desejada" e não dava como voltar (achado da dona, 2026-08-04).
+   * Configurável para não exigir deploy quando o site mudar de endereço.
+   */
+  getSiteUrl: publicProcedure.query(async () => {
+    const raw = (await getSetting("site_url")) || "";
+    const url = raw.trim();
+    return { url: /^https?:\/\//i.test(url) ? url : SITE_PADRAO };
   }),
 
 

@@ -41,23 +41,33 @@ const FONTE = "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Aria
 export type DadosEmpresa = {
   nome: string; cnpj: string; endereco: string; cidade: string;
   telefone: string; email: string; logoUrl: string | null;
+  /**
+   * WhatsApp de ATENDIMENTO (`whatsapp_loja`), não o do chatbot.
+   *
+   * A loja tem dois números: o de reservas é o chatbot, que atende quem está
+   * fechando; este é o humano, que atende dúvida e suporte. O cliente que
+   * recebe um e-mail nosso já passou da reserva, então o botão dele é este.
+   */
+  whatsappAtendimento: string;
 };
 
 /** Empresa "vazia": o e-mail sai sem logo e sem rodapé, mas sai. */
 export const EMPRESA_VAZIA: DadosEmpresa = {
-  nome: "", cnpj: "", endereco: "", cidade: "", telefone: "", email: "", logoUrl: null,
+  nome: "", cnpj: "", endereco: "", cidade: "", telefone: "", email: "",
+  logoUrl: null, whatsappAtendimento: "",
 };
 
 /** Dados da empresa para o rodapé, das Configurações (mesma fonte do PDF). */
 export async function carregarEmpresa(): Promise<DadosEmpresa> {
-  const [nome, cnpj, endereco, cidade, telefone, email, logo] = await Promise.all([
+  const [nome, cnpj, endereco, cidade, telefone, email, logo, whatsapp] = await Promise.all([
     getSetting("company_name"), getSetting("company_cnpj"), getSetting("company_address"),
     getSetting("company_city"), getSetting("company_phone"), getSetting("company_email"),
-    getSetting("company_logo_url"),
+    getSetting("company_logo_url"), getSetting("whatsapp_loja"),
   ]);
   return {
     nome: nome ?? "", cnpj: cnpj ?? "", endereco: endereco ?? "", cidade: cidade ?? "",
     telefone: telefone ?? "", email: email ?? "", logoUrl: logo ?? null,
+    whatsappAtendimento: whatsapp ?? "",
   };
 }
 
