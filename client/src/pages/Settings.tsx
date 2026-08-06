@@ -569,7 +569,7 @@ export default function Settings() {
               label="Endereço do site"
               value={siteUrl}
               onChange={setSiteUrl}
-              placeholder="https://biketogofloripa.com.br/collections/todos-os-modelos"
+              placeholder="https://biketogofloripa.com.br/"
               hint="Destino do “ou retornar ao site”, na tela de sucesso do /reservar."
             />
             {/* O rótulo dizia "remetente" e enganava (2026-07-30): este campo é o

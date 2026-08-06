@@ -104,9 +104,8 @@ const JWT_SECRET = process.env.JWT_SECRET || "biketogo-secret-key-change-me";
 const ADMIN_COOKIE = "btg_session";
 
 /** Site da loja: destino do "retornar ao site" quando o setting está vazio.
- *  Aponta para os MODELOS, não para a home: é o passo que a tela de sucesso
- *  pede em seguida ("escolha a bicicleta desejada"). */
-const SITE_PADRAO = "https://biketogofloripa.com.br/collections/todos-os-modelos";
+ *  HOME, não a coleção de modelos (decisão do Matheus, 2026-08-04). */
+const SITE_PADRAO = "https://biketogofloripa.com.br/";
 
 // ─── Validações de documento ─────────────────────────────────────────────────
 function validarCPF(cpf: string): boolean {
