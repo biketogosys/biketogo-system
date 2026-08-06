@@ -8,6 +8,7 @@ import {
 } from "@/components/ui/sidebar";
 import { Settings } from "lucide-react";
 import { Link, useLocation } from "wouter";
+import { usePapel } from "@/hooks/usePapel";
 
 const secondaryItems = [
   { icon: Settings, label: "Configurações", path: "/configuracoes" },
@@ -17,12 +18,13 @@ export function NavSecondary(
   props: React.ComponentPropsWithoutRef<typeof SidebarGroup>
 ) {
   const [location] = useLocation();
+  const { podeVer } = usePapel();
 
   return (
     <SidebarGroup {...props}>
       <SidebarGroupContent>
         <SidebarMenu>
-          {secondaryItems.map((item) => {
+          {secondaryItems.filter((i) => podeVer(i.path)).map((item) => {
             const isActive = location.startsWith(item.path);
             return (
               <SidebarMenuItem key={item.path}>

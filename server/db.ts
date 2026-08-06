@@ -322,6 +322,57 @@ export async function getClientById(id: number) {
   return result[0];
 }
 
+/**
+ * Cadastro já existente com os MESMOS dados (2026-08-04, pedido da dona: "cada
+ * cadastro deve ser único").
+ *
+ * Compara por dígitos/minúsculas, não pelo texto digitado: `123.456.789-00` e
+ * `12345678900` são o mesmo CPF, e `Ana@X.com` é o mesmo e-mail de `ana@x.com`.
+ * Era assim que os duplicados entravam.
+ *
+ * O telefone NÃO entra na comparação de propósito: casal e família compartilham
+ * número o tempo todo, e bloquear por telefone impediria um cadastro legítimo.
+ *
+ * `ignorarId` serve para a edição não colidir com o próprio registro.
+ */
+export async function encontrarClienteDuplicado(
+  dados: { cpf?: string | null; email?: string | null; passaporte?: string | null },
+  ignorarId?: number,
+  dbOverride?: any,
+): Promise<{ id: number; name: string; campo: "cpf" | "email" | "passaporte" } | null> {
+  const db = dbOverride ?? (await getDb());
+  if (!db) return null;
+
+  const soDigitos = (v?: string | null) => (v ?? "").replace(/\D/g, "");
+  const cpf = soDigitos(dados.cpf);
+  const email = (dados.email ?? "").trim().toLowerCase();
+  const passaporte = (dados.passaporte ?? "").trim().toUpperCase();
+
+  const alvos: Array<{ campo: "cpf" | "email" | "passaporte"; cond: any }> = [];
+  if (cpf.length === 11) {
+    alvos.push({ campo: "cpf", cond: sql`regexp_replace(coalesce(${clients.cpf}, ''), '\\D', '', 'g') = ${cpf}` });
+  }
+  if (email.includes("@")) {
+    alvos.push({ campo: "email", cond: sql`lower(trim(coalesce(${clients.email}, ''))) = ${email}` });
+  }
+  if (passaporte.length >= 5) {
+    alvos.push({ campo: "passaporte", cond: sql`upper(trim(coalesce(${clients.numeroPassaporte}, ''))) = ${passaporte}` });
+  }
+  if (alvos.length === 0) return null;
+
+  for (const alvo of alvos) {
+    const condicoes = [alvo.cond, isNull(clients.deletedAt)];
+    if (ignorarId != null) condicoes.push(ne(clients.id, ignorarId));
+    const [achado] = await db
+      .select({ id: clients.id, name: clients.name })
+      .from(clients)
+      .where(and(...condicoes))
+      .limit(1);
+    if (achado) return { id: achado.id, name: achado.name, campo: alvo.campo };
+  }
+  return null;
+}
+
 export async function createClient(data: InsertClient): Promise<number> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");

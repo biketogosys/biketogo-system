@@ -6,8 +6,11 @@ import { useViewTransitionLocation } from "./hooks/useViewTransitionLocation";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider, useTheme } from "./contexts/ThemeContext";
 import { useAuth } from "./_core/hooks/useAuth";
+import { usePapel } from "@/hooks/usePapel";
 import { ConfirmProvider } from "@/components/ConfirmDialog";
 import { Skeleton } from "@/components/ui/skeleton";
+import { EmptyState } from "@/components/EmptyState";
+import { Lock } from "lucide-react";
 
 // Code-splitting por rota: cada página vira um chunk próprio. O lead que abre
 // /reservar baixa só o chunk público — não o bundle inteiro do admin.
@@ -52,15 +55,35 @@ function PageFallback() {
   );
 }
 
-function ProtectedRoute({ component: Component }: { component: React.ComponentType }) {
+function ProtectedRoute({
+  component: Component,
+  somenteAdmin = false,
+}: { component: React.ComponentType; somenteAdmin?: boolean }) {
   const { isAuthenticated, loading } = useAuth();
+  const { isAdmin, loading: carregandoPapel } = usePapel();
 
-  if (loading) {
+  if (loading || carregandoPapel) {
     return <RouteFallback />;
   }
 
   if (!isAuthenticated) {
     return <Login />;
+  }
+
+  // Esconder o item do menu não basta: digitar /financeiro na barra de endereço
+  // abriria a tela (que então falharia em cada query, com erro técnico).
+  if (somenteAdmin && !isAdmin) {
+    return (
+      <DashboardLayout>
+        <div className="p-6">
+          <EmptyState
+            icon={Lock}
+            title="Área restrita ao administrador"
+            description="Seu acesso é de operador: ele cobre a operação do dia a dia (contratos, clientes, bikes e acessórios). Financeiro, auditoria, usuários e configurações ficam com o administrador."
+          />
+        </div>
+      </DashboardLayout>
+    );
   }
 
   return (
@@ -83,11 +106,11 @@ function Router() {
         <Route path="/bicicletas" component={() => <ProtectedRoute component={Bikes} />} />
         <Route path="/alugueis">{() => <Redirect to="/contratos" />}</Route>
         <Route path="/acessorios" component={() => <ProtectedRoute component={Accessories} />} />
-        <Route path="/financeiro" component={() => <ProtectedRoute component={Financial} />} />
-        <Route path="/usuarios" component={() => <ProtectedRoute component={UserManagement} />} />
-        <Route path="/configuracoes" component={() => <ProtectedRoute component={Settings} />} />
+        <Route path="/financeiro" component={() => <ProtectedRoute component={Financial} somenteAdmin />} />
+        <Route path="/usuarios" component={() => <ProtectedRoute component={UserManagement} somenteAdmin />} />
+        <Route path="/configuracoes" component={() => <ProtectedRoute component={Settings} somenteAdmin />} />
         <Route path="/contratos" component={() => <ProtectedRoute component={Contracts} />} />
-        <Route path="/auditoria" component={() => <ProtectedRoute component={AuditLog} />} />
+        <Route path="/auditoria" component={() => <ProtectedRoute component={AuditLog} somenteAdmin />} />
         <Route path="/reservar" component={PublicReservation} />
         {/* Acompanhamento do contrato pelo cliente: público, autenticado pelo
             token assinado na URL (o link é a credencial). */}

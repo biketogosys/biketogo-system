@@ -237,11 +237,10 @@ export function buildWelcomeEmail(
     : "Seu cadastro foi criado aqui na loja. Obrigado por escolher a gente para o seu passeio."}
 </p>
 <p style="margin:0;font-family:${FONTE};font-size:14px;line-height:1.6;color:${CORES.ink}">
-  A partir daqui é com a gente: vamos conferir seus dados e falar com você pelo
-  WhatsApp para combinar <strong>a bike, as datas e o local de entrega</strong>.
-  Se preferir adiantar, é só chamar.
+  <strong>O próximo passo é seu:</strong> chame a gente no WhatsApp para combinar
+  <strong>a bike, as datas e a entrega</strong>. É por lá que a reserva é fechada.
 </p>
-${waUrl ? botao("Falar no WhatsApp", waUrl) : ""}
+${waUrl ? botao("Chamar no WhatsApp", waUrl) : ""}
 `.trim(),
   );
 
@@ -249,7 +248,7 @@ ${waUrl ? botao("Falar no WhatsApp", waUrl) : ""}
     subject: `Cadastro recebido — ${empresa.nome || "Bike To Go Floripa"}`,
     html: montarEmail({
       titulo: "Cadastro recebido",
-      preheader: `Oi ${primeiroNome}! Recebemos o seu cadastro e já vamos falar com você.`,
+      preheader: `Oi ${primeiroNome}! Recebemos o seu cadastro. Chame a gente no WhatsApp para fechar a reserva.`,
       corpoHtml: corpo,
       empresa,
     }),

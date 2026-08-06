@@ -140,7 +140,11 @@ export function montarEmail(opts: {
   const { titulo, preheader, corpoHtml, empresa } = opts;
   const logo = urlAbsoluta(empresa.logoUrl);
 
-  const rodapeLinhas = [empresa.nome, empresa.cnpj, empresa.endereco, empresa.cidade, empresa.telefone]
+  // ⚠️ SEM o endereço da loja (pedido da dona, 2026-08-04): a operação é 100%
+  // de entrega, ninguém vai até lá, e o endereço no rodapé só convidava o
+  // cliente a aparecer. Nome, CNPJ, cidade e telefone ficam — identificam a
+  // empresa no documento sem virar convite de visita.
+  const rodapeLinhas = [empresa.nome, empresa.cnpj, empresa.cidade, empresa.telefone]
     .filter((l) => l && l.trim())
     .map((l) => `<p style="margin:0 0 2px;font-family:${FONTE};font-size:11px;line-height:1.6;color:#9A9A9A">${escapeHtml(l)}</p>`)
     .join("");

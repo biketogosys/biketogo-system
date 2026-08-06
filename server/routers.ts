@@ -27,6 +27,7 @@ import {
   getClients,
   getClientById,
   createClient,
+  encontrarClienteDuplicado,
   updateClient,
   deleteClient,
   archiveClient,
@@ -370,6 +371,23 @@ const clientsRouter = router({
         tipoDocumento: input.tipoDocumento,
         numeroPassaporte: input.numeroPassaporte,
       });
+
+      // Cadastro repetido (pedido da dona, 2026-08-04). Aqui quem cadastra é a
+      // LOJA, então a mensagem diz de quem é o cadastro: sem o nome ela não sabe
+      // se achou a pessoa certa nem consegue ir até o registro existente.
+      {
+        const dup = await encontrarClienteDuplicado({
+          cpf: input.cpf, email: input.email, passaporte: input.numeroPassaporte,
+        });
+        if (dup) {
+          const porQue = dup.campo === "email" ? "e-mail" : dup.campo === "cpf" ? "CPF" : "passaporte";
+          throw new TRPCError({
+            code: "CONFLICT",
+            message: `${dup.name} já está cadastrado com este ${porQue} (cliente #${dup.id}). Abra o cadastro existente em vez de criar outro.`,
+          });
+        }
+      }
+
       const id = await createClient({
         ...input,
         source: "manual",
@@ -1721,16 +1739,20 @@ const accessoriesRouter = router({
 });
 
 // ─── Financial router ────────────────────────────────────────────────────────
+// ⚠️ TODO o financeiro é `adminOnlyProcedure` (2026-08-04). O papel "operador"
+// existia pela metade: ele via receita, despesa e lucro da loja inteira, e só
+// descobria o limite ao tomar erro. A régua ficou: **operador toca a operação,
+// admin toca o dinheiro e a configuração.**
 const financialRouter = router({
   // Expense categories
-  expenseCategories: adminAuthProcedure.query(() => getExpenseCategories()),
-  createExpenseCategory: adminAuthProcedure
+  expenseCategories: adminOnlyProcedure.query(() => getExpenseCategories()),
+  createExpenseCategory: adminOnlyProcedure
     .input(z.object({ name: z.string().min(1) }))
     .mutation(async ({ input }) => {
       const id = await createExpenseCategory(input);
       return { id };
     }),
-  updateExpenseCategory: adminAuthProcedure
+  updateExpenseCategory: adminOnlyProcedure
     .input(z.object({ id: z.number(), name: z.string().min(1) }))
     .mutation(async ({ input }) => {
       await updateExpenseCategory(input.id, { name: input.name });
@@ -1744,14 +1766,14 @@ const financialRouter = router({
     }),
 
   // Revenue categories
-  revenueCategories: adminAuthProcedure.query(() => getRevenueCategories()),
-  createRevenueCategory: adminAuthProcedure
+  revenueCategories: adminOnlyProcedure.query(() => getRevenueCategories()),
+  createRevenueCategory: adminOnlyProcedure
     .input(z.object({ name: z.string().min(1) }))
     .mutation(async ({ input }) => {
       const id = await createRevenueCategory(input);
       return { id };
     }),
-  updateRevenueCategory: adminAuthProcedure
+  updateRevenueCategory: adminOnlyProcedure
     .input(z.object({ id: z.number(), name: z.string().min(1) }))
     .mutation(async ({ input }) => {
       await updateRevenueCategory(input.id, { name: input.name });
@@ -1765,7 +1787,7 @@ const financialRouter = router({
     }),
 
   // Expenses
-  expenses: adminAuthProcedure
+  expenses: adminOnlyProcedure
     .input(z.object({
       categoryId: z.number().optional(),
       startDate: z.string().optional(),
@@ -1775,7 +1797,7 @@ const financialRouter = router({
     }))
     .query(({ input }) => getExpenses(input)),
 
-  createExpense: adminAuthProcedure
+  createExpense: adminOnlyProcedure
     .input(z.object({
       categoryId: z.number(),
       description: z.string().min(1),
@@ -1795,7 +1817,7 @@ const financialRouter = router({
       return { id };
     }),
 
-  updateExpense: adminAuthProcedure
+  updateExpense: adminOnlyProcedure
     .input(z.object({
       id: z.number(),
       categoryId: z.number().optional(),
@@ -1813,7 +1835,7 @@ const financialRouter = router({
       return { success: true };
     }),
 
-  deleteExpense: adminAuthProcedure
+  deleteExpense: adminOnlyProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {
       await deleteExpense(input.id);
@@ -1821,7 +1843,7 @@ const financialRouter = router({
     }),
 
   // Revenues (extra)
-  revenues: adminAuthProcedure
+  revenues: adminOnlyProcedure
     .input(z.object({
       categoryId: z.number().optional(),
       startDate: z.string().optional(),
@@ -1836,14 +1858,14 @@ const financialRouter = router({
    * linha, com nome de categoria). Sem paginação de propósito: o CSV do
    * contador é do período inteiro, não da página que está na tela.
    */
-  entries: adminAuthProcedure
+  entries: adminOnlyProcedure
     .input(z.object({
       startDate: z.string().optional(),
       endDate: z.string().optional(),
     }))
     .query(({ input }) => getFinancialEntries(input)),
 
-  createRevenue: adminAuthProcedure
+  createRevenue: adminOnlyProcedure
     .input(z.object({
       categoryId: z.number(),
       description: z.string().min(1),
@@ -1863,7 +1885,7 @@ const financialRouter = router({
       return { id };
     }),
 
-  updateRevenue: adminAuthProcedure
+  updateRevenue: adminOnlyProcedure
     .input(z.object({
       id: z.number(),
       categoryId: z.number().optional(),
@@ -1881,7 +1903,7 @@ const financialRouter = router({
       return { success: true };
     }),
 
-  deleteRevenue: adminAuthProcedure
+  deleteRevenue: adminOnlyProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {
       await deleteRevenue(input.id);
@@ -1889,7 +1911,7 @@ const financialRouter = router({
     }),
 
   // Financial report
-  report: adminAuthProcedure
+  report: adminOnlyProcedure
     .input(z.object({
       startDate: z.string(),
       endDate: z.string(),
@@ -2315,6 +2337,24 @@ const publicApiRouter = router({
         }
       }
 
+      // Cadastro repetido (pedido da dona, 2026-08-04). ⚠️ Endpoint PÚBLICO: a
+      // mensagem não pode confirmar de quem é o cadastro nem devolver dado de
+      // terceiro — quem digita o CPF de outra pessoa não descobre nada além de
+      // "já existe". Quem é de verdade reconhece a própria situação.
+      {
+        const dup = await encontrarClienteDuplicado({
+          cpf: input.cpf, email: input.email, passaporte: input.passport,
+        });
+        if (dup) {
+          throw new TRPCError({
+            code: "CONFLICT",
+            message: dup.campo === "email"
+              ? "Já existe um cadastro com este e-mail. Chame a loja no WhatsApp para continuar a sua reserva."
+              : "Já existe um cadastro com este documento. Chame a loja no WhatsApp para continuar a sua reserva.",
+          });
+        }
+      }
+
       // Create client with status 'lead'
       const clientId = await createClient({
         name: input.name,
@@ -2622,7 +2662,7 @@ const dashboardRouter = router({
 
 // ─── Audit Logs router ────────────────────────────────────────────────────────
 const auditLogsRouter = router({
-  list: adminAuthProcedure
+  list: adminOnlyProcedure
     .input(z.object({
       page: z.number().min(1).default(1),
       limit: z.number().min(1).max(100).default(20),
@@ -2682,7 +2722,7 @@ const auditLogsRouter = router({
    * por uma ação que não estava na lista era impossível, e as da lista podiam
    * nem existir.
    */
-  acoes: adminAuthProcedure.query(async () => {
+  acoes: adminOnlyProcedure.query(async () => {
     const db = await getDb();
     if (!db) return [] as string[];
     const { auditLogs: auditLogsTable } = await import("../drizzle/schema");
@@ -3201,10 +3241,24 @@ const contractsRouter = router({
       const db = await getDb();
       if (!db) return { items: [], total: 0, page: 1, totalPages: 1 };
       const offset = (input.page - 1) * input.limit;
-      const arquivados = ["encerrado", "cancelado"] as const;
+      // ⚠️ Encerrar NÃO arquiva sozinho (pedido da dona, 2026-08-04): "quando
+      // encerro o aluguel, o contrato vai para arquivados mesmo que eu não
+      // tenha cadastrado o pagamento". Contrato encerrado e não pago é dinheiro
+      // a receber — tem que continuar à vista, em Ativos, até o pagamento ser
+      // confirmado. Cancelado arquiva na hora (não há o que receber).
+      const naoPago = drizzleSql`EXISTS (
+        SELECT 1 FROM ${rentalsTable} r
+        WHERE r."contractId" = ${contracts.id}
+          AND r."deletedAt" IS NULL
+          AND r."paymentStatus" <> 'paid'
+      )`;
+      const estaArquivado = drizzleSql`(
+        ${contracts.status} = 'cancelado'
+        OR (${contracts.status} = 'encerrado' AND NOT ${naoPago})
+      )`;
       const statusCond = input.view === "arquivados"
-        ? inArray(contracts.status, arquivados as any)
-        : notInArray(contracts.status, arquivados as any);
+        ? estaArquivado
+        : drizzleSql`NOT ${estaArquivado}`;
       const where = and(isNull(contracts.deletedAt), statusCond);
       const [items, countResult] = await Promise.all([
         db.select({
@@ -3215,6 +3269,9 @@ const contractsRouter = router({
           criadoEm: contracts.criadoEm,
           encerradoEm: contracts.encerradoEm,
           clientName: clientsTable.name,
+          // Para a tela marcar "aguardando pagamento" no contrato encerrado que
+          // continua em Ativos — senão ela não entende por que ele não sumiu.
+          pago: drizzleSql<boolean>`NOT ${naoPago}`,
         })
           .from(contracts)
           .leftJoin(clientsTable, eq(contracts.clientId, clientsTable.id))

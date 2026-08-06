@@ -159,6 +159,8 @@ export const translations = {
     errorTitle: "Erro ao enviar",
     errorMessage:
       "Ocorreu um erro ao enviar seu formulário. Por favor, tente novamente.",
+    duplicateMessage:
+      "Já existe um cadastro com estes dados. Chame a loja no WhatsApp para continuar a sua reserva.",
 
     // Validation
     required: "Campo obrigatório",
@@ -320,6 +322,8 @@ export const translations = {
     errorTitle: "Submission error",
     errorMessage:
       "An error occurred while submitting your form. Please try again.",
+    duplicateMessage:
+      "There is already a registration with this data. Message the store on WhatsApp to continue your booking.",
 
     required: "Required field",
     invalidEmail: "Invalid email",
@@ -480,6 +484,8 @@ export const translations = {
     errorTitle: "Error al enviar",
     errorMessage:
       "Ocurrió un error al enviar tu formulario. Por favor, inténtalo de nuevo.",
+    duplicateMessage:
+      "Ya existe un registro con estos datos. Escribe a la tienda por WhatsApp para continuar con tu reserva.",
 
     required: "Campo obligatorio",
     invalidEmail: "Correo electrónico inválido",

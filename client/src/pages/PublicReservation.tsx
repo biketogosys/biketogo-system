@@ -421,7 +421,10 @@ export default function PublicReservation() {
 
       setSubmitted(true);
     } catch (err: any) {
-      setErrors({ submit: err?.message || t.errorMessage });
+      // Cadastro repetido tem texto próprio NO IDIOMA DA PÁGINA: a mensagem do
+      // servidor é só em português e esta tela atende turista em EN e ES.
+      const duplicado = err?.data?.code === "CONFLICT";
+      setErrors({ submit: duplicado ? t.duplicateMessage : (err?.message || t.errorMessage) });
     } finally { setSubmitting(false); }
   };
 

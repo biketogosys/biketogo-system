@@ -16,6 +16,7 @@ import {
   UserCog,
 } from "lucide-react";
 import { Link, useLocation } from "wouter";
+import { usePapel } from "@/hooks/usePapel";
 import { trpc } from "@/lib/trpc";
 
 const navItems = [
@@ -33,6 +34,8 @@ interface NavMainProps {
 
 export function NavMain({ onNewContract }: NavMainProps) {
   const [location] = useLocation();
+  // Operador não gerencia usuários (a régua: operação sim, administração não).
+  const { podeVer } = usePapel();
 
   // Leads aguardando validação — badge no item Clientes (atualiza a cada 60s
   // e no refoco da janela; some quando zera)
@@ -60,7 +63,7 @@ export function NavMain({ onNewContract }: NavMainProps) {
 
         {/* Itens de navegação principal */}
         <SidebarMenu>
-          {navItems.map((item) => {
+          {navItems.filter((i) => podeVer(i.path)).map((item) => {
             const isActive =
               item.path === "/"
                 ? location === "/"

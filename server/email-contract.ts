@@ -353,10 +353,14 @@ ${extraHtml}
 ${total}`.trim());
 }
 
-/** Assinatura do documento: dados da empresa e a linha de cidade e data. */
+/**
+ * Assinatura do documento: dados da empresa e a linha de cidade e data.
+ * ⚠️ Sem o endereço da loja (pedido da dona, 2026-08-04) — a operação é só de
+ * entrega. Mesma regra do rodapé do `email-layout.ts`.
+ */
 function rodapeDocumento(empresa: DadosEmpresa): string {
   const hoje = new Date().toLocaleDateString("pt-BR", { day: "numeric", month: "long", year: "numeric" });
-  const linhas = [empresa.nome, empresa.cnpj, empresa.endereco, empresa.cidade, empresa.telefone]
+  const linhas = [empresa.nome, empresa.cnpj, empresa.cidade, empresa.telefone]
     .filter((l) => l && l.trim())
     .map((l) => `<p style="margin:0 0 2px;font-family:${FONTE};font-size:11px;line-height:1.6;color:${CORES.muted}">${escapeHtml(l)}</p>`)
     .join("");
@@ -414,7 +418,9 @@ ${paragrafos(clausulas.termos)}`.trim());
     abertura(
       dados,
       "Reservado! Registramos o seu pedido de reserva de bicicleta.",
-      "Abaixo estão os detalhes e as condições do contrato de locação, para você ler com calma. Vamos falar com você pelo WhatsApp para combinar a entrega.",
+      // Quem chama é o CLIENTE (pedido da dona, 2026-08-04): a loja não sai
+      // atrás, a conversa começa por ele no WhatsApp.
+      "Abaixo estão os detalhes e as condições do contrato de locação, para você ler com calma. Chame a gente no WhatsApp para combinar a entrega.",
     ),
     blocoDetalhes(dados, mesmoPeriodo),
     blocoItens(dados, mesmoPeriodo),

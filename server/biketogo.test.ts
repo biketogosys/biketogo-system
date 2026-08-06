@@ -11,6 +11,9 @@ vi.mock("./db", () => ({
   getClients: vi.fn().mockResolvedValue({ items: [], total: 0 }),
   getClientById: vi.fn().mockResolvedValue(undefined),
   createClient: vi.fn().mockResolvedValue(1),
+  // Sem duplicado por padrão: a regra de cadastro único tem teste próprio em
+  // `cliente-duplicado.test.ts`, contra o banco de verdade.
+  encontrarClienteDuplicado: vi.fn().mockResolvedValue(null),
   updateClient: vi.fn().mockResolvedValue(undefined),
   getClientDocuments: vi.fn().mockResolvedValue([]),
   addClientDocument: vi.fn().mockResolvedValue(1),

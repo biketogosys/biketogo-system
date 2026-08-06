@@ -1313,7 +1313,16 @@ export default function Contracts() {
       accessorKey: "status",
       enableSorting: false,
       cell: ({ row }) => (
-        <ContractStatusBadge status={row.original.status as ContractStatus} />
+        <div className="flex flex-wrap items-center gap-1.5">
+          <ContractStatusBadge status={row.original.status as ContractStatus} />
+          {/* Encerrado e não pago continua em Ativos de propósito (é dinheiro a
+              receber): o selo explica por que ele não foi para Arquivados. */}
+          {row.original.status === "encerrado" && (row.original as any).pago === false && (
+            <span className="inline-flex items-center rounded-md border px-2 py-0.5 text-[11px] font-semibold bg-amber-500/20 text-amber-600 border-amber-500/30 dark:text-amber-400">
+              Aguardando pagamento
+            </span>
+          )}
+        </div>
       ),
     },
     {
@@ -1408,7 +1417,16 @@ export default function Contracts() {
       accessorKey: "status",
       enableSorting: false,
       cell: ({ row }) => (
-        <ContractStatusBadge status={row.original.status as ContractStatus} />
+        <div className="flex flex-wrap items-center gap-1.5">
+          <ContractStatusBadge status={row.original.status as ContractStatus} />
+          {/* Encerrado e não pago continua em Ativos de propósito (é dinheiro a
+              receber): o selo explica por que ele não foi para Arquivados. */}
+          {row.original.status === "encerrado" && (row.original as any).pago === false && (
+            <span className="inline-flex items-center rounded-md border px-2 py-0.5 text-[11px] font-semibold bg-amber-500/20 text-amber-600 border-amber-500/30 dark:text-amber-400">
+              Aguardando pagamento
+            </span>
+          )}
+        </div>
       ),
     },
     {

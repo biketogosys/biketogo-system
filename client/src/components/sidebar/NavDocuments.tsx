@@ -7,6 +7,7 @@ import {
 } from "@/components/ui/sidebar";
 import { DollarSign, FileText, Shield } from "lucide-react";
 import { Link, useLocation } from "wouter";
+import { usePapel } from "@/hooks/usePapel";
 
 const documentItems = [
   { icon: DollarSign, label: "Financeiro", path: "/financeiro" },
@@ -16,12 +17,16 @@ const documentItems = [
 
 export function NavDocuments() {
   const [location] = useLocation();
+  const { podeVer } = usePapel();
+  // Operador não vê Financeiro nem Auditoria: deixar o item no menu só para
+  // dar erro no clique é pior que não mostrar.
+  const itens = documentItems.filter((i) => podeVer(i.path));
 
   return (
     <SidebarGroup className="group-data-[collapsible=icon]:hidden">
       <SidebarGroupLabel>Documentos</SidebarGroupLabel>
       <SidebarMenu>
-        {documentItems.map((item) => {
+        {itens.map((item) => {
           const isActive = location.startsWith(item.path);
           return (
             <SidebarMenuItem key={item.path}>
