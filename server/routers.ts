@@ -3366,20 +3366,35 @@ const contractsRouter = router({
         .leftJoin(bikesTable, eq(rentalsTable.bikeId, bikesTable.id))
         .leftJoin(bsGet, eq(rentalsTable.bikeSizeId, bsGet.id))
         .where(and(eq(rentalsTable.contractId, input.id), isNull(rentalsTable.deletedAt)));
-      // BU-PICK-BACK: enriquecer cada rental com os bikeUnitIds + números ligados
+      // BU-PICK-BACK: enriquecer cada rental com os bikeUnitIds + números ligados.
+      // ⚠️ Era 1 consulta POR ALUGUEL (N+1, medido em 2026-08-06). Virou UMA em
+      // lote com `inArray` + agrupamento em memória. `eq`/`inArray` vêm do import
+      // estático lá de cima; só o schema precisa do import dinâmico.
       const { rentalBikeUnits: rbuGet, bikeUnits: buGet } = await import("../drizzle/schema");
-      const { eq: eqRbuGet } = await import("drizzle-orm");
-      const rentalsWithUnitIds = await Promise.all(linkedRentals.map(async (r) => {
-        const rows = await db.select({ bikeUnitId: rbuGet.bikeUnitId, numero: buGet.numeroSistema })
+      const rentalIds = linkedRentals.map((r) => r.id);
+      const unitRows = rentalIds.length
+        ? await db.select({
+            rentalId: rbuGet.rentalId,
+            bikeUnitId: rbuGet.bikeUnitId,
+            numero: buGet.numeroSistema,
+          })
           .from(rbuGet)
-          .leftJoin(buGet, eqRbuGet(buGet.id, rbuGet.bikeUnitId))
-          .where(eqRbuGet(rbuGet.rentalId, r.id));
-        return {
-          ...r,
-          bikeUnitIds: rows.map((row: any) => row.bikeUnitId),
-          bikeUnitNumeros: rows.map((row: any) => row.numero).filter(Boolean),
-        };
-      }));
+          .leftJoin(buGet, eq(buGet.id, rbuGet.bikeUnitId))
+          .where(inArray(rbuGet.rentalId, rentalIds))
+          // Ordem estável: a versão N+1 devolvia o que o banco quisesse.
+          .orderBy(rbuGet.bikeUnitId)
+        : [];
+      const unidadesPorRental = new Map<number, { ids: number[]; numeros: string[] }>();
+      for (const row of unitRows as any[]) {
+        const acc = unidadesPorRental.get(row.rentalId) ?? { ids: [], numeros: [] };
+        acc.ids.push(row.bikeUnitId);
+        if (row.numero) acc.numeros.push(row.numero);
+        unidadesPorRental.set(row.rentalId, acc);
+      }
+      const rentalsWithUnitIds = linkedRentals.map((r) => {
+        const u = unidadesPorRental.get(r.id);
+        return { ...r, bikeUnitIds: u?.ids ?? [], bikeUnitNumeros: u?.numeros ?? [] };
+      });
       const accChecklistRaw = await db.select({
         id: contractAccessories.id,
         accessoryId: contractAccessories.accessoryId,
@@ -3394,18 +3409,27 @@ const contractsRouter = router({
         .from(contractAccessories)
         .leftJoin(accessoriesTable, eq(contractAccessories.accessoryId, accessoriesTable.id))
         .where(eq(contractAccessories.contractId, input.id));
-      // Fetch serialNumber for each linked unit
-      const accChecklist = await Promise.all(accChecklistRaw.map(async (ca) => {
-        let serialNumber: string | null = null;
-        let variante: string | null = null;
-        if (ca.unitId) {
-          const [unit] = await db.select({ serialNumber: accessoryUnits.serialNumber, variante: accessoryUnits.variante })
-            .from(accessoryUnits).where(eq(accessoryUnits.id, ca.unitId)).limit(1);
-          serialNumber = unit?.serialNumber ?? null;
-          variante = unit?.variante ?? null;
-        }
-        return { ...ca, serialNumber, variante };
-      }));
+      // Nº de série + variante da unidade ligada a cada linha de acessório.
+      // ⚠️ Era 1 consulta POR LINHA (a outra metade do N+1). Uma em lote resolve.
+      const acessorioUnitIds = accChecklistRaw
+        .map((ca) => ca.unitId)
+        .filter((id): id is number => id != null);
+      const unidadesAcessorio = acessorioUnitIds.length
+        ? await db.select({
+            id: accessoryUnits.id,
+            serialNumber: accessoryUnits.serialNumber,
+            variante: accessoryUnits.variante,
+          })
+          .from(accessoryUnits)
+          .where(inArray(accessoryUnits.id, acessorioUnitIds))
+        : [];
+      const unidadeAcessorioPorId = new Map<number, { serialNumber: string | null; variante: string | null }>(
+        (unidadesAcessorio as any[]).map((u) => [u.id, { serialNumber: u.serialNumber ?? null, variante: u.variante ?? null }]),
+      );
+      const accChecklist = accChecklistRaw.map((ca) => {
+        const unit = ca.unitId ? unidadeAcessorioPorId.get(ca.unitId) : undefined;
+        return { ...ca, serialNumber: unit?.serialNumber ?? null, variante: unit?.variante ?? null };
+      });
       return { ...contract, rentals: rentalsWithUnitIds, accessories: accChecklist };
     }),
 

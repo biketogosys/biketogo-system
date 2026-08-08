@@ -581,7 +581,7 @@ export default function Settings() {
               value={notificationEmail}
               onChange={setNotificationEmail}
               placeholder="biketogo.floripa@gmail.com"
-              hint="Caixa onde chegam o aviso de lead novo e o resumo matinal de devoluções. Não é o remetente: pode ser um Gmail comum."
+              hint="Caixa onde chega o aviso de lead novo e para onde vai a resposta do cliente aos e-mails da loja. Não é o remetente: pode ser um Gmail comum."
             />
             {/* Sem isto, "não chegou" e "nem tentou" ficam iguais na tela: o
                 envio é não-fatal e o erro só existia no log do servidor. */}
