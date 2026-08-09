@@ -1,6 +1,6 @@
 import { useAuth } from "@/_core/hooks/useAuth";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
-import { CSSProperties } from "react";
+import { CSSProperties, useEffect } from "react";
 import { useLocation } from "wouter";
 import { supportsViewTransition } from "@/hooks/useViewTransitionLocation";
 import { DashboardLayoutSkeleton } from "./DashboardLayoutSkeleton";
@@ -16,6 +16,16 @@ export default function DashboardLayout({
   const { loading, user } = useAuth();
   const [location] = useLocation();
   const vtSupported = supportsViewTransition();
+
+  // Troca de rota volta ao TOPO (2026-08-07). Roteamento é client-side, então o
+  // navegador não reseta sozinho: rolar até o fim de Contratos e ir pra
+  // Clientes abria a tela no meio. No celular dela isso parece tela quebrada.
+  // ⚠️ `location` do wouter é só o PATH: paginação (`?page`, via
+  // `usePageParam`) não passa por aqui e continua sem mexer no scroll, que é o
+  // comportamento de propósito daquele hook.
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [location]);
 
   if (loading) {
     return <DashboardLayoutSkeleton />;

@@ -230,7 +230,9 @@ const authRouter = router({
   }),
 
   login: publicProcedure
-    .input(z.object({ email: z.string().email(), password: z.string().min(1) }))
+    // `.max()` porque é rota pública: sem teto, o corpo de 50MB do Express
+    // chegava até o bcrypt (que ignora além de 72 bytes de qualquer forma).
+    .input(z.object({ email: z.string().email().max(320), password: z.string().min(1).max(200) }))
     .mutation(async ({ input, ctx }) => {
       const user = await getAdminUserByEmail(input.email);
       if (!user || !user.active) {
@@ -582,7 +584,8 @@ const clientsRouter = router({
   getUploadToken: adminAuthProcedure
     .input(z.object({ clientId: z.number() }))
     .mutation(({ input }) => {
-      return { uploadToken: signUploadToken(input.clientId) };
+      // Escopo `admin`: a loja pode REGRAVAR o documento (corrigir foto ruim).
+      return { uploadToken: signUploadToken(input.clientId, "admin") };
     }),
 });
 
@@ -2003,25 +2006,46 @@ const settingsRouter = router({
 // ─── SEC-1: Upload token helpers (HMAC, stateless, 2h TTL) ─────────────────
 const UPLOAD_TOKEN_TTL_MS = 2 * 60 * 60 * 1000; // 2h
 
-function signUploadToken(clientId: number): string {
+/**
+ * Escopo do token de upload (2026-08-07).
+ *
+ * `pre`   = emitido pelo `/reservar`, para o CLIENTE anexar o documento.
+ *           **Uso único por lado**: se aquele lado já tem arquivo, recusa.
+ * `admin` = emitido por `clients.getUploadToken`, com a loja logada. Continua
+ *           podendo REGRAVAR, porque o `ClientFormModal` reenvia o documento
+ *           toda vez que o cadastro é salvo — travar aqui quebraria a correção
+ *           de um documento borrado, que é fluxo real dela.
+ *
+ * O escopo entra no payload assinado: um token `pre` não vira `admin` sem a
+ * chave. Formato: `<escopo>.<clientId>.<exp>.<hmac>`.
+ *
+ * ⚠️ Muda o formato do token. Os emitidos antes do deploy param de valer (a
+ * tela diz "Sessão de envio expirada. Refaça o pré-cadastro."). Na prática a
+ * janela é de segundos: os dois fluxos pedem o token e usam em seguida.
+ */
+type EscopoUpload = "pre" | "admin";
+
+function signUploadToken(clientId: number, escopo: EscopoUpload): string {
   const exp = Date.now() + UPLOAD_TOKEN_TTL_MS;
-  const payload = `${clientId}.${exp}`;
+  const payload = `${escopo}.${clientId}.${exp}`;
   const sig = crypto.createHmac("sha256", ENV.cookieSecret).update(payload).digest("hex");
   return `${payload}.${sig}`;
 }
 
-function verifyUploadToken(token: string): number | null {
+function verifyUploadToken(token: string): { clientId: number; escopo: EscopoUpload } | null {
   const parts = token.split(".");
-  if (parts.length !== 3) return null;
-  const [clientIdStr, expStr, sig] = parts;
-  const payload = `${clientIdStr}.${expStr}`;
+  if (parts.length !== 4) return null;
+  const [escopoStr, clientIdStr, expStr, sig] = parts;
+  if (escopoStr !== "pre" && escopoStr !== "admin") return null;
+  const payload = `${escopoStr}.${clientIdStr}.${expStr}`;
   const expected = crypto.createHmac("sha256", ENV.cookieSecret).update(payload).digest("hex");
   const a = Buffer.from(sig);
   const b = Buffer.from(expected);
   if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
   if (Date.now() > Number(expStr)) return null;
   const id = Number(clientIdStr);
-  return Number.isInteger(id) && id > 0 ? id : null;
+  if (!Number.isInteger(id) || id <= 0) return null;
+  return { clientId: id, escopo: escopoStr };
 }
 
 if (!ENV.cookieSecret) {
@@ -2064,7 +2088,8 @@ const publicApiRouter = router({
    * endereço e documento completo ficam de fora de propósito.
    */
   contractByToken: publicProcedure
-    .input(z.object({ token: z.string().min(3) }))
+    // O token é `<id>.<hmac sha256 em hex>`: 200 sobra com folga.
+    .input(z.object({ token: z.string().min(3).max(200) }))
     .query(async ({ input }) => {
       const contractId = verifyContractToken(input.token);
       if (!contractId) throw new TRPCError({ code: "NOT_FOUND", message: "Link inválido ou expirado." });
@@ -2319,32 +2344,36 @@ const publicApiRouter = router({
   // ─── Pré-cadastro: cria apenas o cliente como Lead (sem reserva) ─────────────
   submitPreRegistration: publicProcedure
     .input(z.object({
+      // ⚠️ Todo campo de texto tem `.max()` (2026-08-07). Endpoint PÚBLICO: sem
+      // teto, o corpo de 50MB que o Express aceita chegava inteiro até aqui e
+      // só morria no INSERT, com erro de banco em vez de validação. Os limites
+      // espelham o `varchar` da tabela `clients`, para não recusar dado válido.
       // Identificação
-      name: z.string().min(2),
-      cpf: z.string().optional(),
-      rg: z.string().optional(),
-      passport: z.string().optional(),
-      docOrigin: z.string().optional(),
-      birthDate: z.string().optional(),
-      gender: z.string().optional(),
-      height: z.string().min(1, "Altura obrigatória"),
-      weight: z.string().min(1, "Peso obrigatório"),
-      pedalFreq: z.string().optional(),
-      howFound: z.string().optional(),
+      name: z.string().min(2).max(255),
+      cpf: z.string().max(14).optional(),
+      rg: z.string().max(20).optional(),
+      passport: z.string().max(50).optional(),
+      docOrigin: z.string().max(50).optional(),
+      birthDate: z.string().max(10).optional(),
+      gender: z.string().max(20).optional(),
+      height: z.string().min(1, "Altura obrigatória").max(10),
+      weight: z.string().min(1, "Peso obrigatório").max(10),
+      pedalFreq: z.string().max(50).optional(),
+      howFound: z.string().max(100).optional(),
       // Contato
-      phone: z.string().optional(),
-      email: z.string().email("E-mail inválido"),
-      instagram: z.string().optional(),
-      accommodation: z.string().optional(),
+      phone: z.string().max(20).optional(),
+      email: z.string().email("E-mail inválido").max(320),
+      instagram: z.string().max(100).optional(),
+      accommodation: z.string().max(255).optional(),
       // Endereço
-      zipCode: z.string().optional(),
-      street: z.string().optional(),
-      number: z.string().optional(),
-      complement: z.string().optional(),
-      neighborhood: z.string().optional(),
-      city: z.string().optional(),
-      state: z.string().optional(),
-      country: z.string().optional(),
+      zipCode: z.string().max(10).optional(),
+      street: z.string().max(255).optional(),
+      number: z.string().max(20).optional(),
+      complement: z.string().max(100).optional(),
+      neighborhood: z.string().max(100).optional(),
+      city: z.string().max(100).optional(),
+      state: z.string().max(50).optional(),
+      country: z.string().max(50).optional(),
       // LGPD
       lgpdConsent: z.boolean().optional(),
     }))
@@ -2419,22 +2448,40 @@ const publicApiRouter = router({
       // reserva: quem fecha o aluguel é a Cassiana no WhatsApp.
       await sendWelcomeEmail({ nome: input.name, email: input.email, origem: "reservar" });
 
-      return { clientId, success: true, uploadToken: signUploadToken(clientId) };
+      // Escopo `pre`: uso único POR LADO (o cliente anexa frente e verso).
+      return { clientId, success: true, uploadToken: signUploadToken(clientId, "pre") };
     }),
 
   // ─── Upload document photo (base64) ────────────────────────────────────────
   uploadDocument: publicProcedure
     .input(z.object({
-      token: z.string(),
+      token: z.string().max(200),
       side: z.enum(["front", "back"]),
       base64: z.string().max(14_000_000),
-      mimeType: z.string().default("image/jpeg"),
+      mimeType: z.string().max(100).default("image/jpeg"),
     }))
     .mutation(async ({ input }) => {
       // SEC-1: verify HMAC token — never trust clientId from input
-      const clientId = verifyUploadToken(input.token);
-      if (!clientId) throw new TRPCError({ code: "UNAUTHORIZED",
+      const sessao = verifyUploadToken(input.token);
+      if (!sessao) throw new TRPCError({ code: "UNAUTHORIZED",
         message: "Sessão de envio expirada. Refaça o pré-cadastro." });
+      const { clientId, escopo } = sessao;
+
+      // USO ÚNICO por lado, só no token público (2026-08-07). Um lado que já
+      // tem arquivo não aceita segunda gravação: o token do pré-cadastro vale
+      // para o cliente anexar frente e verso UMA vez, e nada além disso.
+      // ⚠️ Lado que ficou VAZIO (upload falhou, e a falha é não-fatal por
+      // design) continua aceitando, senão a retentativa legítima quebraria.
+      // O escopo `admin` não passa por aqui: a loja precisa poder regravar.
+      if (escopo === "pre") {
+        const existente = await getClientById(clientId);
+        const jaEnviado = input.side === "front" ? existente?.docFrontUrl : existente?.docBackUrl;
+        if (jaEnviado) {
+          throw new TRPCError({ code: "FORBIDDEN",
+            message: "Este documento já foi enviado. Se precisar trocar, fale com a loja." });
+        }
+      }
+
       const mime = input.mimeType || "image/jpeg";
       const isImage = mime.startsWith("image/");
       const isPdf = mime === "application/pdf";

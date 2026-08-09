@@ -32,6 +32,25 @@ export const reservarRateLimiter = rateLimit({
   legacyHeaders: false,
 });
 
+/**
+ * Upload de documento (tRPC publicApi.uploadDocument) → 12 req/min por IP.
+ *
+ * Era o único endpoint público pesado SEM limite (2026-08-07): aceita 10MB por
+ * chamada e o corpo do Express vai a 50MB. O token HMAC já barra quem não fez
+ * pré-cadastro, mas quem fez podia repetir à vontade dentro das 2h de validade.
+ *
+ * 12 e não 10 porque o fluxo legítimo sobe DOIS arquivos (frente e verso) e o
+ * cadastro pela loja pode reenviar os dois ao salvar: o teto precisa de folga
+ * para a retentativa não parecer bloqueio.
+ */
+export const uploadDocumentoRateLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 12,
+  message: { error: "Muitos envios de documento. Tente novamente em 1 minuto." },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 // ─── CORS restrito para rotas Shopify ───────────────────────────────────────
 
 export function shopifyCorsMiddleware(req: Request, res: Response, next: NextFunction) {

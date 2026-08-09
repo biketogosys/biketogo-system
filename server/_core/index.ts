@@ -19,6 +19,7 @@ import {
   loginRateLimiter,
   precadastroRateLimiter,
   reservarRateLimiter,
+  uploadDocumentoRateLimiter,
   shopifyCorsMiddleware,
 } from "./security";
 
@@ -208,6 +209,11 @@ async function startServer() {
   // reserva online foi vetada (virou só pré-cadastro); o limiter ficou preso ao
   // nome antigo e não disparava. Corrigido 2026-07-18.
   app.use("/api/trpc/publicApi.submitPreRegistration", reservarRateLimiter);
+
+  // ─── Rate limiting para o upload de documento ─────────────────────────────
+  // Era o único endpoint público pesado sem limite (2026-08-07): 10MB por
+  // chamada, sem teto de repetição dentro das 2h de validade do token.
+  app.use("/api/trpc/publicApi.uploadDocument", uploadDocumentoRateLimiter);
 
   // ─── CORS genérico para demais rotas (não-Shopify) ────────────────────────
   app.use((req, res, next) => {
