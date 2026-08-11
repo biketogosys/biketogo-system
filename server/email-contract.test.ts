@@ -444,15 +444,22 @@ describe("pedidos da dona — 2026-08-11", () => {
     expect(html).toContain("Florianópolis,");
   });
 
-  it("4b. a RESERVA mantém o termo de ciência com os dados da loja", async () => {
+  // Decisão do Matheus no mesmo dia: a RESERVA fecha igual ao recibo. Ela pediu
+  // só no recibo, mas o argumento ("já tem no rodapé") valia nos dois, e manter
+  // um de cada jeito deixava o cliente vendo dois padrões da mesma loja.
+  it("4b. a RESERVA também perde o título e os dados da loja, mantendo o texto dela", async () => {
     const db = await createTestDb();
     const { contractId } = await seedContrato(db);
     const dados = await carregarDadosContrato(db, contractId);
     const { html } = buildReservationEmail(dados!, CLAUSULAS, EMPRESA_TESTE);
 
-    expect(html).toContain("Termo de ciência");
-    // 2× de propósito: no termo de ciência do corpo e no rodapé escuro
-    expect(html.split("43.247.917/0001-06").length - 1).toBe(2);
+    expect(html).not.toContain("Termo de ciência");
+    // o conteúdo PRÓPRIO da reserva fica: não era duplicação, é aviso
+    expect(html).toContain("A Bike To Go se responsabiliza pela integridade");
+    expect(html).toContain("Devolução antecipada ou renovação alteram o valor");
+    // dados da loja só no rodapé escuro: 1×, como no recibo
+    expect(html.split("43.247.917/0001-06").length - 1).toBe(1);
+    expect(html).toContain("Florianópolis,");
   });
 });
 

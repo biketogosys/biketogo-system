@@ -398,26 +398,13 @@ ${total}`.trim());
 }
 
 /**
- * Assinatura do documento: dados da empresa e a linha de cidade e data.
- * ⚠️ Sem o endereço da loja (pedido da dona, 2026-08-04) — a operação é só de
- * entrega. Mesma regra do rodapé do `email-layout.ts`.
- */
-function rodapeDocumento(empresa: DadosEmpresa): string {
-  const linhas = [empresa.nome, empresa.cnpj, empresa.cidade, empresa.telefone]
-    .filter((l) => l && l.trim())
-    .map((l) => `<p style="margin:0 0 2px;font-family:${FONTE};font-size:11px;line-height:1.6;color:${CORES.muted}">${escapeHtml(l)}</p>`)
-    .join("");
-  return `
-${linhas}
-${linhaCidadeData(empresa)}`.trim();
-}
-
-/**
  * "Florianópolis, 11 de agosto de 2026." — o fecho de documento.
  *
- * Separada do `rodapeDocumento` porque o RECIBO passou a querer só esta linha,
- * sem repetir os dados da loja (pedido da dona, 2026-08-11: *"tirar os dados da
- * loja, por já ter no rodapé"*). O e-mail de reserva segue com o bloco inteiro.
+ * ⚠️ Substituiu o antigo `rodapeDocumento`, que repetia nome, CNPJ, cidade e
+ * telefone dentro do corpo. Pedido da dona (2026-08-11): *"tirar os dados da
+ * loja, por já ter no rodapé"*. Ela falou do recibo; o Matheus estendeu para a
+ * reserva no mesmo dia, para os dois e-mails fecharem igual. Os dados da
+ * empresa seguem no rodapé escuro que o `montarEmail` desenha.
  */
 function linhaCidadeData(empresa: DadosEmpresa): string {
   const hoje = new Date().toLocaleDateString("pt-BR", { day: "numeric", month: "long", year: "numeric" });
@@ -533,10 +520,13 @@ ${paragrafos(clausulas.termos)}`.trim());
     blocoItens(dados, mesmoPeriodo),
     chamada("Visualizar detalhes da reserva", link, "Acompanhe a sua reserva online quando quiser. O link é só seu."),
     termos,
-    bloco("Termo de ciência", `
+    // Mesmo fecho do recibo (decisão do Matheus, 2026-08-11): sem faixa de
+    // título e sem os dados da loja, que já vêm no rodapé escuro logo abaixo.
+    // O conteúdo é o próprio da reserva; o que saiu foi só a duplicação.
+    bloco(null, `
 <p style="margin:0 0 8px;font-family:${FONTE};font-size:12px;line-height:1.65;color:${CORES.muted}">A Bike To Go se responsabiliza pela integridade e pelo funcionamento dos equipamentos locados, e o cliente deve devolvê-los nas mesmas condições em que foram disponibilizados.</p>
-<p style="margin:0 0 16px;font-family:${FONTE};font-size:12px;line-height:1.65;color:${CORES.muted}">Os valores acima se referem ao período informado. Devolução antecipada ou renovação alteram o valor, e a página de acompanhamento passa a mostrar o valor atualizado.</p>
-${rodapeDocumento(empresa)}`.trim()),
+<p style="margin:0;font-family:${FONTE};font-size:12px;line-height:1.65;color:${CORES.muted}">Os valores acima se referem ao período informado. Devolução antecipada ou renovação alteram o valor, e a página de acompanhamento passa a mostrar o valor atualizado.</p>
+${linhaCidadeData(empresa)}`.trim()),
   ].join("");
 
   const bike = dados.itens[0]?.modelo;
