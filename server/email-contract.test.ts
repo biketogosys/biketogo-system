@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import * as schema from "../drizzle/schema";
 import {
   ACAO_RECIBO_ENVIADO, buildReceiptEmail, buildReservationEmail, enviarEmailDeContrato,
-  carregarDadosContrato, formatarData, sendReceiptEmail,
+  carregarDadosContrato, formatarData, quitacao, resumoValores, sendReceiptEmail,
 } from "./email-contract";
 import { EMPRESA_VAZIA } from "./email-layout";
 import { createTestDb, seedBasics } from "./test-helpers/pglite-db";
@@ -311,6 +311,148 @@ describe("enviarEmailDeContrato — reenvio manual", () => {
     const manual = await enviarEmailDeContrato(db, contractId, "recibo", "tok", { ignorarGuardaRecibo: true });
     expect(manual.motivo).not.toMatch(/já foi enviado/i);
     expect(manual.destinatario).toBe("ana@exemplo.com");
+  });
+});
+
+// ─── Lote de pedidos da dona (WhatsApp, 2026-08-11) ──────────────────────────
+// Os quatro vieram por print, com o texto que ela mesma redigiu. São mudanças
+// de TEXTO, que é justamente o que passa despercebido numa refatoração.
+
+/** Empresa com cidade preenchida: o fecho "Florianópolis, <data>" depende dela. */
+const EMPRESA_TESTE = {
+  ...EMPRESA_VAZIA,
+  nome: "Bike To Go Floripa C M Baptistotti Esportes LTDA",
+  cnpj: "43.247.917/0001-06",
+  cidade: "Florianópolis",
+  telefone: "(48) 98863-1669",
+};
+
+describe("pedidos da dona — 2026-08-11", () => {
+  it("1. o rótulo é ENTREGA, não retirada (a operação é 100% de entrega)", async () => {
+    const db = await createTestDb();
+    const { contractId } = await seedContrato(db, { pago: true, status: "encerrado" });
+    const dados = await carregarDadosContrato(db, contractId);
+
+    // vale nos DOIS e-mails: o bloco de detalhes é compartilhado
+    const reserva = buildReservationEmail(dados!, CLAUSULAS, EMPRESA_TESTE);
+    const recibo = buildReceiptEmail(dados!, EMPRESA_TESTE);
+
+    for (const { html } of [reserva, recibo]) {
+      expect(html).toContain(">Entrega<");
+      expect(html).not.toContain(">Retirada<");
+    }
+  });
+
+  it("2. separa subtotal, desconto em REAIS e total", async () => {
+    const db = await createTestDb();
+    const { contractId } = await seedContrato(db, { pago: true, status: "encerrado" });
+    const dados = await carregarDadosContrato(db, contractId);
+
+    // seed: R$ 100,00 × 5 diárias = R$ 500,00 bruto, 10% de desconto = R$ 50,00
+    const resumo = resumoValores(dados!);
+    expect(resumo.subtotal).toBeCloseTo(500, 2);
+    expect(resumo.desconto).toBeCloseTo(50, 2);
+    expect(resumo.percentual).toBe(10);
+
+    const { html } = buildReceiptEmail(dados!, EMPRESA_TESTE);
+    expect(html).toContain("Subtotal");
+    expect(html).toContain("R$ 500,00");
+    expect(html).toContain("Desconto 10%");
+    expect(html).toContain("R$ 50,00"); // o quanto ela economizou, em reais
+    expect(html).toContain("R$ 450,00"); // total, como antes
+  });
+
+  it("2b. contrato SEM desconto não ganha linha de subtotal repetindo o total", async () => {
+    const db = await createTestDb();
+    const { contractId } = await seedContrato(db);
+    const { eq } = await import("drizzle-orm");
+    // diária × dias = total: nada a descontar
+    await db.update(schema.rentals)
+      .set({ discountPercent: "0", totalAmount: "500.00" })
+      .where(eq(schema.rentals.contractId, contractId));
+    await db.update(schema.contracts).set({ valorTotal: "500.00" })
+      .where(eq(schema.contracts.id, contractId));
+
+    const dados = await carregarDadosContrato(db, contractId);
+    expect(resumoValores(dados!).desconto).toBeCloseTo(0, 2);
+
+    const { html } = buildReservationEmail(dados!, CLAUSULAS, EMPRESA_TESTE);
+    expect(html).not.toContain("Subtotal");
+    expect(html).toContain("Total =");
+  });
+
+  it("2c. descontos diferentes entre itens omitem o percentual (não dá para explicar num número só)", async () => {
+    const db = await createTestDb();
+    const { contractId, clientId, bikeId, bikeSizeId, unitIds } = await seedContrato(db);
+    // segunda bike, faixa de desconto diferente
+    await db.insert(schema.rentals).values({
+      clientId, bikeId, bikeSizeId, quantity: 1,
+      startDate: "2026-08-10", endDate: "2026-08-15",
+      dailyRate: "100.00", discountPercent: "20.00", totalAmount: "400.00",
+      status: "active", contractId,
+    });
+    const dados = await carregarDadosContrato(db, contractId);
+    const resumo = resumoValores(dados!);
+
+    expect(resumo.percentual).toBeNull();
+    expect(resumo.desconto).toBeCloseTo(150, 2); // 1000 bruto − 850 líquido
+    const { html } = buildReceiptEmail(dados!, EMPRESA_TESTE);
+    expect(html).toContain("Desconto<"); // sem percentual grudado
+    expect(unitIds.length).toBeGreaterThan(0);
+  });
+
+  it("3. a quitação diz DE QUEM, QUANDO e QUAL contrato", async () => {
+    const db = await createTestDb();
+    const { contractId } = await seedContrato(db, { pago: true, status: "encerrado" });
+    const dados = await carregarDadosContrato(db, contractId);
+
+    // a data sai da receita (o seed lança em 2026-08-15)
+    expect(dados!.dataPagamento).toBe("2026-08-15");
+
+    const { html } = buildReceiptEmail(dados!, EMPRESA_TESTE);
+    expect(html).toContain("Recebemos de <strong>Ana Souza</strong>");
+    expect(html).toContain("no dia <strong>15/08/2026</strong>");
+    expect(html).toContain(`contrato #${contractId}`);
+    expect(html).toContain("(quatrocentos e cinquenta reais)");
+    expect(html).toContain("no período de 10/08/2026 a 15/08/2026");
+  });
+
+  it("3b. sem data de pagamento a frase continua correta, só perde o trecho do dia", async () => {
+    const db = await createTestDb();
+    const { contractId } = await seedContrato(db, { pago: true });
+    const dados = await carregarDadosContrato(db, contractId);
+    const semData = { ...dados!, dataPagamento: null };
+
+    const frase = quitacao(semData, "10/08/2026 a 15/08/2026");
+    expect(frase).toContain("Recebemos de <strong>Ana Souza</strong>");
+    expect(frase).not.toContain("no dia");
+    expect(frase).not.toContain(", ,");
+  });
+
+  it("4. o fecho do recibo perde o título e os dados da loja, e mantém cidade e data", async () => {
+    const db = await createTestDb();
+    const { contractId } = await seedContrato(db, { pago: true, status: "encerrado" });
+    const dados = await carregarDadosContrato(db, contractId);
+    const { html } = buildReceiptEmail(dados!, EMPRESA_TESTE);
+
+    expect(html).toContain("Este recibo refere-se exclusivamente aos equipamentos");
+    expect(html).not.toContain("Termo de ciência");
+    expect(html).not.toContain("TERMO DE CIÊNCIA");
+    // Os dados da loja saem do CORPO e ficam só no rodapé escuro do e-mail:
+    // antes o CNPJ aparecia 2× (bloco + rodapé), agora 1×.
+    expect(html.split("43.247.917/0001-06").length - 1).toBe(1);
+    expect(html).toContain("Florianópolis,");
+  });
+
+  it("4b. a RESERVA mantém o termo de ciência com os dados da loja", async () => {
+    const db = await createTestDb();
+    const { contractId } = await seedContrato(db);
+    const dados = await carregarDadosContrato(db, contractId);
+    const { html } = buildReservationEmail(dados!, CLAUSULAS, EMPRESA_TESTE);
+
+    expect(html).toContain("Termo de ciência");
+    // 2× de propósito: no termo de ciência do corpo e no rodapé escuro
+    expect(html.split("43.247.917/0001-06").length - 1).toBe(2);
   });
 });
 

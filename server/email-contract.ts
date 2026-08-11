@@ -94,6 +94,12 @@ export type ContratoEmailData = {
   valorTotal: string | null;
   pago: boolean;
   formasPagamento: Array<{ method: string; amount: string }>;
+  /**
+   * Dia em que o pagamento entrou (`YYYY-MM-DD`), para a frase de quitação do
+   * recibo. Pedido da dona (2026-08-11): recibo sem data não serve de recibo.
+   * `null` enquanto o contrato não foi pago.
+   */
+  dataPagamento: string | null;
   ajustes: AjusteDevolucao[];
 };
 
@@ -167,13 +173,31 @@ export async function carregarDadosContrato(db: any, contractId: number): Promis
 
   // Formas de pagamento: o detalhamento vive em `revenues.meta.breakdown`
   // (1 receita com o total). Sem meta, cai na forma primária do aluguel.
-  const receitas = await db.select({ meta: revenuesTable.meta })
+  const receitas = await db.select({
+    meta: revenuesTable.meta,
+    // `date` é a data do lançamento (sem hora); `createdAt` cobre receita antiga
+    // que por algum motivo tenha ficado sem data.
+    date: revenuesTable.date,
+    createdAt: revenuesTable.createdAt,
+  })
     .from(revenuesTable)
     .where(sql`${revenuesTable.meta}->>'contractId' = ${String(contractId)}`);
   const formasPagamento: Array<{ method: string; amount: string }> = [];
-  for (const rev of receitas as Array<{ meta: any }>) {
+  let dataPagamento: string | null = null;
+  for (const rev of receitas as Array<{ meta: any; date: any; createdAt: any }>) {
     if (rev.meta?.kind !== "contract_payment") continue;
     for (const b of rev.meta.breakdown ?? []) formasPagamento.push({ method: b.method, amount: b.amount });
+    if (!dataPagamento) {
+      const bruta = rev.date ?? rev.createdAt ?? null;
+      if (bruta) {
+        // `date` já vem como "YYYY-MM-DD"; `createdAt` é timestamp e precisa
+        // ser cortado. Nunca passar por `new Date("YYYY-MM-DD")`: no fuso BR
+        // isso volta um dia (mesma armadilha do PDF).
+        dataPagamento = typeof bruta === "string"
+          ? bruta.slice(0, 10)
+          : new Date(bruta).toISOString().slice(0, 10);
+      }
+    }
   }
   const pago = rentalRows.length > 0 && rentalRows.every((r: any) => r.paymentStatus === "paid");
   if (formasPagamento.length === 0 && pago) {
@@ -197,6 +221,7 @@ export async function carregarDadosContrato(db: any, contractId: number): Promis
     valorTotal: contract.valorTotal ?? null,
     pago,
     formasPagamento,
+    dataPagamento,
     ajustes,
   };
 }
@@ -278,7 +303,10 @@ function blocoDetalhes(dados: ContratoEmailData, mesmoPeriodo: boolean): string 
 </table>
 <p style="margin:0 0 10px;font-family:${FONTE};font-size:12px;color:${CORES.muted}">Calculado para o seguinte período de uso:</p>
 <table role="presentation" cellpadding="0" cellspacing="0" border="0">
-  ${detalhe("Retirada", formatarData(dados.periodo.inicio))}
+  ${/* "Entrega", não "Retirada" (pedido da dona, 2026-08-11): a operação é 100%
+       de entrega, ninguém retira nada na loja. O rótulo antigo vinha do sistema
+       antigo, que atendia no balcão. */ ""}
+  ${detalhe("Entrega", formatarData(dados.periodo.inicio))}
   ${detalhe("Tempo contratado", mesmoPeriodo ? `${dias} ${dias === 1 ? "diária" : "diárias"}` : "Períodos diferentes por item")}
   ${detalhe("Devolução prevista", formatarData(dados.periodo.fim))}
 </table>`.trim());
@@ -335,11 +363,27 @@ function blocoItens(dados: ContratoEmailData, mesmoPeriodo: boolean, extraHtml =
 <div>${dados.acessorios.map((a) => chip(`${a.nome}${a.qty > 1 ? ` ${a.qty}×` : ""}`)).join("")}</div>`.trim()
     : "";
 
+  // Subtotal e desconto só aparecem quando existe desconto de verdade: contrato
+  // sem desconto ganharia duas linhas repetindo o mesmo número.
+  const resumo = resumoValores(dados);
+  const rotuloValor = `font-family:${FONTE};font-size:13px;color:${CORES.muted};padding:2px 10px 2px 0`;
+  const numeroValor = `font-family:${FONTE};font-size:13px;font-weight:600;color:${CORES.ink};white-space:nowrap;width:1%;padding:2px 0`;
+  const linhasDesconto = resumo.desconto >= 0.01 ? `
+  <tr>
+    <td align="right" style="${rotuloValor}">Subtotal</td>
+    <td align="right" style="${numeroValor}">${formatarBRL(resumo.subtotal)}</td>
+  </tr>
+  <tr>
+    <td align="right" style="${rotuloValor}">Desconto${resumo.percentual ? ` ${percentualLegivel(resumo.percentual)}%` : ""}</td>
+    <td align="right" style="${numeroValor};color:${CORES.gold}">&minus;${formatarBRL(resumo.desconto)}</td>
+  </tr>` : "";
+
   const total = `
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:14px">
+  ${linhasDesconto}
   <tr>
-    <td align="right" style="font-family:${FONTE};font-size:13px;color:${CORES.muted};padding-right:10px">Total =</td>
-    <td align="right" style="font-family:${FONTE};font-size:22px;font-weight:700;color:${CORES.gold};white-space:nowrap;width:1%">${formatarBRL(dados.valorTotal)}</td>
+    <td align="right" style="font-family:${FONTE};font-size:13px;color:${CORES.muted};padding-right:10px${linhasDesconto ? ";padding-top:6px" : ""}">Total =</td>
+    <td align="right" style="font-family:${FONTE};font-size:22px;font-weight:700;color:${CORES.gold};white-space:nowrap;width:1%${linhasDesconto ? ";padding-top:6px" : ""}">${formatarBRL(dados.valorTotal)}</td>
   </tr>
 </table>`.trim();
 
@@ -359,15 +403,27 @@ ${total}`.trim());
  * entrega. Mesma regra do rodapé do `email-layout.ts`.
  */
 function rodapeDocumento(empresa: DadosEmpresa): string {
-  const hoje = new Date().toLocaleDateString("pt-BR", { day: "numeric", month: "long", year: "numeric" });
   const linhas = [empresa.nome, empresa.cnpj, empresa.cidade, empresa.telefone]
     .filter((l) => l && l.trim())
     .map((l) => `<p style="margin:0 0 2px;font-family:${FONTE};font-size:11px;line-height:1.6;color:${CORES.muted}">${escapeHtml(l)}</p>`)
     .join("");
-  const cidadeData = [empresa.cidade, hoje].filter(Boolean).join(", ");
   return `
 ${linhas}
-${cidadeData ? `<p style="margin:10px 0 0;font-family:${FONTE};font-size:11px;color:${CORES.ink}">${escapeHtml(cidadeData)}</p>` : ""}`.trim();
+${linhaCidadeData(empresa)}`.trim();
+}
+
+/**
+ * "Florianópolis, 11 de agosto de 2026." — o fecho de documento.
+ *
+ * Separada do `rodapeDocumento` porque o RECIBO passou a querer só esta linha,
+ * sem repetir os dados da loja (pedido da dona, 2026-08-11: *"tirar os dados da
+ * loja, por já ter no rodapé"*). O e-mail de reserva segue com o bloco inteiro.
+ */
+function linhaCidadeData(empresa: DadosEmpresa): string {
+  const hoje = new Date().toLocaleDateString("pt-BR", { day: "numeric", month: "long", year: "numeric" });
+  const cidadeData = [empresa.cidade, hoje].filter((p) => p && String(p).trim()).join(", ");
+  if (!cidadeData) return "";
+  return `<p style="margin:10px 0 0;font-family:${FONTE};font-size:11px;color:${CORES.ink}">${escapeHtml(cidadeData)}.</p>`;
 }
 
 /** Saudação de abertura, comum aos dois e-mails. */
@@ -389,6 +445,57 @@ function chamada(texto: string, link: string, legenda: string): string {
     <p style="margin:12px 0 0;font-family:${FONTE};font-size:12px;color:${CORES.muted}">${escapeHtml(legenda)}</p>
   </td></tr>
 </table>`.trim();
+}
+
+/**
+ * Decomposição do valor, para o cliente conferir a conta.
+ *
+ * Pedido da dona (2026-08-11): *"na parte do valor, tem como separar o valor
+ * total e o valor do desconto? tipo R$ 180,00 - 3d - R$ 540,00 / desconto 15% -
+ * R$ 81,00 / Total - R$ 459,00"*. Antes o e-mail mostrava só o total já
+ * descontado, e o desconto aparecia apenas como percentual solto na linha de
+ * detalhe do item — o cliente não tinha como ver quanto economizou em reais.
+ *
+ * O bruto é reconstruído por item (`diária × dias × quantidade`) porque o banco
+ * guarda só o líquido (`rentals.totalAmount`). Item sem `dailyRate` gravado não
+ * dá para reconstruir, então entra pelo próprio líquido e não inventa desconto.
+ *
+ * ⚠️ O percentual só é exibido quando é o MESMO em todos os itens com desconto.
+ * Contrato com bikes em faixas diferentes mostraria um número que não explica a
+ * conta, então nesse caso sai só "Desconto".
+ */
+export function resumoValores(dados: ContratoEmailData): {
+  subtotal: number;
+  desconto: number;
+  percentual: number | null;
+} {
+  let subtotal = 0;
+  let liquido = 0;
+  const percentuais = new Set<number>();
+
+  for (const item of dados.itens) {
+    const total = parseFloat(item.total ?? "") || 0;
+    const diaria = parseFloat(item.diaria ?? "") || 0;
+    const bruto = diaria > 0
+      ? diaria * diarias(item.inicio, item.fim) * (item.quantidade || 1)
+      : total;
+    subtotal += bruto;
+    liquido += total;
+    const p = parseFloat(item.desconto ?? "") || 0;
+    if (p > 0) percentuais.add(p);
+  }
+
+  return {
+    subtotal,
+    // Centavo de arredondamento não vira "desconto": só conta acima de 1 centavo.
+    desconto: Math.max(0, subtotal - liquido),
+    percentual: percentuais.size === 1 ? Array.from(percentuais)[0] : null,
+  };
+}
+
+/** `15.00` vira `15`, `12.50` continua `12,5`. Percentual redondo é o caso comum. */
+function percentualLegivel(p: number): string {
+  return String(Number(p.toFixed(2))).replace(".", ",");
 }
 
 /** Contrato com bikes em períodos diferentes não pode mostrar um span único. */
@@ -450,6 +557,36 @@ ${rodapeDocumento(empresa)}`.trim()),
 
 // ─── E-mail B: RECIBO (encerramento) ─────────────────────────────────────────
 
+/**
+ * Frase de quitação do recibo.
+ *
+ * Pedido da dona (2026-08-11), com o texto que ela mesma redigiu: *"Recebemos de
+ * Cassiana Moriya Baptisotti o valor de R$209,00 (duzentos e nove reais), no dia
+ * 07/08/2026, referente ao contrato #23, de aluguel de equipamentos para
+ * ciclismo, no período de 06/08/2026 a 07/08/2026."* A versão anterior não
+ * dizia DE QUEM foi recebido, QUANDO, nem QUAL contrato — três coisas que um
+ * recibo precisa ter para valer como recibo.
+ *
+ * ⚠️ Cada parte some sozinha quando o dado não existe (cadastro sem nome,
+ * receita antiga sem data), em vez de deixar buraco na frase.
+ */
+export function quitacao(dados: ContratoEmailData, periodoTexto: string): string {
+  const valor = `<strong>${formatarBRL(dados.valorTotal)}</strong>`;
+  const extenso = valorPorExtenso(dados.valorTotal);
+  const nome = dados.cliente.nome.trim();
+
+  const partes = [
+    nome ? `Recebemos de <strong>${escapeHtml(nome)}</strong> o valor de ${valor}` : `Recebemos o valor de ${valor}`,
+    extenso ? ` (${escapeHtml(extenso)})` : "",
+    dados.dataPagamento ? `, no dia <strong>${escapeHtml(formatarData(dados.dataPagamento))}</strong>` : "",
+    `, referente ao <strong>contrato #${dados.contractId}</strong>`,
+    ", de aluguel de equipamentos para ciclismo",
+    periodoTexto ? `, no período de ${escapeHtml(periodoTexto)}` : "",
+    ".",
+  ];
+  return partes.join("");
+}
+
 export function buildReceiptEmail(
   dados: ContratoEmailData,
   empresa: DadosEmpresa = EMPRESA_VAZIA,
@@ -481,7 +618,7 @@ export function buildReceiptEmail(
     <td align="right" style="padding:13px 0 0;font-family:${FONTE};font-size:22px;font-weight:700;color:${CORES.gold};white-space:nowrap">${formatarBRL(total)}</td>
   </tr>
 </table>
-<p style="margin:18px 0 0;padding-top:14px;border-top:1px solid ${CORES.line};font-family:${FONTE};font-size:13px;line-height:1.65;color:${CORES.ink}">Recebemos o valor de <strong>${formatarBRL(total)}</strong>${extenso ? ` (${escapeHtml(extenso)})` : ""} referente ao contrato de aluguel de equipamentos para ciclismo${periodoTexto ? ` no período de ${escapeHtml(periodoTexto)}` : ""}.</p>`.trim());
+<p style="margin:18px 0 0;padding-top:14px;border-top:1px solid ${CORES.line};font-family:${FONTE};font-size:13px;line-height:1.65;color:${CORES.ink}">${quitacao(dados, periodoTexto)}</p>`.trim());
 
   const corpo = [
     abertura(
@@ -493,9 +630,12 @@ export function buildReceiptEmail(
     blocoItens(dados, mesmoPeriodo, ajustes),
     recibo,
     chamada("Visualizar contrato", link, "Os detalhes completos continuam disponíveis online."),
-    bloco("Termo de ciência", `
-<p style="margin:0 0 16px;font-family:${FONTE};font-size:12px;line-height:1.65;color:${CORES.muted}">Este recibo se refere aos equipamentos e ao período descritos acima. Guarde-o para os seus registros.</p>
-${rodapeDocumento(empresa)}`.trim()),
+    // Fecho do recibo SEM faixa de título e SEM os dados da loja (pedido da
+    // dona, 2026-08-11): o título "Termo de ciência" não dizia nada ali, e os
+    // dados da empresa já aparecem no rodapé escuro do e-mail, logo abaixo.
+    bloco(null, `
+<p style="margin:0;font-family:${FONTE};font-size:12px;line-height:1.65;color:${CORES.muted}">Este recibo refere-se exclusivamente aos equipamentos, valores e período de locação descritos acima. Guarde-o para seus registros.</p>
+${linhaCidadeData(empresa)}`.trim()),
   ].join("");
 
   return {

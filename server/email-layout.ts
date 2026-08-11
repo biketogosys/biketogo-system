@@ -103,11 +103,18 @@ export function linha(rotulo: string, valor: string | null | undefined): string 
  * Bloco no padrão da PÁGINA PÚBLICA do contrato (`PublicContract.tsx`): faixa de
  * título em caixa alta sobre o cartão branco. É o que faz o e-mail e a página
  * parecerem o mesmo documento, que era o pedido do Matheus.
+ *
+ * `titulo` aceita `null` para o caso do fecho do recibo (2026-08-11): a dona
+ * pediu "tirar o título e deixar só o retângulo com as informações", porque ali
+ * o texto é o próprio fecho do documento e a faixa só repetia o óbvio.
  */
-export function bloco(titulo: string, conteudoHtml: string): string {
+export function bloco(titulo: string | null, conteudoHtml: string): string {
+  const faixa = titulo
+    ? `<tr><td style="padding:11px 18px;background:${CORES.alt};border-bottom:1px solid ${CORES.line};border-radius:12px 12px 0 0;font-family:${FONTE};font-size:11px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:${CORES.muted}">${escapeHtml(titulo)}</td></tr>`
+    : "";
   return `
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 14px;background:${CORES.white};border:1px solid ${CORES.line};border-radius:12px">
-  <tr><td style="padding:11px 18px;background:${CORES.alt};border-bottom:1px solid ${CORES.line};border-radius:12px 12px 0 0;font-family:${FONTE};font-size:11px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:${CORES.muted}">${escapeHtml(titulo)}</td></tr>
+  ${faixa}
   <tr><td style="padding:18px">${conteudoHtml}</td></tr>
 </table>`.trim();
 }
