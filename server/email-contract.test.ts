@@ -204,7 +204,9 @@ describe("buildReceiptEmail", () => {
 
     expect(subject).toContain("Recibo de pagamento");
     expect(html).toContain("5 diárias");
-    expect(html).toContain("desconto de 10%");
+    // o percentual agora vive na linha do resumo, não no detalhe do item
+    expect(html).toContain("Desconto 10%");
+    expect(html).not.toContain("desconto de 10%");
     expect(html).toContain("R$ 450,00");
     expect(html).toContain("Encerrado");
   });
@@ -360,6 +362,33 @@ describe("pedidos da dona — 2026-08-11", () => {
     expect(html).toContain("Desconto 10%");
     expect(html).toContain("R$ 50,00"); // o quanto ela economizou, em reais
     expect(html).toContain("R$ 450,00"); // total, como antes
+  });
+
+  it("2a-bis. a coluna do item mostra o BRUTO, para a conta fechar de cima para baixo", async () => {
+    // 2ª volta do pedido (2026-08-11): "ficou estranho o valor em cima ser menor
+    // que o subtotal". A coluna mostrava o liquido, entao o subtotal aparecia do
+    // nada, maior. Agora: diaria x fator = coluna = subtotal, e subtotal −
+    // desconto = total.
+    const db = await createTestDb();
+    const { contractId } = await seedContrato(db, { pago: true, status: "encerrado" });
+    const dados = await carregarDadosContrato(db, contractId);
+    const { html } = buildReceiptEmail(dados!, EMPRESA_TESTE);
+
+    // seed: R$ 100,00 x 5 diarias = R$ 500,00 bruto; liquido e R$ 450,00.
+    // Recorte entre o titulo do bloco e o resumo — o preheader do topo do
+    // e-mail tambem cita o total, e entraria num split ingenuo.
+    const linhaItem = html.split("Itens da locação")[1].split("Subtotal")[0];
+    expect(linhaItem).toContain("R$ 500,00");   // coluna do item = bruto
+    expect(linhaItem).not.toContain("R$ 450,00"); // o liquido so aparece no Total
+
+    // a cadeia inteira, na ordem em que o cliente le
+    const ordem = ["R$ 500,00", "Subtotal", "R$ 500,00", "Desconto 10%", "R$ 50,00", "Total =", "R$ 450,00"];
+    let cursor = 0;
+    for (const trecho of ordem) {
+      const achou = html.indexOf(trecho, cursor);
+      expect(achou, `"${trecho}" fora de ordem`).toBeGreaterThan(-1);
+      cursor = achou + trecho.length;
+    }
   });
 
   it("2b. contrato SEM desconto não ganha linha de subtotal repetindo o total", async () => {

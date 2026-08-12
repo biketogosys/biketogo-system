@@ -334,8 +334,9 @@ function blocoItens(dados: ContratoEmailData, mesmoPeriodo: boolean, extraHtml =
 
   const linhas = dados.itens.map((item) => {
     const dias = diarias(item.inicio, item.fim);
-    const desconto = parseFloat(item.desconto ?? "0");
-    // Mesma linha de detalhe da página: tipo · tamanho · cor · nº · desconto.
+    // ⚠️ O percentual do desconto NÃO entra aqui: ele virou linha própria no
+    // resumo de valores, com o abatimento em reais. Repetir nos dois lugares
+    // fazia a mesma informação aparecer duas vezes com formatos diferentes.
     const detalhes = [
       item.categoria ? (CATEGORIAS_PT[item.categoria] ?? item.categoria) : null,
       item.tamanho ? `Tam. ${item.tamanho}` : null,
@@ -343,7 +344,6 @@ function blocoItens(dados: ContratoEmailData, mesmoPeriodo: boolean, extraHtml =
       item.numerosSistema.join(", ") || null,
       !mesmoPeriodo && item.inicio ? `${formatarData(item.inicio)} a ${formatarData(item.fim)}` : null,
       item.diaria ? `${formatarBRL(item.diaria)} por diária` : null,
-      desconto > 0 ? `desconto de ${desconto}%` : null,
     ].filter(Boolean).join(" · ");
     const td = `padding:10px 8px;border-bottom:1px solid ${CORES.line};font-family:${FONTE}`;
     return `
@@ -353,7 +353,7 @@ function blocoItens(dados: ContratoEmailData, mesmoPeriodo: boolean, extraHtml =
     ${detalhes ? `<br><span style="font-size:11px;color:${CORES.muted}">${escapeHtml(detalhes)}</span>` : ""}
   </td>
   <td align="right" style="${td};font-size:12px;color:${CORES.muted};white-space:nowrap">${dias}d${item.quantidade > 1 ? ` × ${item.quantidade}` : ""}</td>
-  <td align="right" style="${td};padding-right:0;font-size:13px;font-weight:600;color:${CORES.ink};white-space:nowrap">${formatarBRL(item.total)}</td>
+  <td align="right" style="${td};padding-right:0;font-size:13px;font-weight:600;color:${CORES.ink};white-space:nowrap">${formatarBRL(brutoDoItem(item))}</td>
 </tr>`.trim();
   }).join("");
 
@@ -461,13 +461,8 @@ export function resumoValores(dados: ContratoEmailData): {
   const percentuais = new Set<number>();
 
   for (const item of dados.itens) {
-    const total = parseFloat(item.total ?? "") || 0;
-    const diaria = parseFloat(item.diaria ?? "") || 0;
-    const bruto = diaria > 0
-      ? diaria * diarias(item.inicio, item.fim) * (item.quantidade || 1)
-      : total;
-    subtotal += bruto;
-    liquido += total;
+    subtotal += brutoDoItem(item);
+    liquido += parseFloat(item.total ?? "") || 0;
     const p = parseFloat(item.desconto ?? "") || 0;
     if (p > 0) percentuais.add(p);
   }
@@ -478,6 +473,27 @@ export function resumoValores(dados: ContratoEmailData): {
     desconto: Math.max(0, subtotal - liquido),
     percentual: percentuais.size === 1 ? Array.from(percentuais)[0] : null,
   };
+}
+
+/**
+ * Valor do item ANTES do desconto (`diária × dias × quantidade`).
+ *
+ * É o que a coluna "Total" da tabela mostra, para a conta do cliente fechar de
+ * cima para baixo: `diária × fator = subtotal`, `subtotal − desconto = total`.
+ *
+ * ⚠️ Pedido da dona (2026-08-11, 2ª volta): *"acho que ficou estranho o valor em
+ * cima ser menor que o subtotal"*. Antes a coluna mostrava o LÍQUIDO
+ * (`rentals.totalAmount`, já descontado), então o subtotal logo abaixo aparecia
+ * do nada, maior, e o total repetia o número da linha do item.
+ *
+ * Item sem `dailyRate` gravado não dá para reconstruir: cai no próprio líquido,
+ * o que zera o desconto dele em vez de inventar um valor.
+ */
+function brutoDoItem(item: ItemContratoEmail): number {
+  const total = parseFloat(item.total ?? "") || 0;
+  const diaria = parseFloat(item.diaria ?? "") || 0;
+  if (diaria <= 0) return total;
+  return diaria * diarias(item.inicio, item.fim) * (item.quantidade || 1);
 }
 
 /** `15.00` vira `15`, `12.50` continua `12,5`. Percentual redondo é o caso comum. */
