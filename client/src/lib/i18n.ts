@@ -175,9 +175,9 @@ export const translations = {
           "Não vendemos os seus dados. Eles ficam armazenados e são processados por empresas que operam a nossa infraestrutura: Supabase (banco de dados e armazenamento dos arquivos), Railway (hospedagem do sistema), Resend (envio dos e-mails de reserva e recibo) e ViaCEP (consulta de endereço a partir do CEP). Essas empresas atuam como operadoras e só podem usar os dados para prestar esse serviço.",
       },
       {
-        titulo: "Transferência internacional",
+        titulo: "Onde os seus dados ficam",
         corpo:
-          "Parte da nossa infraestrutura fica em servidores fora do Brasil, o que caracteriza transferência internacional de dados (art. 33 da LGPD). Ela é feita apenas para executar o contrato com você e está sujeita às garantias contratuais exigidas pela legislação brasileira.",
+          "O banco de dados e os arquivos que você envia ficam armazenados em servidores no Brasil. A exceção é o serviço de e-mail: os registros de envio das mensagens de reserva e recibo ficam armazenados nos Estados Unidos, o que caracteriza transferência internacional de dados (art. 33 da LGPD). Essa transferência acontece apenas para comunicar você sobre a sua reserva e está sujeita às garantias contratuais exigidas pela legislação brasileira.",
       },
       {
         titulo: "O link do seu contrato",
@@ -385,9 +385,9 @@ export const translations = {
           "We do not sell your data. It is stored and processed by the companies running our infrastructure: Supabase (database and file storage), Railway (system hosting), Resend (booking and receipt e-mails) and ViaCEP (address lookup from postcode). They act as processors and may only use the data to provide that service.",
       },
       {
-        titulo: "International transfer",
+        titulo: "Where your data is stored",
         corpo:
-          "Part of our infrastructure runs on servers outside Brazil, which constitutes an international data transfer (art. 33 of the LGPD). It happens solely to perform your contract and is subject to the contractual safeguards required by Brazilian law.",
+          "The database and the files you upload are stored on servers in Brazil. The exception is our e-mail service: the delivery records of the booking and receipt messages are stored in the United States, which constitutes an international data transfer (art. 33 of the LGPD). It happens solely to contact you about your booking and is subject to the contractual safeguards required by Brazilian law.",
       },
       {
         titulo: "Your contract link",
@@ -592,9 +592,9 @@ export const translations = {
           "No vendemos tus datos. Se almacenan y procesan en las empresas que operan nuestra infraestructura: Supabase (base de datos y almacenamiento de archivos), Railway (alojamiento del sistema), Resend (envío de los correos de reserva y recibo) y ViaCEP (consulta de dirección por código postal). Actúan como encargadas del tratamiento y solo pueden usar los datos para prestar ese servicio.",
       },
       {
-        titulo: "Transferencia internacional",
+        titulo: "Dónde se almacenan tus datos",
         corpo:
-          "Parte de nuestra infraestructura funciona en servidores fuera de Brasil, lo que constituye una transferencia internacional de datos (art. 33 de la LGPD). Se realiza únicamente para ejecutar tu contrato y está sujeta a las garantías contractuales exigidas por la legislación brasileña.",
+          "La base de datos y los archivos que subes se almacenan en servidores en Brasil. La excepción es el servicio de correo: los registros de envío de los mensajes de reserva y recibo se almacenan en Estados Unidos, lo que constituye una transferencia internacional de datos (art. 33 de la LGPD). Ocurre únicamente para comunicarnos contigo sobre tu reserva y está sujeta a las garantías contractuales exigidas por la legislación brasileña.",
       },
       {
         titulo: "El enlace de tu contrato",

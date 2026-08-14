@@ -15,8 +15,9 @@
 > sistema faz de fato, escrito para ser entendido por leigo, não parecer
 > jurídico.
 >
-> ⚠️ **Dois pontos precisam ser confirmados por você antes de publicar.** Estão
-> marcados no fim.
+> ⚠️ **Um ponto ainda precisa ser decidido antes de publicar** (o prazo de
+> retenção), e **um erro do texto já publicado precisa ser corrigido junto** (o
+> e-mail de contato). Ambos marcados abaixo.
 
 ---
 
@@ -85,13 +86,16 @@ utilizá-los para prestar esse serviço:
 - **Resend** — envio dos e-mails de reserva e de recibo
 - **ViaCEP** — consulta automática de endereço a partir do CEP informado
 
-**Transferência internacional de dados**
+**Onde os seus dados ficam armazenados**
 
-Parte da infraestrutura descrita acima opera em servidores localizados fora do
-Brasil, o que caracteriza transferência internacional de dados nos termos do
-**art. 33 da LGPD**. A transferência ocorre exclusivamente para a execução do
-contrato de locação e está sujeita às garantias contratuais exigidas pela
-legislação brasileira.
+O banco de dados e os arquivos que você envia, inclusive a imagem do documento,
+ficam armazenados em servidores localizados no Brasil.
+
+A exceção é o serviço de envio de e-mails: os registros das mensagens de reserva
+e de recibo ficam armazenados nos Estados Unidos, o que caracteriza
+transferência internacional de dados nos termos do **art. 33 da LGPD**. Essa
+transferência ocorre exclusivamente para comunicar você sobre a sua reserva e
+está sujeita às garantias contratuais exigidas pela legislação brasileira.
 
 **Link de acompanhamento do contrato**
 
@@ -148,34 +152,30 @@ caixa que a loja realmente lê. O adendo abaixo já sai com o endereço correto.
 
 ---
 
-## ⚠️ DOIS PONTOS A CONFIRMAR ANTES DE PUBLICAR
+## ⚠️ ANTES DE PUBLICAR
 
-### 1. Onde ficam os servidores (afeta o bloco de transferência internacional)
+### 1. ~~Onde ficam os servidores~~ — ✅ RESOLVIDO em 2026-08-11
 
-O `.env.example` do projeto sugere `S3_REGION=sa-east-1`, que é **São Paulo**. Se
-o Supabase estiver mesmo nessa região, **banco e arquivos ficam no Brasil** e não
-há transferência internacional para eles.
+O Matheus confirmou no painel que **Supabase e Railway estão na região Brasil**.
+Banco de dados e arquivos (inclusive a imagem do documento) ficam em território
+nacional, sem transferência internacional.
 
-O que precisa ser verificado:
+⚠️ **Mas o Resend é exceção, e a confirmação inicial estava incompleta.** A
+documentação do Resend é explícita: a região escolhida (`sa-east-1`, São Paulo)
+controla apenas **de onde o e-mail é disparado**. Segundo eles, *"todos os dados
+da conta, incluindo metadados de e-mail, logs e registros da API, são
+armazenados nos Estados Unidos, independentemente da região de envio
+selecionada"*.
 
-| Serviço | Onde conferir | Se estiver no Brasil |
-|---|---|---|
-| **Supabase** | Painel → Settings → General → Region | Sai do bloco |
-| **Railway** | Painel do serviço → Settings → Region | Sai do bloco |
-| **Resend** | Empresa americana | **Fica** de qualquer forma |
+Ou seja: escolher São Paulo melhora a latência de entrega e **não** muda a
+residência dos dados. E o que trafega nos nossos e-mails não é pouco: nome do
+cliente, número do contrato, itens e valores.
 
-⚠️ Mesmo que Supabase e Railway estejam no Brasil, **o Resend sozinho já
-caracteriza transferência internacional**, porque os e-mails de reserva e recibo
-levam nome, contrato e valores. O bloco continua necessário; o que muda é a
-extensão.
+**Conclusão:** a transferência internacional continua existindo, restrita ao
+serviço de e-mail. O texto do adendo já reflete isso, distinguindo o que fica no
+Brasil (banco e arquivos) do que fica nos EUA (registros de e-mail).
 
-Se **tudo estiver no Brasil menos o Resend**, troque o parágrafo por:
-
-> *"O envio dos nossos e-mails é feito por empresa com servidores localizados
-> fora do Brasil, o que caracteriza transferência internacional de dados nos
-> termos do art. 33 da LGPD. A transferência ocorre exclusivamente para
-> comunicar você sobre a sua reserva e está sujeita às garantias contratuais
-> exigidas pela legislação brasileira."*
+Fonte: [Resend, Choosing a Region](https://resend.com/docs/dashboard/domains/regions)
 
 ### 2. Prazo concreto de retenção
 
