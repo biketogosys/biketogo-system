@@ -132,6 +132,8 @@ __manus__/
 CLAUDE.md
 HANDOFF.md
 REGISTRO-HORAS.md
+ANALISE-PRECIFICACAO.md
+AUDITORIA-SEGURANCA.md
 
 # Claude Code — config pessoal e worktrees de sessões em background
 # (mantém só o launch.json, que é config de projeto inofensiva)

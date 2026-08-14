@@ -100,7 +100,10 @@ import { getSessionCookieOptions } from "./_core/cookies";
 import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import { ENV } from "./_core/env";
 
-const JWT_SECRET = process.env.JWT_SECRET || "biketogo-secret-key-change-me";
+// ⚠️ SEM fallback. O segredo tem fonte única em `_core/env.ts`, que ABORTA o
+// boot em produção se ele não existir. O default hardcoded que vivia aqui
+// estava versionado no Git: quem lesse o repositório forjava sessão de admin.
+const JWT_SECRET = ENV.cookieSecret;
 const ADMIN_COOKIE = "btg_session";
 
 /** Site da loja: destino do "retornar ao site" quando o setting está vazio.

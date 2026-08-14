@@ -6,6 +6,7 @@ import net from "net";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { registerOAuthRoutes } from "./oauth";
 import { registerStorageProxy } from "./storageProxy";
+import { ENV } from "./env";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
@@ -69,9 +70,11 @@ async function startServer() {
         const email = process.env.DEV_LOGIN_EMAIL || "admin@dev.local";
         const user = await getAdminUserByEmail(email);
         if (!user) return res.status(404).send(`Admin de dev não encontrado: ${email}`);
+        // Mesma fonte única do resto do app (nunca `|| ""`, que geraria token
+        // assinado com chave vazia). Esta rota só existe fora de produção.
         const token = jwt.sign(
           { userId: user.id, role: user.role },
-          process.env.JWT_SECRET || "",
+          ENV.cookieSecret,
           { expiresIn: "7d" },
         );
         res.cookie("btg_session", token, {
