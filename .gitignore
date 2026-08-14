@@ -134,6 +134,11 @@ HANDOFF.md
 REGISTRO-HORAS.md
 ANALISE-PRECIFICACAO.md
 AUDITORIA-SEGURANCA.md
+PROPOSTA-COMERCIAL.html
+
+# Prévias geradas para conferência visual (e-mails, propostas). São descartáveis
+# e foram commitadas por engano em 55b9b25 — nunca devem voltar ao repositório.
+client/public/__previa/
 
 # Claude Code — config pessoal e worktrees de sessões em background
 # (mantém só o launch.json, que é config de projeto inofensiva)
