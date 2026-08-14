@@ -51,9 +51,28 @@ async function startServer() {
   // ─── Helmet.js — headers de segurança HTTP ────────────────────────────────
   registerSecurityMiddlewares(app);
 
-  // Configure body parser with larger size limit for file uploads
-  app.use(express.json({ limit: "50mb" }));
-  app.use(express.urlencoded({ limit: "50mb", extended: true }));
+  // ─── Body parser: limite POR ROTA ─────────────────────────────────────────
+  // ⚠️ Era `50mb` para TUDO (2026-08-11). O Express bufferiza o corpo em
+  // memória ANTES de qualquer validação, então qualquer endpoint, com ou sem
+  // rate limit, aceitava 50MB: dez requisições simultâneas = 500MB e o
+  // contêiner do Railway morre bem antes disso.
+  //
+  // Só três procedures recebem arquivo (base64). O resto é JSON de formulário,
+  // que não passa de alguns KB.
+  //
+  // ⚠️ A escolha é por SUBSTRING do path, não por rota exata, porque o cliente
+  // usa `httpBatchLink`: várias procedures viajam numa requisição só e o path
+  // vira `/api/trpc/auth.me,clients.stats`. Uma regra por caminho exato não
+  // pegaria o upload quando ele fosse agrupado com outra chamada.
+  const ROTAS_DE_UPLOAD = /uploadDocument|uploadBikePhoto|uploadLogo/;
+  const jsonPadrao = express.json({ limit: "1mb" });
+  const jsonUpload = express.json({ limit: "20mb" });
+
+  app.use((req, res, next) =>
+    (ROTAS_DE_UPLOAD.test(req.path) ? jsonUpload : jsonPadrao)(req, res, next),
+  );
+  // Nenhum fluxo envia formulário urlencoded grande: o upload é JSON.
+  app.use(express.urlencoded({ limit: "1mb", extended: true }));
   // Cookie parser — required for reading session cookies (btg_session, app_session_id)
   app.use(cookieParser());
   // ─── Atalho de sessão do harness LOCAL (nunca existe em produção) ─────────

@@ -855,10 +855,13 @@ const bikesRouter = router({
   // LOTE-2: addMaintenance removed (was corrupting quantidadeDisponivel and freezing bikes.status — active mine)
   // LOTE-2: updateMaintenance removed (vestigial — was restoring quantidadeDisponivel from stale logs)
   uploadBikePhoto: adminAuthProcedure
+    // Limites explícitos (2026-08-11): esta rota não tinha teto nenhum, nem no
+    // schema nem no buffer decodificado. Base64 infla ~33%, então 8MB de string
+    // comportam os 5MB de arquivo que a tela permite.
     .input(z.object({
       bikeId: z.number(),
-      base64: z.string(),
-      mimeType: z.string().default("image/jpeg"),
+      base64: z.string().max(8_000_000),
+      mimeType: z.string().max(100).default("image/jpeg"),
     }))
     .mutation(async ({ input }) => {
       const { storagePut } = await import("./storage");
@@ -866,8 +869,15 @@ const bikesRouter = router({
       const { eq } = await import("drizzle-orm");
       const db = await (await import("./db")).getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      if (!input.mimeType.startsWith("image/")) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Envie uma imagem." });
+      }
       const base64Data = input.base64.replace(/^data:[^;]+;base64,/, "");
       const buffer = Buffer.from(base64Data, "base64");
+      // O tamanho que importa é o do arquivo DECODIFICADO, não o da string.
+      if (buffer.byteLength > 5 * 1024 * 1024) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Imagem muito grande. Envie até 5MB." });
+      }
       const ext = input.mimeType.split("/")[1] || "jpg";
       const key = `bikes/${input.bikeId}/photo-${Date.now()}.${ext}`;
       const { url } = await storagePut(key, buffer, input.mimeType);
@@ -1986,9 +1996,11 @@ const settingsRouter = router({
   }),
 
   uploadLogo: adminOnlyProcedure
+    // Logo de cabeçalho de e-mail e PDF: 2MB é folga generosa (2026-08-11).
+    // Antes não havia teto nenhum.
     .input(z.object({
-      base64: z.string(),
-      mimeType: z.string().default("image/png"),
+      base64: z.string().max(3_000_000),
+      mimeType: z.string().max(100).default("image/png"),
     }))
     .mutation(async ({ input }) => {
       const mime = input.mimeType || "image/png";
@@ -1998,6 +2010,9 @@ const settingsRouter = router({
       const { storagePut } = await import("./storage");
       const base64Data = input.base64.replace(/^data:[^;]+;base64,/, "");
       const buffer = Buffer.from(base64Data, "base64");
+      if (buffer.byteLength > 2 * 1024 * 1024) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Logo muito grande. Envie até 2MB." });
+      }
       const ext = mime.split("/")[1] || "png";
       const key = `company/logo-${Date.now()}.${ext}`;
       const { url } = await storagePut(key, buffer, mime);
