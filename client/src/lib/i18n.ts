@@ -145,6 +145,57 @@ export const translations = {
     lgpdConsent:
       "Li e concordo com os termos acima e autorizo o uso dos meus dados pessoais conforme a LGPD.",
 
+    // ─── Política completa, aberta na própria tela (2026-08-11) ───────────────
+    // Cada bloco existe para atender um inciso do art. 9º da LGPD, que exige
+    // informação "clara, adequada e ostensiva" sobre: finalidade específica (I),
+    // forma e DURAÇÃO do tratamento (II), identificação (III) e contato (IV) do
+    // controlador, USO COMPARTILHADO e sua finalidade (V), e direitos do
+    // titular (VII). A transferência internacional atende o art. 33.
+    lgpdVerPolitica: "Ler a política de privacidade completa",
+    lgpdFecharPolitica: "Fechar",
+    lgpdPolitica: [
+      {
+        titulo: "Quem trata os seus dados",
+        corpo:
+          "O controlador dos seus dados é a Bike To Go Floripa (C M Baptistotti Esportes LTDA, CNPJ 43.247.917/0001-06), com sede em Florianópolis/SC. Contato: biketogo.floripa@gmail.com ou WhatsApp (48) 98863-1669.",
+      },
+      {
+        titulo: "Quais dados coletamos",
+        corpo:
+          "Nome completo, data de nascimento, CPF, RG ou passaporte, altura e peso, telefone, e-mail, Instagram, endereço, local de hospedagem e frequência com que você pedala. Também coletamos a IMAGEM do seu documento de identificação com foto, que você envia neste formulário.",
+      },
+      {
+        titulo: "Para que usamos",
+        corpo:
+          "Para identificar você no contrato de locação, reservar a bicicleta e os acessórios, combinar entrega e devolução, emitir o contrato e o recibo, e falar com você pelo WhatsApp ou e-mail sobre a sua reserva. A base legal é a execução do contrato de locação (art. 7º, V, da LGPD). Marketing só é enviado se você marcar o aceite específico, e pode ser cancelado quando quiser.",
+      },
+      {
+        titulo: "Com quem compartilhamos",
+        corpo:
+          "Não vendemos os seus dados. Eles ficam armazenados e são processados por empresas que operam a nossa infraestrutura: Supabase (banco de dados e armazenamento dos arquivos), Railway (hospedagem do sistema), Resend (envio dos e-mails de reserva e recibo) e ViaCEP (consulta de endereço a partir do CEP). Essas empresas atuam como operadoras e só podem usar os dados para prestar esse serviço.",
+      },
+      {
+        titulo: "Transferência internacional",
+        corpo:
+          "Parte da nossa infraestrutura fica em servidores fora do Brasil, o que caracteriza transferência internacional de dados (art. 33 da LGPD). Ela é feita apenas para executar o contrato com você e está sujeita às garantias contratuais exigidas pela legislação brasileira.",
+      },
+      {
+        titulo: "O link do seu contrato",
+        corpo:
+          "Quando a reserva é registrada, enviamos por e-mail um link exclusivo em que você acompanha o seu contrato sem precisar de senha. Quem tiver esse link consegue ver os dados do contrato, então não o compartilhe com terceiros.",
+      },
+      {
+        titulo: "Por quanto tempo guardamos",
+        corpo:
+          "Mantemos os seus dados enquanto durar a relação de locação e pelo prazo necessário para cumprir obrigações legais e fiscais. Cadastros arquivados e não convertidos em locação são eliminados automaticamente após o prazo definido no sistema. Você pode pedir a exclusão antes disso, ressalvado o que a lei obriga a manter.",
+      },
+      {
+        titulo: "Seus direitos",
+        corpo:
+          "Você pode, a qualquer momento e sem custo, confirmar se tratamos os seus dados, acessá-los, corrigir dados incompletos ou desatualizados, pedir anonimização ou eliminação, solicitar a portabilidade, saber com quem compartilhamos e revogar o consentimento (art. 18 da LGPD). Para exercer qualquer um deles, escreva para biketogo.floripa@gmail.com. Você também pode reclamar à ANPD.",
+      },
+    ] as Array<{ titulo: string; corpo: string }>,
+
     // Submit
     submitButton: "Enviar pelo WhatsApp",
     submitButtonCash: "Confirmar reserva",
@@ -310,6 +361,51 @@ export const translations = {
     lgpdConsent:
       "I have read and agree to the terms above and authorize the use of my personal data in accordance with LGPD.",
 
+    lgpdVerPolitica: "Read the full privacy policy",
+    lgpdFecharPolitica: "Close",
+    lgpdPolitica: [
+      {
+        titulo: "Who processes your data",
+        corpo:
+          "The data controller is Bike To Go Floripa (C M Baptistotti Esportes LTDA, company ID 43.247.917/0001-06), based in Florianópolis, Brazil. Contact: biketogo.floripa@gmail.com or WhatsApp +55 (48) 98863-1669.",
+      },
+      {
+        titulo: "What we collect",
+        corpo:
+          "Full name, date of birth, national ID or passport number, height and weight, phone, e-mail, Instagram, address, where you are staying, and how often you ride. We also collect the IMAGE of your photo ID, which you upload in this form.",
+      },
+      {
+        titulo: "Why we use it",
+        corpo:
+          "To identify you in the rental agreement, reserve the bike and accessories, arrange delivery and return, issue the contract and the receipt, and contact you by WhatsApp or e-mail about your booking. The legal basis is performance of the rental contract (art. 7, V of the Brazilian LGPD). Marketing is only sent if you tick the specific box, and can be cancelled at any time.",
+      },
+      {
+        titulo: "Who we share it with",
+        corpo:
+          "We do not sell your data. It is stored and processed by the companies running our infrastructure: Supabase (database and file storage), Railway (system hosting), Resend (booking and receipt e-mails) and ViaCEP (address lookup from postcode). They act as processors and may only use the data to provide that service.",
+      },
+      {
+        titulo: "International transfer",
+        corpo:
+          "Part of our infrastructure runs on servers outside Brazil, which constitutes an international data transfer (art. 33 of the LGPD). It happens solely to perform your contract and is subject to the contractual safeguards required by Brazilian law.",
+      },
+      {
+        titulo: "Your contract link",
+        corpo:
+          "When your booking is registered we e-mail you a unique link where you can follow your contract without a password. Anyone holding that link can see the contract details, so please do not share it.",
+      },
+      {
+        titulo: "How long we keep it",
+        corpo:
+          "We keep your data for as long as the rental relationship lasts and for the period required by legal and tax obligations. Archived records that never became a rental are deleted automatically after the period set in the system. You may request deletion earlier, except for what the law requires us to keep.",
+      },
+      {
+        titulo: "Your rights",
+        corpo:
+          "At any time and free of charge you may confirm whether we process your data, access it, correct incomplete or outdated information, request anonymisation or deletion, request portability, find out who we share it with, and withdraw consent (art. 18 of the LGPD). To exercise any of these, write to biketogo.floripa@gmail.com. You may also file a complaint with the Brazilian data protection authority (ANPD).",
+      },
+    ] as Array<{ titulo: string; corpo: string }>,
+
     submitButton: "Send via WhatsApp",
     submitButtonCash: "Confirm reservation",
     submitting: "Submitting...",
@@ -471,6 +567,51 @@ export const translations = {
       "Al enviar este formulario, tus datos personales serán recopilados por Bike To Go Floripa exclusivamente para fines de registro, control de alquiler de bicicletas y comunicación por WhatsApp. Tu información será tratada de forma segura y confidencial, conforme a la Ley General de Protección de Datos de Brasil (LGPD, Ley nº 13.709/2018). Puedes solicitar la eliminación o corrección de tus datos en cualquier momento contactándonos por correo electrónico o WhatsApp.",
     lgpdConsent:
       "He leído y acepto los términos anteriores y autorizo el uso de mis datos personales conforme a la LGPD.",
+
+    lgpdVerPolitica: "Leer la política de privacidad completa",
+    lgpdFecharPolitica: "Cerrar",
+    lgpdPolitica: [
+      {
+        titulo: "Quién trata tus datos",
+        corpo:
+          "El responsable de los datos es Bike To Go Floripa (C M Baptistotti Esportes LTDA, CNPJ 43.247.917/0001-06), con sede en Florianópolis, Brasil. Contacto: biketogo.floripa@gmail.com o WhatsApp +55 (48) 98863-1669.",
+      },
+      {
+        titulo: "Qué datos recopilamos",
+        corpo:
+          "Nombre completo, fecha de nacimiento, documento de identidad o pasaporte, altura y peso, teléfono, correo electrónico, Instagram, dirección, lugar de alojamiento y frecuencia con que pedaleas. También recopilamos la IMAGEN de tu documento de identidad con foto, que subes en este formulario.",
+      },
+      {
+        titulo: "Para qué los usamos",
+        corpo:
+          "Para identificarte en el contrato de alquiler, reservar la bicicleta y los accesorios, coordinar la entrega y la devolución, emitir el contrato y el recibo, y comunicarnos contigo por WhatsApp o correo sobre tu reserva. La base legal es la ejecución del contrato de alquiler (art. 7, V de la LGPD brasileña). El marketing solo se envía si marcas la casilla específica, y puedes cancelarlo cuando quieras.",
+      },
+      {
+        titulo: "Con quién los compartimos",
+        corpo:
+          "No vendemos tus datos. Se almacenan y procesan en las empresas que operan nuestra infraestructura: Supabase (base de datos y almacenamiento de archivos), Railway (alojamiento del sistema), Resend (envío de los correos de reserva y recibo) y ViaCEP (consulta de dirección por código postal). Actúan como encargadas del tratamiento y solo pueden usar los datos para prestar ese servicio.",
+      },
+      {
+        titulo: "Transferencia internacional",
+        corpo:
+          "Parte de nuestra infraestructura funciona en servidores fuera de Brasil, lo que constituye una transferencia internacional de datos (art. 33 de la LGPD). Se realiza únicamente para ejecutar tu contrato y está sujeta a las garantías contractuales exigidas por la legislación brasileña.",
+      },
+      {
+        titulo: "El enlace de tu contrato",
+        corpo:
+          "Cuando se registra la reserva te enviamos por correo un enlace exclusivo donde puedes seguir tu contrato sin contraseña. Quien tenga ese enlace puede ver los datos del contrato, así que no lo compartas.",
+      },
+      {
+        titulo: "Cuánto tiempo los guardamos",
+        corpo:
+          "Conservamos tus datos mientras dure la relación de alquiler y durante el plazo necesario para cumplir obligaciones legales y fiscales. Los registros archivados que nunca se convirtieron en alquiler se eliminan automáticamente tras el plazo definido en el sistema. Puedes pedir la eliminación antes, salvo lo que la ley obliga a conservar.",
+      },
+      {
+        titulo: "Tus derechos",
+        corpo:
+          "En cualquier momento y sin costo puedes confirmar si tratamos tus datos, acceder a ellos, corregir información incompleta o desactualizada, solicitar anonimización o eliminación, pedir la portabilidad, saber con quién los compartimos y revocar el consentimiento (art. 18 de la LGPD). Para ejercer cualquiera de estos derechos, escribe a biketogo.floripa@gmail.com. También puedes reclamar ante la ANPD.",
+      },
+    ] as Array<{ titulo: string; corpo: string }>,
 
     submitButton: "Enviar por WhatsApp",
     submitButtonCash: "Confirmar reserva",

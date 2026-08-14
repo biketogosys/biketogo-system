@@ -10,7 +10,7 @@ import {
   Loader2, ChevronRight, ChevronLeft, Check, X, Sun, Moon, Bike,
   HelpCircle, Smartphone, Download, Upload, FileText, Image as ImageIcon, Info,
   IdCard, Phone as PhoneIcon, Home as HomeIcon, ShieldCheck,
-  CheckCircle2, AlertCircle,
+  CheckCircle2, AlertCircle, ChevronDown,
 } from "lucide-react";
 import { translations, languages, type Language } from "@/lib/i18n";
 import { maskCPF, maskRG, maskCEP, maskPhone, maskDate, isValidCPF } from "@/hooks/useMask";
@@ -1145,6 +1145,28 @@ export default function PublicReservation() {
               <div className={`${lgpdBoxBg} border rounded-lg p-4 text-xs ${textSecondary} leading-relaxed`}>
                 <strong className={`${textPrimary} block mb-1`}>{t.lgpdTitle}</strong>
                 {t.lgpdText}
+
+                {/* Política completa aberta AQUI, não por link para outro site:
+                    o consentimento é dado nesta tela, então o texto que o
+                    titular aceita precisa estar ao alcance sem sair do
+                    formulário (e sem perder o que já foi preenchido).
+                    `<details>` nativo: abre sem JS e é acessível por teclado. */}
+                <details className="group mt-3">
+                  <summary
+                    className={`cursor-pointer list-none font-semibold ${textPrimary} inline-flex items-center gap-1.5 hover:text-primary transition-colors`}
+                  >
+                    <ChevronDown className="w-3.5 h-3.5 shrink-0 transition-transform group-open:rotate-180" />
+                    <span className="underline underline-offset-2">{t.lgpdVerPolitica}</span>
+                  </summary>
+                  <div className={`mt-3 pt-3 border-t ${sectionBorder} space-y-3 max-h-72 overflow-y-auto pr-1`}>
+                    {t.lgpdPolitica.map((secao) => (
+                      <div key={secao.titulo}>
+                        <strong className={`${textPrimary} block mb-0.5`}>{secao.titulo}</strong>
+                        <p className="leading-relaxed">{secao.corpo}</p>
+                      </div>
+                    ))}
+                  </div>
+                </details>
               </div>
               <label className="flex items-start gap-3 cursor-pointer">
                 <input type="checkbox" checked={lgpdConsent} onChange={e => setLgpdConsent(e.target.checked)}
