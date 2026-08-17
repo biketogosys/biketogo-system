@@ -3,11 +3,14 @@
  *
  * O que este arquivo protege, em ordem de importância:
  *
- * 1. **A régua de papel.** A leitura é livre para quem está logado (operador
- *    também precisa saber o que mudou), mas publicar/editar/apagar é só admin.
- *    Se isso inverter por acidente, o operador passa a escrever no canal que a
- *    loja lê como comunicado oficial — e ninguém notaria testando só como admin.
- * 2. **A ordem do feed.** Mais recente primeiro. Um changelog em ordem errada é
+ * 1. **Quem pode publicar.** Desde 2026-08-17 (2ª volta), NEM O ADMIN publica
+ *    pelo sistema: quem escreve é o "publicador", uma credencial separada de
+ *    `admin_users` que só vale em `/publicar-atualizacoes`. Todo mundo logado
+ *    apenas LÊ. Se isso afrouxar por acidente, a loja passa a poder escrever no
+ *    canal que ela mesma lê como comunicado do desenvolvedor.
+ * 2. **A separação dos dois cookies.** Token de sessão do sistema não pode
+ *    valer como publicador, nem o contrário. É o que sustenta o item 1.
+ * 3. **A ordem do feed.** Mais recente primeiro. Um changelog em ordem errada é
  *    pior que nenhum: a dona abre e vê a novidade de um mês atrás no topo.
  *
  * ⚠️ Roda as PROCEDURES DE VERDADE (`appRouter.createCaller`), não uma cópia da
@@ -15,17 +18,25 @@
  * inclusive o `getAdminUserById`, que é o que faz o ramo do cookie funcionar.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import bcrypt from "bcryptjs";
 import * as schema from "../drizzle/schema";
 import { createTestDb } from "./test-helpers/pglite-db";
 import type { TrpcContext } from "./_core/context";
 
 vi.setConfig({ testTimeout: 30_000 });
 
+const SENHA_PUBLICADOR = "senha-de-teste-publicador";
+
 const alvo = vi.hoisted(() => {
-  // O segredo precisa existir ANTES de `_core/env` ser avaliado: sem ele o
-  // `jwt.sign` do contexto de operador lança "secretOrPrivateKey must have a
-  // value" e o teste falharia por motivo errado.
+  // Estas variáveis precisam existir ANTES de `_core/env` ser avaliado (ele lê
+  // `process.env` no load do módulo). Sem o segredo, o `jwt.sign` dos contextos
+  // lança "secretOrPrivateKey must have a value" e o teste falharia por motivo
+  // errado; sem as do publicador, o login recusaria todo mundo (falha fechada).
   process.env.JWT_SECRET = "segredo-de-teste-com-mais-de-32-caracteres-aqui";
+  process.env.PUBLICADOR_USUARIO = "publicador-teste";
+  // bcrypt de "senha-de-teste-publicador", custo 10 (o mesmo da casa).
+  process.env.PUBLICADOR_SENHA_HASH =
+    "$2b$10$mDZWpMZxWhzzzDL3zZcji..WWGZVKBZo0QBhswW8778dm2JnlTx.K";
   return { db: null as any };
 });
 
@@ -106,6 +117,40 @@ function contextoComCookie(userId: number, role: "admin" | "operator"): TrpcCont
 const comoUsuario = (userId: number, role: "admin" | "operator") =>
   appRouter.createCaller(contextoComCookie(userId, role));
 
+/**
+ * Contexto do PUBLICADOR: cookie próprio (`btg_publicador`) com o claim
+ * `kind: "publicador"`. É a credencial de `/publicar-atualizacoes`, que não é
+ * usuário do sistema.
+ *
+ * `guardaCookie` captura o que o servidor SETA, para os testes de login
+ * conferirem que o cookie certo saiu — sem isso, "login funcionou" seria só a
+ * ausência de exceção.
+ */
+function contextoPublicador(token?: string) {
+  const cookiesSetados: Array<{ nome: string; valor: string }> = [];
+  const ctx = {
+    user: null,
+    req: {
+      protocol: "https",
+      secure: true,
+      headers: {},
+      cookies: token ? { btg_publicador: token } : {},
+    } as unknown as TrpcContext["req"],
+    res: {
+      cookie: (nome: string, valor: string) => cookiesSetados.push({ nome, valor }),
+      clearCookie: (nome: string) => cookiesSetados.push({ nome, valor: "" }),
+    } as unknown as TrpcContext["res"],
+  } as TrpcContext;
+  return { ctx, cookiesSetados };
+}
+
+function tokenPublicadorValido(usuario = process.env.PUBLICADOR_USUARIO!) {
+  return jwt.sign({ kind: "publicador", usuario }, process.env.JWT_SECRET!, { expiresIn: "1h" });
+}
+
+const comoPublicador = (token = tokenPublicadorValido()) =>
+  appRouter.createCaller(contextoPublicador(token).ctx);
+
 /** Cria um admin_user real no banco (o ramo do cookie o carrega pelo id). */
 async function criarUsuario(db: any, role: "admin" | "operator", nome: string) {
   const [u] = await db
@@ -133,7 +178,7 @@ describe("updates — o feed", () => {
   });
 
   it("publica e aparece na lista com título, descrição e categoria", async () => {
-    const { id } = await comoAdmin().updates.create({
+    const { id } = await comoPublicador().updates.create({
       titulo: "Recibo mostra o desconto",
       descricao: "O e-mail de recibo agora separa subtotal, desconto e total.",
       categoria: "melhoria",
@@ -150,7 +195,7 @@ describe("updates — o feed", () => {
   });
 
   it("categoria tem padrão 'melhoria' quando não é informada", async () => {
-    await comoAdmin().updates.create({
+    await comoPublicador().updates.create({
       titulo: "Sem categoria explícita",
       descricao: "Deve cair no padrão.",
     } as any);
@@ -213,13 +258,13 @@ describe("updates — o feed", () => {
 
 describe("updates — editar e apagar", () => {
   it("editar troca os três campos", async () => {
-    const { id } = await comoAdmin().updates.create({
+    const { id } = await comoPublicador().updates.create({
       titulo: "Título velho",
       descricao: "Descrição velha.",
       categoria: "melhoria",
     });
 
-    await comoAdmin().updates.update({
+    await comoPublicador().updates.update({
       id,
       titulo: "Título novo",
       descricao: "Descrição nova.",
@@ -233,10 +278,10 @@ describe("updates — editar e apagar", () => {
   });
 
   it("apagar remove só a linha pedida", async () => {
-    const a = await comoAdmin().updates.create({ titulo: "Fica", descricao: "d", categoria: "novidade" });
-    const b = await comoAdmin().updates.create({ titulo: "Sai", descricao: "d", categoria: "novidade" });
+    const a = await comoPublicador().updates.create({ titulo: "Fica", descricao: "d", categoria: "novidade" });
+    const b = await comoPublicador().updates.create({ titulo: "Sai", descricao: "d", categoria: "novidade" });
 
-    await comoAdmin().updates.delete({ id: b.id });
+    await comoPublicador().updates.delete({ id: b.id });
 
     const r = await comoAdmin().updates.list({});
     expect(r.total).toBe(1);
@@ -326,10 +371,10 @@ describe("updates — não lidas (badge do menu)", () => {
   });
 });
 
-describe("updates — a régua de papel (operador × admin)", () => {
-  it("operador LÊ o feed", async () => {
+describe("updates — quem LÊ o feed", () => {
+  it("operador lê", async () => {
     const operadorId = await criarUsuario(alvo.db, "operator", "Operador");
-    await comoAdmin().updates.create({ titulo: "Novidade", descricao: "d", categoria: "novidade" });
+    await comoPublicador().updates.create({ titulo: "Novidade", descricao: "d", categoria: "novidade" });
 
     const r = await comoOperador(operadorId).updates.list({});
 
@@ -337,31 +382,18 @@ describe("updates — a régua de papel (operador × admin)", () => {
     expect(r.items[0].titulo).toBe("Novidade");
   });
 
-  it("operador NÃO publica", async () => {
-    const operadorId = await criarUsuario(alvo.db, "operator", "Operador");
+  it("o PUBLICADOR lê (precisa ver o que publicou para editar)", async () => {
+    // 🐛 Bug real pego na conferência visual: `list` era `adminAuthProcedure`, e
+    // como o publicador não é usuário do sistema, a página de publicação abria
+    // com "Nada publicado ainda" mesmo tendo três posts no banco.
+    await comoPublicador().updates.create({
+      titulo: "Publicada", descricao: "d", categoria: "novidade",
+    });
 
-    await expect(
-      comoOperador(operadorId).updates.create({ titulo: "Não deveria entrar", descricao: "d", categoria: "novidade" }),
-    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+    const r = await comoPublicador().updates.list({});
 
-    const r = await comoAdmin().updates.list({});
-    expect(r.total).toBe(0);
-  });
-
-  it("operador NÃO edita nem apaga", async () => {
-    const operadorId = await criarUsuario(alvo.db, "operator", "Operador");
-    const { id } = await comoAdmin().updates.create({ titulo: "Original", descricao: "d", categoria: "novidade" });
-
-    await expect(
-      comoOperador(operadorId).updates.update({ id, titulo: "Adulterado", descricao: "d", categoria: "correcao" }),
-    ).rejects.toMatchObject({ code: "FORBIDDEN" });
-
-    await expect(
-      comoOperador(operadorId).updates.delete({ id }),
-    ).rejects.toMatchObject({ code: "FORBIDDEN" });
-
-    const r = await comoAdmin().updates.list({});
-    expect(r.items[0].titulo).toBe("Original");
+    expect(r.total).toBe(1);
+    expect(r.items[0].titulo).toBe("Publicada");
   });
 
   it("deslogado não lê nada", async () => {
@@ -374,5 +406,199 @@ describe("updates — a régua de papel (operador × admin)", () => {
     await expect(
       appRouter.createCaller(semSessao).updates.list({}),
     ).rejects.toMatchObject({ code: "UNAUTHORIZED" });
+  });
+});
+
+describe("updates — quem PUBLICA (a régua que mudou em 2026-08-17)", () => {
+  // O coração do pedido: publicar saiu do sistema. Nem admin escreve no feed.
+
+  it("ADMIN não publica, não edita e não apaga", async () => {
+    const { id } = await comoPublicador().updates.create({
+      titulo: "Original", descricao: "d", categoria: "novidade",
+    });
+
+    await expect(
+      comoAdmin().updates.create({ titulo: "Admin tentando", descricao: "d", categoria: "novidade" }),
+    ).rejects.toMatchObject({ code: "UNAUTHORIZED" });
+
+    await expect(
+      comoAdmin().updates.update({ id, titulo: "Adulterado", descricao: "d", categoria: "correcao" }),
+    ).rejects.toMatchObject({ code: "UNAUTHORIZED" });
+
+    await expect(
+      comoAdmin().updates.delete({ id }),
+    ).rejects.toMatchObject({ code: "UNAUTHORIZED" });
+
+    // E nada mudou no banco.
+    const r = await comoAdmin().updates.list({});
+    expect(r.total).toBe(1);
+    expect(r.items[0].titulo).toBe("Original");
+  });
+
+  it("operador também não publica", async () => {
+    const operadorId = await criarUsuario(alvo.db, "operator", "Operador");
+
+    await expect(
+      comoOperador(operadorId).updates.create({ titulo: "Não entra", descricao: "d", categoria: "novidade" }),
+    ).rejects.toMatchObject({ code: "UNAUTHORIZED" });
+
+    expect((await comoAdmin().updates.list({})).total).toBe(0);
+  });
+
+  it("⚠️ token de SESSÃO do sistema não vale como publicador", async () => {
+    // Copiar o cookie de sessão de um admin para o nome `btg_publicador` não
+    // publica. (Na prática quem barra aqui é a checagem do `usuario`, que o
+    // token de sessão não tem — o `kind` é a segunda camada, coberta abaixo.)
+    const adminId = await criarUsuario(alvo.db, "admin", "Admin");
+    const tokenDeSessao = jwt.sign({ userId: adminId, role: "admin" }, process.env.JWT_SECRET!, {
+      expiresIn: "1h",
+    });
+
+    await expect(
+      comoPublicador(tokenDeSessao).updates.create({ titulo: "x", descricao: "d", categoria: "novidade" }),
+    ).rejects.toMatchObject({ code: "UNAUTHORIZED" });
+  });
+
+  it("⚠️ token SEM o claim `kind` não vale, mesmo com o usuário certo", async () => {
+    // Este é o caso que SÓ o `kind` barra — e a razão de ele existir. Descoberto
+    // por sabotagem: desligar o `kind` não derrubava nenhum teste, porque todos
+    // os tokens hostis que eu tinha escrito já caíam na checagem do `usuario`.
+    const semKind = jwt.sign(
+      { usuario: process.env.PUBLICADOR_USUARIO },
+      process.env.JWT_SECRET!,
+      { expiresIn: "1h" },
+    );
+
+    await expect(
+      comoPublicador(semKind).updates.create({ titulo: "x", descricao: "d", categoria: "novidade" }),
+    ).rejects.toMatchObject({ code: "UNAUTHORIZED" });
+  });
+
+  it("⚠️ token assinado com OUTRO segredo não vale", async () => {
+    const forjado = jwt.sign(
+      { kind: "publicador", usuario: process.env.PUBLICADOR_USUARIO },
+      "outro-segredo-qualquer-de-atacante",
+      { expiresIn: "1h" },
+    );
+
+    await expect(
+      comoPublicador(forjado).updates.create({ titulo: "x", descricao: "d", categoria: "novidade" }),
+    ).rejects.toMatchObject({ code: "UNAUTHORIZED" });
+  });
+
+  it("⚠️ token de um usuário publicador ANTIGO para de valer ao trocar a credencial", async () => {
+    // Trocar PUBLICADOR_USUARIO no Railway tem que derrubar as sessões antigas.
+    const tokenAntigo = tokenPublicadorValido("publicador-de-antes");
+
+    await expect(
+      comoPublicador(tokenAntigo).updates.create({ titulo: "x", descricao: "d", categoria: "novidade" }),
+    ).rejects.toMatchObject({ code: "UNAUTHORIZED" });
+  });
+
+  it("sem cookie nenhum, não publica", async () => {
+    const { ctx } = contextoPublicador();
+
+    await expect(
+      appRouter.createCaller(ctx).updates.create({ titulo: "x", descricao: "d", categoria: "novidade" }),
+    ).rejects.toMatchObject({ code: "UNAUTHORIZED" });
+  });
+
+  it("publicação NÃO grava autor (o publicador não é usuário do sistema)", async () => {
+    await comoPublicador().updates.create({ titulo: "Sem autor", descricao: "d", categoria: "novidade" });
+
+    const r = await comoAdmin().updates.list({});
+    expect(r.items[0].autorNome).toBeNull();
+  });
+});
+
+describe("updates — login do publicador", () => {
+  it("usuário e senha corretos entram e recebem o cookie próprio", async () => {
+    const { ctx, cookiesSetados } = contextoPublicador();
+
+    const r = await appRouter.createCaller(ctx).updates.loginPublicador({
+      usuario: process.env.PUBLICADOR_USUARIO!,
+      senha: SENHA_PUBLICADOR,
+    });
+
+    expect(r.success).toBe(true);
+    // O cookie certo saiu, com o nome certo — e o token vale de verdade.
+    expect(cookiesSetados).toHaveLength(1);
+    expect(cookiesSetados[0].nome).toBe("btg_publicador");
+    const dados = jwt.verify(cookiesSetados[0].valor, process.env.JWT_SECRET!) as any;
+    expect(dados.kind).toBe("publicador");
+    expect(dados.usuario).toBe(process.env.PUBLICADOR_USUARIO);
+  });
+
+  it("o cookie emitido pelo login realmente publica", async () => {
+    // Prova o ciclo inteiro, não só o formato do token.
+    const { ctx, cookiesSetados } = contextoPublicador();
+    await appRouter.createCaller(ctx).updates.loginPublicador({
+      usuario: process.env.PUBLICADOR_USUARIO!,
+      senha: SENHA_PUBLICADOR,
+    });
+
+    await comoPublicador(cookiesSetados[0].valor).updates.create({
+      titulo: "Publicado com o cookie do login", descricao: "d", categoria: "novidade",
+    });
+
+    expect((await comoAdmin().updates.list({})).total).toBe(1);
+  });
+
+  it("senha errada é recusada", async () => {
+    const { ctx, cookiesSetados } = contextoPublicador();
+
+    await expect(
+      appRouter.createCaller(ctx).updates.loginPublicador({
+        usuario: process.env.PUBLICADOR_USUARIO!,
+        senha: "senha-errada",
+      }),
+    ).rejects.toMatchObject({ code: "UNAUTHORIZED" });
+
+    expect(cookiesSetados).toHaveLength(0);
+  });
+
+  it("usuário errado é recusado, mesmo com a senha certa", async () => {
+    const { ctx } = contextoPublicador();
+
+    await expect(
+      appRouter.createCaller(ctx).updates.loginPublicador({
+        usuario: "outro-usuario",
+        senha: SENHA_PUBLICADOR,
+      }),
+    ).rejects.toMatchObject({ code: "UNAUTHORIZED" });
+  });
+
+  it("souPublicador diz se a sessão vale", async () => {
+    const semCookie = await appRouter.createCaller(contextoPublicador().ctx).updates.souPublicador();
+    expect(semCookie.autenticado).toBe(false);
+    expect(semCookie.configurado).toBe(true);
+
+    const comCookie = await comoPublicador().updates.souPublicador();
+    expect(comCookie.autenticado).toBe(true);
+  });
+
+  it("sair limpa o cookie", async () => {
+    const { ctx, cookiesSetados } = contextoPublicador(tokenPublicadorValido());
+
+    await appRouter.createCaller(ctx).updates.logoutPublicador();
+
+    expect(cookiesSetados[0].nome).toBe("btg_publicador");
+    expect(cookiesSetados[0].valor).toBe("");
+  });
+
+  it("a senha é comparada mesmo com usuário errado (anti-enumeração por tempo)", async () => {
+    // Não mede tempo (seria instável); prova que o `bcrypt.compare` foi chamado
+    // no caminho do usuário inexistente, que é o que iguala o custo.
+    const spy = vi.spyOn(bcrypt, "compare");
+    const { ctx } = contextoPublicador();
+
+    await expect(
+      appRouter.createCaller(ctx).updates.loginPublicador({
+        usuario: "nao-existe", senha: "qualquer",
+      }),
+    ).rejects.toMatchObject({ code: "UNAUTHORIZED" });
+
+    expect(spy).toHaveBeenCalled();
+    spy.mockRestore();
   });
 });

@@ -41,9 +41,32 @@ if (process.env.NODE_ENV !== "production" && jwtSecret.length < MIN_SEGREDO) {
   );
 }
 
+// ─── Credencial do PUBLICADOR do changelog ───────────────────────────────────
+/**
+ * Login separado, só para `/publicar-atualizacoes` (2026-08-17).
+ *
+ * ⚠️ Mora em variável de ambiente **de propósito**, não em `admin_users`:
+ * - não aparece na tela de Usuários (era o pedido: "que não esteja registrado
+ *   nos usuários");
+ * - não aparece em `settings.getAll`, que é leitura livre para qualquer pessoa
+ *   logada — um hash guardado ali vazaria para operador e admin;
+ * - não há CRUD para alguém promover a si mesmo a publicador.
+ *
+ * A senha nunca é guardada em texto: `PUBLICADOR_SENHA_HASH` recebe um hash
+ * bcrypt, gerado com `npm run gerar-hash-publicador`.
+ *
+ * **Falha FECHADA:** sem as duas variáveis ninguém publica (o login recusa
+ * todo mundo). Diferente do `JWT_SECRET`, a ausência aqui não abre buraco
+ * nenhum, então o processo sobe normalmente — só o changelog fica sem autor.
+ */
+const publicadorUsuario = process.env.PUBLICADOR_USUARIO ?? "";
+const publicadorSenhaHash = process.env.PUBLICADOR_SENHA_HASH ?? "";
+
 export const ENV = {
   appId: process.env.VITE_APP_ID ?? "",
   cookieSecret: jwtSecret,
+  publicadorUsuario,
+  publicadorSenhaHash,
   databaseUrl: process.env.DATABASE_URL ?? "",
   oAuthServerUrl: process.env.OAUTH_SERVER_URL ?? "",
   ownerOpenId: process.env.OWNER_OPEN_ID ?? "",

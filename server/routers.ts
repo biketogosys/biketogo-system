@@ -219,6 +219,50 @@ const adminOnlyProcedure = adminAuthProcedure.use(({ ctx, next }) => {
   return next({ ctx });
 });
 
+// ─── Publicador do changelog (login separado, fora de admin_users) ───────────
+/**
+ * Quem publica em `/atualizacoes` NÃO é um usuário do sistema (2026-08-17):
+ * é uma credencial própria, guardada em variável de ambiente, usada só na
+ * página escondida `/publicar-atualizacoes`.
+ *
+ * ⚠️ Cookie e claim SEPARADOS do login normal: o token leva `kind:
+ * "publicador"` e mora em `btg_publicador`. Sem isso, um token de sessão comum
+ * poderia ser aceito aqui (e o contrário), e o ponto do pedido é justamente que
+ * estar logado no sistema — mesmo como admin — não dá direito de publicar.
+ */
+const PUBLICADOR_COOKIE = "btg_publicador";
+const PUBLICADOR_TTL_MS = 12 * 60 * 60 * 1000; // 12h: sessão de publicação é pontual
+
+function publicadorConfigurado() {
+  return Boolean(ENV.publicadorUsuario && ENV.publicadorSenhaHash);
+}
+
+/** Lê o cookie de publicador. Devolve `false` para qualquer token que não seja dele. */
+function ehPublicador(req: { cookies?: Record<string, string> }): boolean {
+  const token = req.cookies?.[PUBLICADOR_COOKIE];
+  if (!token) return false;
+  try {
+    const dados = jwt.verify(token, JWT_SECRET) as { kind?: string; usuario?: string };
+    // O `kind` é o que impede um token de sessão comum de valer aqui.
+    if (dados.kind !== "publicador") return false;
+    // Trocar PUBLICADOR_USUARIO invalida as sessões antigas, que é o esperado
+    // de uma troca de credencial.
+    return Boolean(ENV.publicadorUsuario) && dados.usuario === ENV.publicadorUsuario;
+  } catch {
+    return false;
+  }
+}
+
+const publicadorProcedure = publicProcedure.use(({ ctx, next }) => {
+  if (!ehPublicador(ctx.req as any)) {
+    throw new TRPCError({
+      code: "UNAUTHORIZED",
+      message: "Faça login para publicar atualizações.",
+    });
+  }
+  return next({ ctx });
+});
+
 // ─── Auth router (custom email + password) ───────────────────────────────────
 const authRouter = router({
   me: publicProcedure.query(async (opts) => {
@@ -2832,10 +2876,30 @@ const auditLogsRouter = router({
 });
 
 // ─── Updates router (changelog: cada entrega vira um post pra dona ver) ─────
-// Leitura é de qualquer papel logado (não é dado sensível, como Financeiro/
-// Auditoria); só ADMIN publica, edita ou apaga — mesma régua de Configurações.
+/**
+ * ⚠️ **Régua mudou em 2026-08-17 (2ª volta, pedido do Matheus).** Antes, admin
+ * publicava pela própria tela `/atualizacoes`. Agora:
+ *
+ * | Quem | Pode |
+ * |---|---|
+ * | Qualquer pessoa logada (admin ou operador) | **só LER** |
+ * | Publicador (login separado, `/publicar-atualizacoes`) | publicar, editar, apagar |
+ *
+ * Ou seja: **nem o admin publica pelo sistema.** O feed é comunicado do
+ * desenvolvedor para a loja, e a tela que a Cassiana abre é de leitura pura —
+ * sem botão, sem lápis, sem lixeira. Quem escreve entra por uma página
+ * separada, com credencial que não é usuário do sistema.
+ */
 const updatesRouter = router({
-  list: adminAuthProcedure
+  /**
+   * Feed. Aceita DUAS credenciais: quem está logado no sistema (a loja, que
+   * lê) e o publicador (que precisa ver o que já publicou para editar).
+   *
+   * ⚠️ Não dá para ser `adminAuthProcedure` puro: o publicador não é usuário do
+   * sistema, e a página de publicação ficaria com a lista vazia — foi
+   * exatamente o que aconteceu na primeira conferência visual.
+   */
+  list: publicProcedure
     .input(
       z
         .object({
@@ -2844,9 +2908,26 @@ const updatesRouter = router({
         })
         .optional(),
     )
-    .query(({ input }) => listarAtualizacoes(input)),
+    .query(async ({ input, ctx }) => {
+      if (ehPublicador(ctx.req as any)) return listarAtualizacoes(input);
 
-  create: adminOnlyProcedure
+      // Sem cookie de publicador: exige sessão do sistema, como antes. Repete a
+      // leitura do `adminAuthProcedure` porque uma procedure só pode ter uma
+      // cadeia de middleware, e aqui os dois caminhos são alternativos.
+      const token = ctx.req.cookies?.[ADMIN_COOKIE];
+      if (token) {
+        try {
+          const decoded = jwt.verify(token, JWT_SECRET) as { userId: number };
+          const user = await getAdminUserById(decoded.userId);
+          if (user && user.active) return listarAtualizacoes(input);
+        } catch {}
+      }
+      if (ctx.user && ctx.user.role === "admin") return listarAtualizacoes(input);
+
+      throw new TRPCError({ code: "UNAUTHORIZED", message: "Faça login para acessar o sistema." });
+    }),
+
+  create: publicadorProcedure
     .input(
       z.object({
         titulo: z.string().trim().min(1).max(200),
@@ -2854,17 +2935,14 @@ const updatesRouter = router({
         categoria: z.enum(["novidade", "melhoria", "correcao"]).default("melhoria"),
       }),
     )
-    .mutation(async ({ input, ctx }) => {
-      const id = await criarAtualizacao({
-        ...input,
-        // `|| null` e não `?? null`: o admin vindo do OAuth entra com id 0, que
-        // não existe em `admin_users` e viraria autor fantasma no join.
-        autorId: (ctx as any).adminUser?.id || null,
-      });
+    .mutation(async ({ input }) => {
+      // Sem autor: o publicador não é linha de `admin_users`, então não há id
+      // para gravar. O feed mostra a data, que é o que importa para ela.
+      const id = await criarAtualizacao({ ...input, autorId: null });
       return { id };
     }),
 
-  update: adminOnlyProcedure
+  update: publicadorProcedure
     .input(
       z.object({
         id: z.number(),
@@ -2879,7 +2957,7 @@ const updatesRouter = router({
       return { success: true };
     }),
 
-  delete: adminOnlyProcedure
+  delete: publicadorProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {
       await apagarAtualizacao(input.id);
@@ -2894,6 +2972,65 @@ const updatesRouter = router({
 
   marcarLidas: adminAuthProcedure.mutation(async ({ ctx }) => {
     await marcarAtualizacoesLidas((ctx as any).adminUser?.id || null);
+    return { success: true };
+  }),
+
+  // ─── Sessão do publicador (a página escondida) ────────────────────────────
+
+  /** A página usa para saber se mostra o formulário ou a tela de login. */
+  souPublicador: publicProcedure.query(({ ctx }) => ({
+    autenticado: ehPublicador(ctx.req as any),
+    configurado: publicadorConfigurado(),
+  })),
+
+  loginPublicador: publicProcedure
+    // `.max()` porque é rota pública, mesma regra do `auth.login`.
+    .input(
+      z.object({
+        usuario: z.string().trim().min(1).max(200),
+        senha: z.string().min(1).max(200),
+      }),
+    )
+    .mutation(async ({ input, ctx }) => {
+      // Falha FECHADA: sem as variáveis no ambiente, ninguém entra.
+      if (!publicadorConfigurado()) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message:
+            "A publicação ainda não foi configurada neste servidor. " +
+            "Defina PUBLICADOR_USUARIO e PUBLICADOR_SENHA_HASH.",
+        });
+      }
+
+      // ⚠️ Compara a senha SEMPRE, mesmo com usuário errado: retornar antes do
+      // bcrypt entrega, pelo tempo de resposta, qual usuário existe. Mesmo
+      // buraco apontado no `auth.login` (M4 da auditoria) — aqui já nasce sem.
+      const usuarioConfere = input.usuario === ENV.publicadorUsuario;
+      const senhaConfere = await bcrypt.compare(input.senha, ENV.publicadorSenhaHash);
+
+      if (!usuarioConfere || !senhaConfere) {
+        throw new TRPCError({ code: "UNAUTHORIZED", message: "Usuário ou senha incorretos." });
+      }
+
+      const token = jwt.sign(
+        { kind: "publicador", usuario: ENV.publicadorUsuario },
+        JWT_SECRET,
+        { expiresIn: "12h" },
+      );
+
+      ctx.res.cookie(PUBLICADOR_COOKIE, token, {
+        httpOnly: true,
+        secure: ctx.req.secure || ctx.req.headers["x-forwarded-proto"] === "https",
+        sameSite: "lax",
+        maxAge: PUBLICADOR_TTL_MS,
+        path: "/",
+      });
+
+      return { success: true };
+    }),
+
+  logoutPublicador: publicProcedure.mutation(({ ctx }) => {
+    ctx.res.clearCookie(PUBLICADOR_COOKIE, { path: "/" });
     return { success: true };
   }),
 });

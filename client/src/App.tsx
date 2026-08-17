@@ -29,6 +29,7 @@ const PublicContract = lazy(() => import("./pages/PublicContract"));
 const Contracts = lazy(() => import("./pages/Contracts"));
 const AuditLog = lazy(() => import("./pages/AuditLog"));
 const Updates = lazy(() => import("./pages/Updates"));
+const PublishUpdates = lazy(() => import("./pages/PublishUpdates"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 const DashboardLayout = lazy(() => import("./components/DashboardLayout"));
 
@@ -113,6 +114,10 @@ function Router() {
         <Route path="/contratos" component={() => <ProtectedRoute component={Contracts} />} />
         <Route path="/auditoria" component={() => <ProtectedRoute component={AuditLog} somenteAdmin />} />
         <Route path="/atualizacoes" component={() => <ProtectedRoute component={Updates} />} />
+        {/* Publicação do changelog: NÃO passa pelo ProtectedRoute e não aparece
+            em menu nenhum. Tem login próprio (credencial de ambiente, fora de
+            `admin_users`), então estar logado no sistema não dá acesso aqui. */}
+        <Route path="/publicar-atualizacoes" component={PublishUpdates} />
         <Route path="/reservar" component={PublicReservation} />
         {/* Acompanhamento do contrato pelo cliente: público, autenticado pelo
             token assinado na URL (o link é a credencial). */}

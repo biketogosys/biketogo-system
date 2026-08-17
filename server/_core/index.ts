@@ -226,6 +226,11 @@ async function startServer() {
   // Aplica rate limit em todas as chamadas tRPC de login
   app.use("/api/trpc/auth.login", loginRateLimiter);
 
+  // ─── Rate limiting para o login do PUBLICADOR do changelog ────────────────
+  // `/publicar-atualizacoes` é página aberta na internet com senha única e sem
+  // 2FA: sem limite, é alvo de força bruta. Mesmo teto do login normal (5/min).
+  app.use("/api/trpc/updates.loginPublicador", loginRateLimiter);
+
   // ─── Rate limiting para pré-cadastro do /reservar ─────────────────────────
   // Procedure foi renomeado submitReservation → submitPreRegistration quando a
   // reserva online foi vetada (virou só pré-cadastro); o limiter ficou preso ao
