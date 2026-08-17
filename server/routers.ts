@@ -92,6 +92,14 @@ import {
   // Audit
   createAuditLog,
 } from "./db";
+import {
+  listarAtualizacoes,
+  criarAtualizacao,
+  editarAtualizacao,
+  apagarAtualizacao,
+  contarAtualizacoesNaoLidas,
+  marcarAtualizacoesLidas,
+} from "./updates";
 import { escapeHtml, sendNewLeadEmail, sendOwnerEmail, sendWelcomeEmail } from "./email";
 import { enviarEmailDeContrato, sendReceiptEmail, sendReservationEmail } from "./email-contract";
 import { carregarAjustesDevolucao } from "./contract-adjustments";
@@ -2823,6 +2831,73 @@ const auditLogsRouter = router({
   }),
 });
 
+// ─── Updates router (changelog: cada entrega vira um post pra dona ver) ─────
+// Leitura é de qualquer papel logado (não é dado sensível, como Financeiro/
+// Auditoria); só ADMIN publica, edita ou apaga — mesma régua de Configurações.
+const updatesRouter = router({
+  list: adminAuthProcedure
+    .input(
+      z
+        .object({
+          limit: z.number().min(1).max(200).default(50),
+          offset: z.number().min(0).default(0),
+        })
+        .optional(),
+    )
+    .query(({ input }) => listarAtualizacoes(input)),
+
+  create: adminOnlyProcedure
+    .input(
+      z.object({
+        titulo: z.string().trim().min(1).max(200),
+        descricao: z.string().trim().min(1).max(5000),
+        categoria: z.enum(["novidade", "melhoria", "correcao"]).default("melhoria"),
+      }),
+    )
+    .mutation(async ({ input, ctx }) => {
+      const id = await criarAtualizacao({
+        ...input,
+        // `|| null` e não `?? null`: o admin vindo do OAuth entra com id 0, que
+        // não existe em `admin_users` e viraria autor fantasma no join.
+        autorId: (ctx as any).adminUser?.id || null,
+      });
+      return { id };
+    }),
+
+  update: adminOnlyProcedure
+    .input(
+      z.object({
+        id: z.number(),
+        titulo: z.string().trim().min(1).max(200),
+        descricao: z.string().trim().min(1).max(5000),
+        categoria: z.enum(["novidade", "melhoria", "correcao"]),
+      }),
+    )
+    .mutation(async ({ input }) => {
+      const { id, ...data } = input;
+      await editarAtualizacao(id, data);
+      return { success: true };
+    }),
+
+  delete: adminOnlyProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input }) => {
+      await apagarAtualizacao(input.id);
+      return { success: true };
+    }),
+
+  // Badge "tem novidade" no menu — leitura é por usuário logado, não por papel.
+  naoLidas: adminAuthProcedure.query(async ({ ctx }) => {
+    const count = await contarAtualizacoesNaoLidas((ctx as any).adminUser?.id || null);
+    return { count };
+  }),
+
+  marcarLidas: adminAuthProcedure.mutation(async ({ ctx }) => {
+    await marcarAtualizacoesLidas((ctx as any).adminUser?.id || null);
+    return { success: true };
+  }),
+});
+
 // ─── Contracts router ───────────────────────────────────────────────────────────────
 import { and, eq, isNull, isNotNull, inArray, notInArray, desc, sql as drizzleSql } from "drizzle-orm";
 import {
@@ -4667,6 +4742,7 @@ export const appRouter = router({
   contracts: contractsRouter,
   auditLogs: auditLogsRouter,
   bikeUnits: bikeUnitsRouter,
+  updates: updatesRouter,
 });
 
 export type AppRouter = typeof appRouter;

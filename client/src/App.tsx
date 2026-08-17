@@ -28,6 +28,7 @@ const PublicReservation = lazy(() => import("./pages/PublicReservation"));
 const PublicContract = lazy(() => import("./pages/PublicContract"));
 const Contracts = lazy(() => import("./pages/Contracts"));
 const AuditLog = lazy(() => import("./pages/AuditLog"));
+const Updates = lazy(() => import("./pages/Updates"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 const DashboardLayout = lazy(() => import("./components/DashboardLayout"));
 
@@ -111,6 +112,7 @@ function Router() {
         <Route path="/configuracoes" component={() => <ProtectedRoute component={Settings} somenteAdmin />} />
         <Route path="/contratos" component={() => <ProtectedRoute component={Contracts} />} />
         <Route path="/auditoria" component={() => <ProtectedRoute component={AuditLog} somenteAdmin />} />
+        <Route path="/atualizacoes" component={() => <ProtectedRoute component={Updates} />} />
         <Route path="/reservar" component={PublicReservation} />
         {/* Acompanhamento do contrato pelo cliente: público, autenticado pelo
             token assinado na URL (o link é a credencial). */}

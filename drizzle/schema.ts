@@ -35,6 +35,7 @@ export const accessoryUnitStatusEnum = pgEnum("accessory_unit_status", ["disponi
 export const bikeUnitStatusEnum = pgEnum("bike_unit_status", ["disponivel", "alugado", "perdido", "manutencao", "roubado"]);
 export const nacionalidadeEnum = pgEnum("nacionalidade", ["brasileiro", "estrangeiro"]);
 export const tipoDocumentoEnum = pgEnum("tipo_documento", ["cpf", "rg", "passaporte", "cnh"]);
+export const updateCategoriaEnum = pgEnum("update_categoria", ["novidade", "melhoria", "correcao"]);
 
 // ─── Users (Manus auth — kept for backward compat) ──────────────────────────
 export const users = pgTable("users", {
@@ -60,6 +61,9 @@ export const adminUsers = pgTable("admin_users", {
   role: adminRoleEnum("role").default("operator").notNull(),
   active: boolean("active").default(true).notNull(),
   lastLoginAt: timestamp("lastLoginAt"),
+  // Badge de "tem novidade" na aba Atualizações (2026-08-17): não lidas =
+  // system_updates.criadoEm > este valor. Null = nunca abriu, tudo é não lido.
+  atualizacoesLidasEm: timestamp("atualizacoesLidasEm"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().notNull(),
 });
@@ -448,3 +452,17 @@ export const rentalBikeUnits = pgTable("rental_bike_units", {
 ]);
 export type RentalBikeUnit = typeof rentalBikeUnits.$inferSelect;
 export type InsertRentalBikeUnit = typeof rentalBikeUnits.$inferInsert;
+
+// ─── System Updates (changelog exibido pra dona: "o que foi feito") ─────────
+export const systemUpdates = pgTable("system_updates", {
+  id: serial("id").primaryKey(),
+  titulo: varchar("titulo", { length: 200 }).notNull(),
+  descricao: text("descricao").notNull(),
+  categoria: updateCategoriaEnum("categoria").default("melhoria").notNull(),
+  autorId: integer("autorId"),
+  criadoEm: timestamp("criadoEm").defaultNow().notNull(),
+}, (t) => [
+  index("system_updates_criado_em_idx").on(t.criadoEm),
+]);
+export type SystemUpdate = typeof systemUpdates.$inferSelect;
+export type InsertSystemUpdate = typeof systemUpdates.$inferInsert;
