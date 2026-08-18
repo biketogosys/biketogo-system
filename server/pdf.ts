@@ -49,6 +49,10 @@ export interface ContractPdfData {
     bikeUnitNumeros?: string | null;
     startDate?: Date | string | null;
     endDate?: Date | string | null;
+    /** Horário combinado de entrega/busca ("HH:MM"); ausente nos contratos
+     *  anteriores à migração 0022. */
+    startTime?: string | null;
+    endTime?: string | null;
     totalAmount?: string | null;
     tamanho?: string | null;
     dailyRate?: string | null;
@@ -118,12 +122,19 @@ function calcSubtotal(r: ContractPdfData["rentals"][0]): string {
   return "—";
 }
 
-function periodLabel(r: ContractPdfData["rentals"][0]): string {
+/** Exportada só para teste: o PDF usa fonte embutida e não dá para conferir o
+ *  texto gerado lendo o arquivo. */
+export function periodLabel(r: ContractPdfData["rentals"][0]): string {
+  // Com horário o período vira "20/07/2026 09:00 a 21/07/2026 18:00": é o
+  // combinado que decide a virada da diária, então precisa estar no documento.
+  // Sem horário (contrato legado) sai como sempre saiu, só as datas.
   const s = formatDate(r.startDate);
   const e = formatDate(r.endDate);
   if (s === "—" && e === "—") return "—";
-  if (s === e) return s;
-  return `${s} a ${e}`;
+  const si = r.startTime ? `${s} ${r.startTime}` : s;
+  const ei = r.endTime ? `${e} ${r.endTime}` : e;
+  if (si === ei) return si;
+  return `${si} a ${ei}`;
 }
 
 // ── Internacionalização ──────────────────────────────────────────────────────

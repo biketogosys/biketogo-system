@@ -166,8 +166,44 @@ const hojeYmd = () => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 };
 const diasEntre = (de: string, ate: string) => Math.round((Date.parse(ate) - Date.parse(de)) / DIA_MS);
-const diarias = (ini?: string | null, fim?: string | null) =>
-  ini && fim ? Math.max(1, diasEntre(ini, fim)) : 1;
+
+/** "HH:MM" → minutos desde a meia-noite; null se não for hora válida. */
+const minutosDoDia = (hora?: string | null): number | null => {
+  if (!hora) return null;
+  const m = /^(\d{1,2}):(\d{2})$/.exec(hora.trim());
+  if (!m) return null;
+  const h = Number(m[1]);
+  const min = Number(m[2]);
+  if (h > 23 || min > 59) return null;
+  return h * 60 + min;
+};
+
+/**
+ * Diárias cobradas — espelho do `billableDaysWithTime` do servidor
+ * (blocos de 24h quando há horário; dia de calendário quando não há).
+ *
+ * ⚠️ Esta página é o que o CLIENTE abre pelo link do e-mail. Se a conta aqui
+ * divergir da do servidor, ele lê um número de diárias diferente do que está
+ * pagando.
+ */
+const diarias = (
+  ini?: string | null,
+  fim?: string | null,
+  horaIni?: string | null,
+  horaFim?: string | null,
+) => {
+  if (!ini || !fim) return 1;
+  const inicio = minutosDoDia(horaIni);
+  const final = minutosDoDia(horaFim);
+  if (inicio == null || final == null) return Math.max(1, diasEntre(ini, fim));
+  const totalMinutos = diasEntre(ini, fim) * 24 * 60 + (final - inicio);
+  if (totalMinutos <= 0) return 1;
+  return Math.max(1, Math.ceil(totalMinutos / (24 * 60)));
+};
+
+/** "20/07/2026" + "09:00" → "20/07/2026 09:00". Sem hora, só a data. */
+const comHora = (data: string, hora?: string | null) =>
+  data && hora ? `${data} ${hora}` : data;
 
 /** Telefone salvo como "+DDI número" ou só dígitos BR: exibe legível. */
 const fmtTelefone = (v?: string | null) => {
@@ -289,7 +325,10 @@ export default function PublicContract() {
   }
 
   const { empresa } = data;
-  const totalDiarias = diarias(data.periodo.inicio, data.periodo.fim);
+  const totalDiarias = diarias(
+    data.periodo.inicio, data.periodo.fim,
+    (data.periodo as any).horaInicio, (data.periodo as any).horaFim,
+  );
   const waUrl = empresa.whatsapp
     ? `https://wa.me/${empresa.whatsapp}?text=${encodeURIComponent(
         `Oi! Sou ${data.cliente.nome}, do contrato #${data.contractId}.`,
@@ -357,12 +396,18 @@ export default function PublicContract() {
           <div className="flex flex-col gap-4 sm:flex-row sm:justify-between">
             <div className="space-y-1.5 text-sm">
               <p className="text-xs text-muted-foreground mb-2">{t.calculado}</p>
-              <Linha rotulo={t.retirada} valor={fmtData(data.periodo.inicio)} />
+              <Linha
+                rotulo={t.retirada}
+                valor={comHora(fmtData(data.periodo.inicio), (data.periodo as any).horaInicio)}
+              />
               <Linha
                 rotulo={t.tempo}
                 valor={mesmoPeriodo ? t.diarias(totalDiarias) : t.periodosVariados}
               />
-              <Linha rotulo={t.devolucao} valor={fmtData(data.periodo.fim)} />
+              <Linha
+                rotulo={t.devolucao}
+                valor={comHora(fmtData(data.periodo.fim), (data.periodo as any).horaFim)}
+              />
               {contagem && <p className={`pt-1 text-sm font-semibold ${contagem.cls}`}>{contagem.texto}</p>}
             </div>
 
@@ -414,7 +459,10 @@ export default function PublicContract() {
               </div>
               <ul className="divide-y divide-border">
                 {data.itens.map((item, i) => {
-                  const dias = diarias(item.inicio, item.fim);
+                  const dias = diarias(
+                    item.inicio, item.fim,
+                    (item as any).horaInicio, (item as any).horaFim,
+                  );
                   return (
                     <li key={i} className="py-3 grid gap-1 sm:grid-cols-[1fr_120px_110px_120px] sm:gap-2 sm:items-center">
                       <div className="min-w-0">

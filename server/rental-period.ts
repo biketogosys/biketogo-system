@@ -171,6 +171,62 @@ export function billableDays(startDate: string, endDate: string): number {
   return Math.max(1, daysBetween(startDate, endDate));
 }
 
+/** "HH:MM" → minutos desde a meia-noite. Devolve null se não for hora válida. */
+function minutosDoDia(hora?: string | null): number | null {
+  if (!hora) return null;
+  const m = /^(\d{1,2}):(\d{2})$/.exec(hora.trim());
+  if (!m) return null;
+  const h = Number(m[1]);
+  const min = Number(m[2]);
+  if (h > 23 || min > 59) return null;
+  return h * 60 + min;
+}
+
+/**
+ * ⭐ FONTE ÚNICA das diárias cobradas (2026-08-18).
+ *
+ * **Com horário: blocos de 24h a partir da entrega.** Decisão do Matheus, vinda
+ * da queixa da Cassiana: *"se o cliente pegar em um determinado dia de manhã a
+ * bike, e entregar no final do outro, passa das 24h, ai serão cobradas 2
+ * diárias, e não 1"*. Entrega 20/07 09h + devolução 21/07 18h = 33h = 2 diárias.
+ *
+ * **Sem horário: dia de calendário** (o comportamento histórico). Não é opção
+ * de tela — é compatibilidade com os contratos anteriores à migração 0022, que
+ * não têm hora gravada. No formulário o horário é obrigatório.
+ *
+ * ⚠️ **Sem tolerância, de propósito.** 24h01 já é a segunda diária. A Cassiana
+ * decidiu que a folga é humana: *"se o cliente entrega um pouco depois, também
+ * não vai fazer diferença.. pq eu não vou precisar colocar no sistema.. ai a
+ * tolerância fica por minha conta mesmo"*. Perdoar = ela não edita o contrato.
+ * Uma tolerância em código seria uma regra invisível decidindo dinheiro.
+ *
+ * ⚠️ Espelhada no `calcTotal` do NewContractModal. Se divergirem, o valor que a
+ * tela mostra não é o que o servidor grava.
+ */
+export function billableDaysWithTime(opts: {
+  startDate: string;
+  endDate: string;
+  startTime?: string | null;
+  endTime?: string | null;
+}): number {
+  const inicio = minutosDoDia(opts.startTime);
+  const fim = minutosDoDia(opts.endTime);
+
+  // Falta hora de uma das pontas ⇒ contrato legado, conta como sempre contou.
+  if (inicio == null || fim == null) {
+    return billableDays(opts.startDate, opts.endDate);
+  }
+
+  const totalMinutos =
+    daysBetween(opts.startDate, opts.endDate) * 24 * 60 + (fim - inicio);
+
+  // Devolução ANTES da retirada (hora invertida no mesmo dia) não vira 0 nem
+  // negativo: o mínimo cobrado é sempre uma diária.
+  if (totalMinutos <= 0) return 1;
+
+  return Math.max(1, Math.ceil(totalMinutos / (24 * 60)));
+}
+
 /**
  * Desconto progressivo: vale a regra de MAIOR `minDays` que o período atingir.
  * Mesma fórmula do `calcTotal` do NewContractModal — se divergir, o crédito da
@@ -210,11 +266,14 @@ export function computeRentalTotal(opts: {
   quantity: number | null;
   startDate: string;
   endDate: string;
+  /** Horário combinado; presente nos dois lados, a conta vira blocos de 24h. */
+  startTime?: string | null;
+  endTime?: string | null;
   rules?: DiscountRule[];
   /** Desconto manual do contrato; presente, manda no lugar da faixa. */
   manualPercent?: number | string | null;
 }): { numDays: number; discountPercent: number; totalAmount: string } {
-  const numDays = billableDays(opts.startDate, opts.endDate);
+  const numDays = billableDaysWithTime(opts);
   const rate = parseFloat(opts.dailyRate ?? "0") || 0;
   const qty = opts.quantity ?? 1;
   const pct = effectiveDiscountPercent(opts.rules ?? [], numDays, opts.manualPercent);
@@ -289,13 +348,25 @@ export async function previewEarlyReturn(
     manualPercent = c?.desconto ?? null;
   }
 
-  const oldDays = billableDays(rental.startDate, rental.endDate);
+  // ⚠️ O horário combinado acompanha o recálculo (2026-08-18). Sem passá-lo, um
+  // contrato de 2 diárias por causa da hora voltaria a ser contado por
+  // calendário aqui, e devolver antes poderia AUMENTAR o número de diárias.
+  const oldDays = billableDaysWithTime({
+    startDate: rental.startDate,
+    endDate: rental.endDate,
+    startTime: rental.startTime,
+    endTime: rental.endTime,
+  });
   const oldDiscountPercent = effectiveDiscountPercent(rules, oldDays, manualPercent);
   const recalc = computeRentalTotal({
     dailyRate: rental.dailyRate,
     quantity: rental.quantity,
     startDate: rental.startDate,
     endDate: newEndDate,
+    // A hora de ENTREGA continua valendo; a de devolução vira a do combinado,
+    // porque a Cassiana não lança hora real de devolução no sistema.
+    startTime: rental.startTime,
+    endTime: rental.endTime,
     rules,
     manualPercent,
   });

@@ -65,6 +65,53 @@ export const PAYMENT_METHODS: Array<{ value: string; label: string }> = [
   { value: "other", label: "Outro" },
 ];
 
+/** Horário padrão sugerido, para ela não digitar do zero em todo contrato. */
+const HORA_ENTREGA_PADRAO = "09:00";
+const HORA_BUSCA_PADRAO = "09:00";
+
+/** "HH:MM" → minutos desde a meia-noite; null se não for hora válida. */
+function minutosDoDia(hora?: string | null): number | null {
+  if (!hora) return null;
+  const m = /^(\d{1,2}):(\d{2})$/.exec(hora.trim());
+  if (!m) return null;
+  const h = Number(m[1]);
+  const min = Number(m[2]);
+  if (h > 23 || min > 59) return null;
+  return h * 60 + min;
+}
+
+/**
+ * ⭐ Diárias cobradas — ESPELHO do `billableDaysWithTime` do servidor
+ * (`server/rental-period.ts`, 2026-08-18).
+ *
+ * Com horário nas duas pontas: blocos de 24h a partir da entrega (20/07 09h →
+ * 21/07 18h = 33h = 2 diárias). Sem horário: dia de calendário, que é o
+ * comportamento dos contratos anteriores à migração 0022.
+ *
+ * ⚠️ Se esta função divergir da do servidor, a tela mostra um valor e o banco
+ * grava outro. Qualquer mudança aqui tem que acontecer nos DOIS lugares.
+ */
+function diariasCobradas(
+  startDate: string,
+  endDate: string,
+  startTime?: string | null,
+  endTime?: string | null,
+): number {
+  const diasCalendario = Math.max(
+    1,
+    Math.round((Date.parse(endDate) - Date.parse(startDate)) / (1000 * 60 * 60 * 24)),
+  );
+
+  const inicio = minutosDoDia(startTime);
+  const fim = minutosDoDia(endTime);
+  if (inicio == null || fim == null) return diasCalendario;
+
+  const diffDias = Math.round((Date.parse(endDate) - Date.parse(startDate)) / (1000 * 60 * 60 * 24));
+  const totalMinutos = diffDias * 24 * 60 + (fim - inicio);
+  if (totalMinutos <= 0) return 1;
+  return Math.max(1, Math.ceil(totalMinutos / (24 * 60)));
+}
+
 // ─── Types ──────────────────────────────────────────────────────────────────────────────────
 type BikeEntry = {
   rentalId?: number;      // present for existing rentals in ativo/parcial edit mode
@@ -76,6 +123,9 @@ type BikeEntry = {
   tamanho: string;
   startDate: string;
   endDate: string;
+  /** Horário COMBINADO de entrega e busca ("HH:MM"), obrigatório no formulário. */
+  startTime: string;
+  endTime: string;
   quantity: number;
   dailyRate: string;
   numDays: number;
@@ -226,6 +276,9 @@ type DuplicatePrefill = {
     tamanho: string;
     quantity: number;
     dailyRate: string;
+    /** Horário do contrato original; ausente nos anteriores à migração 0022. */
+    startTime?: string | null;
+    endTime?: string | null;
   }>;
   accessories: Array<{ accessoryId: number; variante: string | null; qty: number }>;
 };
@@ -339,6 +392,10 @@ export function NewContractModal({
           ...b,
           startDate: dupStart,
           endDate: dupEnd,
+          // Duplicar copia o horário do original; sem ele (contrato antigo),
+          // entra o padrão para a cópia não nascer sem hora.
+          startTime: b.startTime || HORA_ENTREGA_PADRAO,
+          endTime: b.endTime || HORA_BUSCA_PADRAO,
           unitIds: [] as number[], // por data: o servidor auto-atribui no período novo
         };
         const { numDays, totalAmount, discountPercent } = calcTotal(base, (dupRules?.[b.bikeId] ?? []) as any);
@@ -357,6 +414,11 @@ export function NewContractModal({
   const [selBikeSizeId, setSelBikeSizeId] = useState("");
   const [selStartDate, setSelStartDate] = useState(initialStartDate ?? "");
   const [selEndDate, setSelEndDate] = useState("");
+  // Horário combinado. Nasce preenchido com o padrão porque ela SEMPRE tem um
+  // ("se não tiver, eu coloco um que acho ideal") — digitar do zero toda vez
+  // seria atrito puro.
+  const [selStartTime, setSelStartTime] = useState(HORA_ENTREGA_PADRAO);
+  const [selEndTime, setSelEndTime] = useState(HORA_BUSCA_PADRAO);
   const [selQty, setSelQty] = useState(1);
   // BU-PICK-FRONT: unidades físicas selecionadas
   const [selUnitIds, setSelUnitIds] = useState<number[]>([]);
@@ -513,9 +575,7 @@ export function NewContractModal({
     manualPercent: number | null = descontoManualNum,
   ): { numDays: number; totalAmount: string; discountPercent?: number } {
     if (!entry.startDate || !entry.endDate) return { numDays: 0, totalAmount: "0.00" };
-    const start = new Date(entry.startDate);
-    const end = new Date(entry.endDate);
-    const numDays = Math.max(1, Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)));
+    const numDays = diariasCobradas(entry.startDate, entry.endDate, entry.startTime, entry.endTime);
     const rate = parseFloat(entry.dailyRate || "0");
     const base = rate * numDays * entry.quantity;
     // Desconto progressivo: vale a regra de MAIOR minDays que o período atingir
@@ -591,6 +651,8 @@ export function NewContractModal({
       tamanho: size?.tamanho ?? "",
       startDate: selStartDate,
       endDate: selEndDate,
+      startTime: selStartTime,
+      endTime: selEndTime,
       quantity: selBikeSizeId ? selUnitIds.length : selQty,
       dailyRate: bike?.dailyRate ?? "0",
       unitIds: selBikeSizeId ? selUnitIds : [],
@@ -599,6 +661,8 @@ export function NewContractModal({
     const { numDays, totalAmount, discountPercent } = calcTotal(entry, discountRules as any[]);
     setBikeEntries((prev) => [...prev, { ...entry, numDays, totalAmount, discountPercent }]);
     setSelBikeId(""); setSelBikeSizeId(""); setSelStartDate(""); setSelEndDate(""); setSelQty(1); setSelUnitIds([]);
+    // A hora volta ao padrão junto com as datas: o próximo item começa limpo.
+    setSelStartTime(HORA_ENTREGA_PADRAO); setSelEndTime(HORA_BUSCA_PADRAO);
   }
 
   function handleRemoveBike(idx: number) {
@@ -618,6 +682,10 @@ export function NewContractModal({
     setSelBikeSizeId(b.bikeSizeId ? String(b.bikeSizeId) : "");
     setSelStartDate(b.startDate);
     setSelEndDate(b.endDate);
+    // Contrato antigo (sem hora gravada) volta com o padrão, não em branco:
+    // campo vazio faria a conta cair no calendário sem ela perceber.
+    setSelStartTime(b.startTime || HORA_ENTREGA_PADRAO);
+    setSelEndTime(b.endTime || HORA_BUSCA_PADRAO);
     setSelQty(b.quantity);
     setSelUnitIds(b.unitIds ?? []);
     setBikeEntries((prev) => prev.filter((_, i) => i !== idx));
@@ -671,6 +739,8 @@ export function NewContractModal({
       bikeSizeId: b.bikeSizeId,
       startDate: b.startDate,
       endDate: b.endDate,
+      startTime: b.startTime || undefined,
+      endTime: b.endTime || undefined,
       quantity: b.quantity,
       dailyRate: b.dailyRate,
       totalAmount: b.totalAmount,
@@ -816,16 +886,53 @@ export function NewContractModal({
                 </span>
               </div>
             )}
-            <div className="grid grid-cols-2 gap-3">
+            {/* Entrega e Devolução EMPILHADAS, cada uma com data + hora lado a lado.
+                A hora precisa ficar junto da data porque é ela que decide a virada
+                da diária (blocos de 24h).
+                ⚠️ Uma coluna em QUALQUER largura, não só no mobile: o modal é
+                `sm:max-w-lg`, então em duas colunas cada uma tem 160px e a data
+                sobrava com 59px (a hora come 87) — ilegível também no desktop.
+                Medido: empilhado a data fica com 223px em 375px e no desktop. */}
+            <div className="grid grid-cols-1 gap-3">
               <div>
-                <Label className="mb-1 block text-xs">Data início</Label>
-                <Input type="date" value={selStartDate} onChange={(e) => setSelStartDate(e.target.value)} className="text-sm" />
+                <Label className="mb-1 block text-xs">Entrega</Label>
+                <div className="flex gap-1.5">
+                  <Input type="date" value={selStartDate} onChange={(e) => setSelStartDate(e.target.value)} className="text-sm min-w-0 flex-1" />
+                  <Input
+                    type="time"
+                    value={selStartTime}
+                    onChange={(e) => setSelStartTime(e.target.value)}
+                    className="text-sm w-[5.75rem] shrink-0"
+                    aria-label="Hora da entrega"
+                  />
+                </div>
               </div>
               <div>
-                <Label className="mb-1 block text-xs">Data devolução</Label>
-                <Input type="date" value={selEndDate} onChange={(e) => setSelEndDate(e.target.value)} min={selStartDate} className="text-sm" />
+                <Label className="mb-1 block text-xs">Devolução</Label>
+                <div className="flex gap-1.5">
+                  <Input type="date" value={selEndDate} onChange={(e) => setSelEndDate(e.target.value)} min={selStartDate} className="text-sm min-w-0 flex-1" />
+                  <Input
+                    type="time"
+                    value={selEndTime}
+                    onChange={(e) => setSelEndTime(e.target.value)}
+                    className="text-sm w-[5.75rem] shrink-0"
+                    aria-label="Hora da devolução"
+                  />
+                </div>
               </div>
             </div>
+            {selStartDate && selEndDate && selStartTime && selEndTime && (
+              // Mostra a conta ANTES de escolher a bike: é onde o "passou das
+              // 24h, virou 2 diárias" fica visível sem surpresa no total.
+              <p className="text-xs text-muted-foreground">
+                Período de{" "}
+                <strong className="text-foreground">
+                  {diariasCobradas(selStartDate, selEndDate, selStartTime, selEndTime)}{" "}
+                  {diariasCobradas(selStartDate, selEndDate, selStartTime, selEndTime) === 1 ? "diária" : "diárias"}
+                </strong>
+                . A contagem é de 24 em 24 horas a partir da entrega.
+              </p>
+            )}
             {!(selStartDate && selEndDate) && (
               <p className="text-xs text-muted-foreground">
                 Escolha o período primeiro: a disponibilidade das bikes é calculada pelas datas.

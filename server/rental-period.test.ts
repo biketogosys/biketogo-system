@@ -10,9 +10,126 @@ import { createTestDb, seedBasics, makeRental } from "./test-helpers/pglite-db";
 import {
   computeExtension, daysBetween, extendRental, findExtensionConflicts,
   applyEarlyReturn, previewEarlyReturn, pickDiscountPercent, computeRentalTotal,
-  contractOpenRentalIds, effectiveDiscountPercent,
+  contractOpenRentalIds, effectiveDiscountPercent, billableDaysWithTime,
 } from "./rental-period";
 import * as schema from "../drizzle/schema";
+
+/**
+ * Diárias com HORÁRIO (2026-08-18) — blocos de 24h a partir da entrega.
+ *
+ * Este bloco protege a conta que decide **quanto o cliente paga**. Nasceu da
+ * queixa da Cassiana: *"se o cliente pegar em um determinado dia de manhã a
+ * bike, e entregar no final do outro, passa das 24h, ai serão cobradas 2
+ * diárias, e não 1"*.
+ */
+describe("diárias por blocos de 24h (horário)", () => {
+  const dias = (startDate: string, startTime: string, endDate: string, endTime: string) =>
+    billableDaysWithTime({ startDate, startTime, endDate, endTime });
+
+  it("⭐ o caso DELA: manhã de um dia até o fim do outro = 2 diárias", () => {
+    // 20/07 09:00 → 21/07 18:00 = 33h. Pelo calendário antigo dava 1.
+    expect(dias("2026-07-20", "09:00", "2026-07-21", "18:00")).toBe(2);
+  });
+
+  it("dentro das 24h continua 1 diária, mesmo virando o dia", () => {
+    // 20/07 09:00 → 21/07 08:00 = 23h. Vira o dia mas NÃO passa de 24h.
+    expect(dias("2026-07-20", "09:00", "2026-07-21", "08:00")).toBe(1);
+  });
+
+  it("exatamente 24h é 1 diária (o limite não vira a virada)", () => {
+    expect(dias("2026-07-20", "09:00", "2026-07-21", "09:00")).toBe(1);
+  });
+
+  it("⚠️ SEM tolerância: 1 minuto além das 24h já é a 2ª diária", () => {
+    // Decisão da Cassiana: a folga é humana (ela não edita o contrato), não do
+    // código. Se alguém introduzir tolerância, este teste cai.
+    expect(dias("2026-07-20", "09:00", "2026-07-21", "09:01")).toBe(2);
+  });
+
+  it("período longo casa com o calendário quando a hora é a mesma", () => {
+    // Segunda 9h → sexta 9h = 96h = 4 diárias, igual ao cálculo antigo.
+    expect(dias("2026-07-20", "09:00", "2026-07-24", "09:00")).toBe(4);
+  });
+
+  it("mesmo dia, poucas horas, é 1 diária", () => {
+    expect(dias("2026-07-20", "09:00", "2026-07-20", "17:00")).toBe(1);
+  });
+
+  it("devolver mais cedo que a retirada não zera nem fica negativo", () => {
+    // Hora invertida no mesmo dia: erro de digitação não pode virar 0 diária.
+    expect(dias("2026-07-20", "18:00", "2026-07-20", "09:00")).toBe(1);
+  });
+
+  it("49h viram 3 diárias (o bloco parcial conta cheio)", () => {
+    expect(dias("2026-07-20", "09:00", "2026-07-22", "10:00")).toBe(3);
+  });
+
+  it("SEM horário cai no dia de calendário (contrato legado)", () => {
+    // Compatibilidade: o que já está no banco não tem hora e não pode mudar de
+    // valor por causa desta migração.
+    expect(billableDaysWithTime({ startDate: "2026-07-20", endDate: "2026-07-21" })).toBe(1);
+    expect(billableDaysWithTime({ startDate: "2026-07-20", endDate: "2026-07-25" })).toBe(5);
+  });
+
+  it("horário em UMA ponta só também cai no calendário", () => {
+    // Meio-termo não existe: ou dá para medir as 24h, ou conta como antes.
+    expect(billableDaysWithTime({
+      startDate: "2026-07-20", startTime: "09:00", endDate: "2026-07-21",
+    })).toBe(1);
+    expect(billableDaysWithTime({
+      startDate: "2026-07-20", endDate: "2026-07-21", endTime: "18:00",
+    })).toBe(1);
+  });
+
+  it("hora inválida é tratada como ausente, não quebra a conta", () => {
+    expect(billableDaysWithTime({
+      startDate: "2026-07-20", startTime: "banana", endDate: "2026-07-21", endTime: "18:00",
+    })).toBe(1);
+    expect(billableDaysWithTime({
+      startDate: "2026-07-20", startTime: "25:00", endDate: "2026-07-21", endTime: "18:00",
+    })).toBe(1);
+  });
+
+  it("computeRentalTotal cobra as 2 diárias no caso dela", () => {
+    // A prova que liga a fórmula ao DINHEIRO: R$ 100/dia, 33h.
+    const r = computeRentalTotal({
+      dailyRate: "100.00", quantity: 1,
+      startDate: "2026-07-20", startTime: "09:00",
+      endDate: "2026-07-21", endTime: "18:00",
+    });
+    expect(r.numDays).toBe(2);
+    expect(r.totalAmount).toBe("200.00");
+  });
+
+  it("computeRentalTotal sem horário cobra como antes", () => {
+    const r = computeRentalTotal({
+      dailyRate: "100.00", quantity: 1,
+      startDate: "2026-07-20", endDate: "2026-07-21",
+    });
+    expect(r.numDays).toBe(1);
+    expect(r.totalAmount).toBe("100.00");
+  });
+
+  it("o desconto por faixa enxerga a diária a MAIS", () => {
+    // Sutil: com horário o período pode cruzar a faixa de desconto. 6 dias de
+    // calendário + hora estourada = 7 diárias, e a regra de 7 dias passa a valer.
+    const rules = [{ minDays: 7, discountPercent: "10" }];
+    const semHora = computeRentalTotal({
+      dailyRate: "100.00", quantity: 1,
+      startDate: "2026-07-20", endDate: "2026-07-26", rules,
+    });
+    const comHora = computeRentalTotal({
+      dailyRate: "100.00", quantity: 1,
+      startDate: "2026-07-20", startTime: "09:00",
+      endDate: "2026-07-26", endTime: "18:00", rules,
+    });
+    expect(semHora.numDays).toBe(6);
+    expect(semHora.discountPercent).toBe(0);
+    expect(comHora.numDays).toBe(7);
+    expect(comHora.discountPercent).toBe(10);
+    expect(comHora.totalAmount).toBe("630.00");
+  });
+});
 
 describe("cálculo da extensão", () => {
   it("dias adicionados × diária × quantidade", () => {

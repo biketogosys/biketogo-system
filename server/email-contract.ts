@@ -30,6 +30,7 @@ import {
 } from "./email-layout";
 import { ENV } from "./_core/env";
 import { formatarBRL, valorPorExtenso } from "./valor-extenso";
+import { billableDaysWithTime } from "./rental-period";
 
 const FONTE = "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
 
@@ -62,12 +63,29 @@ export function formatarData(iso: string | null | undefined): string {
   return m ? `${m[3]}/${m[2]}/${m[1]}` : String(iso);
 }
 
-/** Diárias cobradas: mesma régua do resto do sistema (dias de calendário). */
-function diarias(inicio: string | null, fim: string | null): number {
+/**
+ * Diárias cobradas — delega para a FONTE ÚNICA (`billableDaysWithTime`).
+ *
+ * ⚠️ Isto era uma terceira cópia da fórmula (dias de calendário) e passou a
+ * divergir quando a régua virou blocos de 24h em 2026-08-18: o e-mail diria
+ * "1 diária" num contrato de 2 diárias. Não reimplementar aqui.
+ */
+function diarias(
+  inicio: string | null,
+  fim: string | null,
+  horaInicio?: string | null,
+  horaFim?: string | null,
+): number {
   if (!inicio || !fim) return 1;
-  const ms = Date.parse(`${fim}T00:00:00Z`) - Date.parse(`${inicio}T00:00:00Z`);
-  if (!Number.isFinite(ms)) return 1;
-  return Math.max(1, Math.round(ms / 86_400_000));
+  return billableDaysWithTime({
+    startDate: inicio, endDate: fim, startTime: horaInicio, endTime: horaFim,
+  });
+}
+
+/** "20/07/2026" + "09:00" → "20/07/2026 09:00". Sem hora, devolve só a data. */
+function comHora(data: string, hora?: string | null): string {
+  if (!data) return data;
+  return hora ? `${data} ${hora}` : data;
 }
 
 export type ItemContratoEmail = {
@@ -79,6 +97,8 @@ export type ItemContratoEmail = {
   quantidade: number;
   inicio: string | null;
   fim: string | null;
+  horaInicio: string | null;
+  horaFim: string | null;
   diaria: string | null;
   desconto: string | null;
   total: string | null;
@@ -88,7 +108,14 @@ export type ContratoEmailData = {
   contractId: number;
   status: string;
   cliente: { nome: string; email: string | null };
-  periodo: { inicio: string | null; fim: string | null };
+  /** Horário combinado ("HH:MM") entra junto quando existe: é o que decide a
+   *  virada da diária, e o cliente precisa ler o que foi acertado. */
+  periodo: {
+    inicio: string | null;
+    fim: string | null;
+    horaInicio?: string | null;
+    horaFim?: string | null;
+  };
   itens: ItemContratoEmail[];
   acessorios: Array<{ nome: string; qty: number }>;
   valorTotal: string | null;
@@ -146,6 +173,8 @@ export async function carregarDadosContrato(db: any, contractId: number): Promis
       quantidade: r.quantity ?? 1,
       inicio: r.startDate ?? null,
       fim: r.endDate ?? null,
+      horaInicio: r.startTime ?? null,
+      horaFim: r.endTime ?? null,
       diaria: r.dailyRate ?? null,
       desconto: r.discountPercent ?? null,
       total: r.totalAmount ?? null,
@@ -215,7 +244,13 @@ export async function carregarDadosContrato(db: any, contractId: number): Promis
     contractId,
     status: contract.status,
     cliente: { nome: client?.name ?? "", email: client?.email ?? null },
-    periodo: { inicio: inicios[0] ?? null, fim: fins[fins.length - 1] ?? null },
+    periodo: {
+      inicio: inicios[0] ?? null,
+      fim: fins[fins.length - 1] ?? null,
+      // Hora do PRIMEIRO item e do ÚLTIMO, casando com as datas do span.
+      horaInicio: itens.find((i) => i.inicio === inicios[0])?.horaInicio ?? null,
+      horaFim: itens.find((i) => i.fim === fins[fins.length - 1])?.horaFim ?? null,
+    },
     itens,
     acessorios: acessoriosAgrupados,
     valorTotal: contract.valorTotal ?? null,
@@ -288,7 +323,7 @@ function detalhe(rotulo: string, valor: string): string {
  * à direita. Mesma divisão da página pública.
  */
 function blocoDetalhes(dados: ContratoEmailData, mesmoPeriodo: boolean): string {
-  const dias = diarias(dados.periodo.inicio, dados.periodo.fim);
+  const dias = diarias(dados.periodo.inicio, dados.periodo.fim, dados.periodo.horaInicio, dados.periodo.horaFim);
   const cor = STATUS_COR[dados.status] ?? STATUS_COR.ativo;
   // ⚠️ Número do contrato EM CIMA, não ao lado do período como na página.
   // Medido: as duas colunas lado a lado somavam 455px de largura mínima (os
@@ -306,9 +341,12 @@ function blocoDetalhes(dados: ContratoEmailData, mesmoPeriodo: boolean): string 
   ${/* "Entrega", não "Retirada" (pedido da dona, 2026-08-11): a operação é 100%
        de entrega, ninguém retira nada na loja. O rótulo antigo vinha do sistema
        antigo, que atendia no balcão. */ ""}
-  ${detalhe("Entrega", formatarData(dados.periodo.inicio))}
+  ${/* Com horário combinado, a data vem acompanhada da hora: é o que define a
+       virada da diária, e o cliente precisa ver o que foi acertado. Contrato
+       anterior à migração 0022 não tem hora e sai só com a data, como antes. */ ""}
+  ${detalhe("Entrega", comHora(formatarData(dados.periodo.inicio), dados.periodo.horaInicio))}
   ${detalhe("Tempo contratado", mesmoPeriodo ? `${dias} ${dias === 1 ? "diária" : "diárias"}` : "Períodos diferentes por item")}
-  ${detalhe("Devolução prevista", formatarData(dados.periodo.fim))}
+  ${detalhe("Devolução prevista", comHora(formatarData(dados.periodo.fim), dados.periodo.horaFim))}
 </table>`.trim());
 }
 
@@ -333,7 +371,7 @@ function blocoItens(dados: ContratoEmailData, mesmoPeriodo: boolean, extraHtml =
 </tr>`.trim();
 
   const linhas = dados.itens.map((item) => {
-    const dias = diarias(item.inicio, item.fim);
+    const dias = diarias(item.inicio, item.fim, item.horaInicio, item.horaFim);
     // ⚠️ O percentual do desconto NÃO entra aqui: ele virou linha própria no
     // resumo de valores, com o abatimento em reais. Repetir nos dois lugares
     // fazia a mesma informação aparecer duas vezes com formatos diferentes.
@@ -493,7 +531,7 @@ function brutoDoItem(item: ItemContratoEmail): number {
   const total = parseFloat(item.total ?? "") || 0;
   const diaria = parseFloat(item.diaria ?? "") || 0;
   if (diaria <= 0) return total;
-  return diaria * diarias(item.inicio, item.fim) * (item.quantidade || 1);
+  return diaria * diarias(item.inicio, item.fim, item.horaInicio, item.horaFim) * (item.quantidade || 1);
 }
 
 /** `15.00` vira `15`, `12.50` continua `12,5`. Percentual redondo é o caso comum. */

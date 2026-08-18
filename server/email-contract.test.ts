@@ -86,7 +86,11 @@ describe("carregarDadosContrato", () => {
 
     expect(dados).not.toBeNull();
     expect(dados!.cliente.nome).toBe("Ana Souza");
-    expect(dados!.periodo).toEqual({ inicio: "2026-08-10", fim: "2026-08-15" });
+    // Sem horário: aluguel deste teste é anterior à régua de 24h (migração
+    // 0022), então as horas vêm nulas e a conta cai no dia de calendário.
+    expect(dados!.periodo).toEqual({
+      inicio: "2026-08-10", fim: "2026-08-15", horaInicio: null, horaFim: null,
+    });
     expect(dados!.itens).toHaveLength(1);
     expect(dados!.itens[0].modelo).toBe("Caloi Urbana Comfort");
     expect(dados!.itens[0].tamanho).toBe("M");
@@ -496,5 +500,46 @@ describe("formatarData", () => {
   it("formata a string sem passar por Date (fuso volta um dia)", () => {
     expect(formatarData("2026-07-20")).toBe("20/07/2026");
     expect(formatarData(null)).toBe("");
+  });
+});
+
+/**
+ * Horário combinado no e-mail (2026-08-18). O que se prova aqui: o cliente lê a
+ * MESMA conta que o sistema cobrou. O e-mail tinha uma cópia própria da fórmula
+ * de diárias (dias de calendário); se ela sobrevivesse, um contrato de 2 diárias
+ * por causa da hora chegaria ao cliente escrito como "1 diária".
+ */
+describe("e-mail com horário combinado", () => {
+  it("mostra data COM hora e conta as diárias por blocos de 24h", async () => {
+    const db = await createTestDb();
+    const { eq } = await import("drizzle-orm");
+    const { contractId } = await seedContrato(db);
+    // 20/07 09:00 → 21/07 18:00 = 33h = 2 diárias (pelo calendário seria 1).
+    await db.update(schema.rentals).set({
+      startDate: "2026-07-20", endDate: "2026-07-21",
+      startTime: "09:00", endTime: "18:00",
+      dailyRate: "100.00", discountPercent: null, totalAmount: "200.00",
+    }).where(eq(schema.rentals.contractId, contractId));
+
+    const dados = await carregarDadosContrato(db, contractId);
+    expect(dados!.periodo.horaInicio).toBe("09:00");
+    expect(dados!.periodo.horaFim).toBe("18:00");
+
+    const { html } = buildReservationEmail(dados!, CLAUSULAS, EMPRESA_VAZIA);
+    expect(html).toContain("20/07/2026 09:00");
+    expect(html).toContain("21/07/2026 18:00");
+    expect(html).toContain("2 diárias");
+  });
+
+  it("contrato SEM hora continua saindo só com a data", async () => {
+    // Compatibilidade: o que já foi enviado ao cliente não muda de formato.
+    const db = await createTestDb();
+    const { contractId } = await seedContrato(db);
+
+    const dados = await carregarDadosContrato(db, contractId);
+    const { html } = buildReservationEmail(dados!, CLAUSULAS, EMPRESA_VAZIA);
+
+    expect(html).toContain("10/08/2026");
+    expect(html).not.toMatch(/10\/08\/2026\s+\d{2}:\d{2}/);
   });
 });

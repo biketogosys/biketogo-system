@@ -118,6 +118,20 @@ const ADMIN_COOKIE = "btg_session";
  *  HOME, não a coleção de modelos (decisão do Matheus, 2026-08-04). */
 const SITE_PADRAO = "https://biketogofloripa.com.br/";
 
+/**
+ * Horário combinado de entrega/busca: "HH:MM" (2026-08-18).
+ *
+ * Opcional aqui de propósito — os contratos criados antes da migração 0022 não
+ * têm hora, e a conta deles cai no dia de calendário. Quem exige o preenchimento
+ * é o FORMULÁRIO, porque a Cassiana sempre sabe o horário ("eu sempre pergunto
+ * na hora da reserva.. e se não tiver, eu coloco um que acho ideal").
+ */
+const HORA_SCHEMA = z
+  .string()
+  .regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Horário inválido. Use HH:MM.")
+  .optional()
+  .nullable();
+
 // ─── Validações de documento ─────────────────────────────────────────────────
 function validarCPF(cpf: string): boolean {
   const digits = cpf.replace(/\D/g, "");
@@ -2213,6 +2227,8 @@ const publicApiRouter = router({
           quantidade: r.quantity ?? 1,
           inicio: r.startDate,
           fim: r.endDate,
+          horaInicio: r.startTime ?? null,
+          horaFim: r.endTime ?? null,
           diaria: r.dailyRate,
           desconto: r.discountPercent,
           total: r.totalAmount,
@@ -2283,7 +2299,13 @@ const publicApiRouter = router({
           email: client?.email ?? null,
           telefone: client?.phone ?? null,
         },
-        periodo: { inicio: inicios[0] ?? null, fim: fins[fins.length - 1] ?? null },
+        periodo: {
+          inicio: inicios[0] ?? null,
+          fim: fins[fins.length - 1] ?? null,
+          // Hora do primeiro/último item, casando com as datas do span.
+          horaInicio: itens.find((i: any) => i.inicio === inicios[0])?.horaInicio ?? null,
+          horaFim: itens.find((i: any) => i.fim === fins[fins.length - 1])?.horaFim ?? null,
+        },
         itens,
         acessorios,
         empresa,
@@ -3313,6 +3335,7 @@ async function buildContractPdfData(db: Awaited<ReturnType<typeof getDb>>, contr
     : [null];
   const rentalsForPdf = await db.select({
     id: rT.id, bikeId: rT.bikeId, startDate: rT.startDate, endDate: rT.endDate,
+    startTime: rT.startTime, endTime: rT.endTime,
     totalAmount: rT.totalAmount, dailyRate: rT.dailyRate, bikeSizeId: rT.bikeSizeId,
     quantity: rT.quantity, paymentMethod: rT.paymentMethod, discountPercent: rT.discountPercent,
   }).from(rT).where(and(eq(rT.contractId, contractId), isNull(rT.deletedAt)));
@@ -3629,6 +3652,8 @@ const contractsRouter = router({
         discountPercent: rentalsTable.discountPercent,
         startDate: rentalsTable.startDate,
         endDate: rentalsTable.endDate,
+        startTime: rentalsTable.startTime,
+        endTime: rentalsTable.endTime,
         status: rentalsTable.status,
         paymentStatus: rentalsTable.paymentStatus,
         returnCondition: rentalsTable.returnCondition,
@@ -4023,6 +4048,10 @@ const contractsRouter = router({
         bikeSizeId: z.number().nullable().optional(),
         startDate: z.string(),
         endDate: z.string(),
+        // Horário COMBINADO de entrega e busca (2026-08-18). Opcional no schema
+        // por causa dos contratos legados; a TELA exige.
+        startTime: HORA_SCHEMA,
+        endTime: HORA_SCHEMA,
         quantity: z.number().min(1).default(1),
         dailyRate: z.string().optional(),
         totalAmount: z.string().optional(),
@@ -4114,6 +4143,8 @@ const contractsRouter = router({
           quantity: b.quantity,
           startDate: b.startDate,
           endDate: b.endDate,
+          startTime: b.startTime ?? null,
+          endTime: b.endTime ?? null,
           dailyRate: b.dailyRate ?? null,
           totalAmount: b.totalAmount ?? null,
           discountPercent: b.discountPercent ?? null,
@@ -4212,6 +4243,8 @@ const contractsRouter = router({
         bikeSizeId: z.number().nullable().optional(),
         startDate: z.string(),
         endDate: z.string(),
+        startTime: HORA_SCHEMA,
+        endTime: HORA_SCHEMA,
         quantity: z.number().min(1).default(1),
         dailyRate: z.string().optional(),
         totalAmount: z.string().optional(),
@@ -4305,6 +4338,8 @@ const contractsRouter = router({
             quantity: b.quantity,
             startDate: b.startDate,
             endDate: b.endDate,
+            startTime: b.startTime ?? null,
+            endTime: b.endTime ?? null,
             dailyRate: b.dailyRate ?? null,
             totalAmount: b.totalAmount ?? null,
             discountPercent: b.discountPercent ?? null,
@@ -4406,6 +4441,8 @@ const contractsRouter = router({
             .set({
               startDate: b.startDate,
               endDate: b.endDate,
+              startTime: b.startTime ?? null,
+              endTime: b.endTime ?? null,
               totalAmount: b.totalAmount ?? null,
               dailyRate: b.dailyRate ?? null,
             })
@@ -4424,6 +4461,8 @@ const contractsRouter = router({
             quantity: b.quantity,
             startDate: b.startDate,
             endDate: b.endDate,
+            startTime: b.startTime ?? null,
+            endTime: b.endTime ?? null,
             dailyRate: b.dailyRate ?? null,
             totalAmount: b.totalAmount ?? null,
             paymentType: "presential",

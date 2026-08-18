@@ -598,6 +598,8 @@ function ContractDetail({
                     tamanho: r.tamanho ?? "",
                     quantity: r.quantity ?? 1,
                     dailyRate: r.dailyRate ?? "0",
+                    startTime: r.startTime ?? null,
+                    endTime: r.endTime ?? null,
                   });
                 }
                 setDupPayload({
@@ -1103,8 +1105,12 @@ function ContractDetail({
               tamanho: r.tamanho ?? "",
               startDate: r.startDate ?? "",
               endDate: r.endDate ?? "",
+              startTime: r.startTime ?? "",
+              endTime: r.endTime ?? "",
               quantity: r.quantity ?? 1,
               dailyRate: r.dailyRate ?? "0",
+              // Só exibição no carrinho; o valor real vem de `totalAmount`, que
+              // o servidor já gravou com a régua vigente na criação.
               numDays: r.startDate && r.endDate
                 ? Math.max(1, Math.ceil((new Date(r.endDate).getTime() - new Date(r.startDate).getTime()) / 86400000))
                 : 1,

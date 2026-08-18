@@ -180,6 +180,17 @@ export const rentals = pgTable("rentals", {
   bikeId: integer("bikeId").notNull(),
   startDate: date("startDate").notNull(),
   endDate: date("endDate"),
+  // Horário COMBINADO da entrega e da busca (2026-08-18). "HH:MM", 5 chars.
+  //
+  // ⚠️ É o horário AGENDADO, nunca o real: a loja entrega e busca com hora
+  // marcada, e a dona disse que não vai lançar atraso pequeno no sistema
+  // ("a tolerância fica por minha conta mesmo"). Guardar o real seria construir
+  // o que ela avisou que não preenche.
+  //
+  // Nullable por COMPATIBILIDADE: contratos anteriores a esta migração não têm
+  // hora e caem no cálculo por dia de calendário. Na TELA o campo é obrigatório.
+  startTime: varchar("startTime", { length: 5 }),
+  endTime: varchar("endTime", { length: 5 }),
   returnedAt: timestamp("returnedAt"),
   // Delivery
   deliveryDate: date("deliveryDate"),
