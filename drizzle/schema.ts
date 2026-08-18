@@ -336,6 +336,19 @@ export const contracts = pgTable("contracts", {
   // Null = sem desconto manual, vale a faixa das `bike_discount_rules`.
   descontoPercent: numeric("descontoPercent", { precision: 5, scale: 2 }),
   descontoMotivo: text("descontoMotivo"),
+  /**
+   * Observações INTERNAS do contrato (pedido da Cassiana, 2026-08-18:
+   * "da pra adicionar mais um campo no contrato? campo interno na verdade..").
+   *
+   * ⚠️ **Nunca sai para o cliente**: não entra no PDF, nos e-mails nem na
+   * página pública. É recado da loja para a loja.
+   *
+   * Fica no CONTRATO e não no aluguel: `rentals.notes` já existia, mas é por
+   * bike — um contrato com três bikes teria três caixas, e ela pediu "um campo
+   * no contrato". O `rentals.notes` continua sendo preenchido pelo formulário
+   * de criação e não foi mexido.
+   */
+  observacoesInternas: text("observacoesInternas"),
   pdfUrl: text("pdfUrl"),
   criadoEm: timestamp("criadoEm").defaultNow().notNull(),
   encerradoEm: timestamp("encerradoEm"),

@@ -44,6 +44,7 @@ export const ROTULO_ACAO: Record<string, string> = {
   renovou_aluguel: "Renovou aluguel",
   reenviou_email_contrato: "Reenviou e-mail",
   enviou_email_recibo: "Enviou recibo",
+  editou_observacoes_contrato: "Editou observações",
   overdue_automatico: "Marcou atraso (automático)",
   atualizou_bike: "Atualizou bike",
 };

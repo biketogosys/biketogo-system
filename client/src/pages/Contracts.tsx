@@ -25,6 +25,7 @@ import {
   Copy,
   Link as LinkIcon,
   Mail,
+  NotebookPen,
 } from "lucide-react";
 import { SegmentedTabs } from "@/components/ui/segmented-tabs";
 import { DataTable } from "@/components/ui/data-table";
@@ -405,6 +406,76 @@ function CloseContractDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+// ─── Observações internas do contrato ────────────────────────────────────────
+/**
+ * Caixa de anotação da loja no detalhe do contrato (2026-08-18).
+ *
+ * ⚠️ **Interno de verdade:** este texto NÃO entra no PDF, nos e-mails nem na
+ * página que o cliente abre pelo link. O aviso na tela existe para ela poder
+ * escrever à vontade sem medo de o cliente ler.
+ *
+ * Funciona em QUALQUER status, inclusive encerrado: o `contracts.update` (que
+ * exige pendente/ativo) não serve, e por isso há uma procedure própria.
+ */
+function ObservacoesInternas({
+  contractId,
+  valor,
+}: {
+  contractId: number;
+  valor: string;
+}) {
+  const utils = trpc.useUtils();
+  // `null` = não editado nesta visita. Distinguir de "" importa: string vazia é
+  // uma edição legítima (apagar a observação).
+  const [rascunho, setRascunho] = useState<string | null>(null);
+
+  const salvar = trpc.contracts.salvarObservacoes.useMutation({
+    onSuccess: () => {
+      toast.success("Observações salvas.");
+      utils.contracts.getById.invalidate({ id: contractId });
+      setRascunho(null);
+    },
+    onError: (e) => toast.error(friendlyError(e)),
+  });
+
+  const texto = rascunho ?? valor;
+  const mudou = rascunho !== null && rascunho !== valor;
+
+  return (
+    <div>
+      <h3 className="font-semibold mb-3 flex items-center gap-2">
+        <NotebookPen className="h-4 w-4" /> Observações internas
+      </h3>
+      <div className="rounded-md border p-4 space-y-2">
+        <p className="text-xs text-muted-foreground">
+          Só a equipe vê. Não aparece no contrato, no e-mail nem na página do cliente.
+        </p>
+        <Textarea
+          value={texto}
+          rows={4}
+          className="text-sm resize-none"
+          placeholder="Ex.: cliente pediu para entregar na portaria; combinamos devolução às 18h."
+          onChange={(e) => setRascunho(e.target.value)}
+        />
+        <div className="flex justify-end gap-2">
+          {mudou && (
+            <Button variant="ghost" size="sm" onClick={() => setRascunho(null)}>
+              Cancelar
+            </Button>
+          )}
+          <Button
+            size="sm"
+            disabled={!mudou || salvar.isPending}
+            onClick={() => salvar.mutate({ id: contractId, observacoes: rascunho ?? "" })}
+          >
+            {salvar.isPending ? "Salvando..." : "Salvar"}
+          </Button>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -1075,6 +1146,14 @@ function ContractDetail({
           </div>
         </div>
       )}
+
+      {/* Observações internas — pedido da Cassiana (2026-08-18). Fica no fim
+          porque é consulta, não passo do fluxo; e vale em QUALQUER status,
+          inclusive encerrado (é onde ela registra o que aconteceu depois). */}
+      <ObservacoesInternas
+        contractId={contractId}
+        valor={(data as any).observacoesInternas ?? ""}
+      />
 
       {/* Close dialog */}
       <CloseContractDialog

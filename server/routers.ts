@@ -3627,6 +3627,7 @@ const contractsRouter = router({
         // formulário sem ele e o desconto sumiria na primeira edição.
         descontoPercent: contracts.descontoPercent,
         descontoMotivo: contracts.descontoMotivo,
+        observacoesInternas: contracts.observacoesInternas,
         pdfUrl: contracts.pdfUrl,
         criadoEm: contracts.criadoEm,
         encerradoEm: contracts.encerradoEm,
@@ -3753,6 +3754,52 @@ const contractsRouter = router({
       const token = signContractToken(input.id);
       const base = (ENV.appUrl ?? "").replace(/\/+$/, "");
       return { token, path: `/contrato/${token}`, url: `${base}/contrato/${token}` };
+    }),
+
+  /**
+   * Observações INTERNAS do contrato (2026-08-18).
+   *
+   * Procedure própria, separada do `contracts.update`, por dois motivos:
+   * 1. o `update` só aceita contrato pendente/ativo/parcialmente devolvido, e
+   *    anotação precisa funcionar também em contrato **encerrado** (é onde ela
+   *    vai registrar o que aconteceu depois);
+   * 2. o `update` é `adminOnlyProcedure` e faz *substituição total* dos
+   *    aluguéis no ramo pendente — mandar o formulário inteiro só para salvar um
+   *    texto recriaria os aluguéis com IDs novos.
+   *
+   * Operador também anota: é operação do dia a dia, não configuração.
+   */
+  salvarObservacoes: adminAuthProcedure
+    .input(z.object({
+      id: z.number(),
+      observacoes: z.string().max(5000),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+
+      const [contract] = await db
+        .select({ id: contracts.id, atual: contracts.observacoesInternas })
+        .from(contracts)
+        .where(eq(contracts.id, input.id));
+      if (!contract) throw new TRPCError({ code: "NOT_FOUND", message: "Contrato não encontrado." });
+
+      // Texto em branco APAGA a observação, em vez de gravar string vazia.
+      const texto = input.observacoes.trim() || null;
+      await db.update(contracts)
+        .set({ observacoesInternas: texto })
+        .where(eq(contracts.id, input.id));
+
+      await createAuditLog({
+        adminId: (ctx as any).adminUser?.id ?? null,
+        acao: "editou_observacoes_contrato",
+        tabela: "contracts",
+        registroId: input.id,
+        dadosAntes: { observacoesInternas: contract.atual },
+        dadosDepois: { observacoesInternas: texto },
+      });
+
+      return { success: true };
     }),
 
   /**
