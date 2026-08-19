@@ -29,6 +29,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { friendlyError } from "@/lib/utils";
+import { diariasCobradas, valorASincronizar } from "@/lib/diarias";
 import {
   Dialog,
   DialogContent,
@@ -69,47 +70,18 @@ export const PAYMENT_METHODS: Array<{ value: string; label: string }> = [
 const HORA_ENTREGA_PADRAO = "09:00";
 const HORA_BUSCA_PADRAO = "09:00";
 
-/** "HH:MM" → minutos desde a meia-noite; null se não for hora válida. */
-function minutosDoDia(hora?: string | null): number | null {
-  if (!hora) return null;
-  const m = /^(\d{1,2}):(\d{2})$/.exec(hora.trim());
-  if (!m) return null;
-  const h = Number(m[1]);
-  const min = Number(m[2]);
-  if (h > 23 || min > 59) return null;
-  return h * 60 + min;
-}
-
 /**
- * ⭐ Diárias cobradas — ESPELHO do `billableDaysWithTime` do servidor
- * (`server/rental-period.ts`, 2026-08-18).
- *
- * Com horário nas duas pontas: blocos de 24h a partir da entrega (20/07 09h →
- * 21/07 18h = 33h = 2 diárias). Sem horário: dia de calendário, que é o
- * comportamento dos contratos anteriores à migração 0022.
- *
- * ⚠️ Se esta função divergir da do servidor, a tela mostra um valor e o banco
- * grava outro. Qualquer mudança aqui tem que acontecer nos DOIS lugares.
+ * A conta de diárias e a releitura dos campos moram em `lib/diarias.ts` para
+ * ter teste próprio: a fórmula é ESPELHO da do servidor e decide o valor que a
+ * loja vê antes de salvar, e a releitura nasceu de uma falha real relatada.
  */
-function diariasCobradas(
-  startDate: string,
-  endDate: string,
-  startTime?: string | null,
-  endTime?: string | null,
-): number {
-  const diasCalendario = Math.max(
-    1,
-    Math.round((Date.parse(endDate) - Date.parse(startDate)) / (1000 * 60 * 60 * 24)),
-  );
-
-  const inicio = minutosDoDia(startTime);
-  const fim = minutosDoDia(endTime);
-  if (inicio == null || fim == null) return diasCalendario;
-
-  const diffDias = Math.round((Date.parse(endDate) - Date.parse(startDate)) / (1000 * 60 * 60 * 24));
-  const totalMinutos = diffDias * 24 * 60 + (fim - inicio);
-  if (totalMinutos <= 0) return 1;
-  return Math.max(1, Math.ceil(totalMinutos / (24 * 60)));
+function sincronizarCampo(
+  valorNoCampo: string,
+  valorNoEstado: string,
+  aplicar: (v: string) => void,
+) {
+  const novo = valorASincronizar(valorNoCampo, valorNoEstado);
+  if (novo != null) aplicar(novo);
 }
 
 // ─── Types ──────────────────────────────────────────────────────────────────────────────────
@@ -423,7 +395,16 @@ export function NewContractModal({
   // BU-PICK-FRONT: unidades físicas selecionadas
   const [selUnitIds, setSelUnitIds] = useState<number[]>([]);
 
-  const { data: bikesData } = trpc.bikes.list.useQuery(
+  // ⚠️ `isLoading`/`isError` usados de propósito (2026-08-19): antes a tela só
+  // olhava `data`, então enquanto o catálogo não chegava — servidor acordando,
+  // 4G ruim — o seletor ficava clicável e ABRIA VAZIO, sem dizer nada. Quem
+  // está do outro lado conclui que o sistema quebrou, e foi o que aconteceu.
+  const {
+    data: bikesData,
+    isLoading: carregandoBikes,
+    isError: erroBikes,
+    refetch: recarregarBikes,
+  } = trpc.bikes.list.useQuery(
     { page: 1, limit: 100 },
     { enabled: open && step === 2 }
   );
@@ -897,11 +878,18 @@ export function NewContractModal({
               <div>
                 <Label className="mb-1 block text-xs">Entrega</Label>
                 <div className="flex gap-1.5">
-                  <Input type="date" value={selStartDate} onChange={(e) => setSelStartDate(e.target.value)} className="text-sm min-w-0 flex-1" />
+                  <Input
+                    type="date"
+                    value={selStartDate}
+                    onChange={(e) => setSelStartDate(e.target.value)}
+                    onBlur={(e) => sincronizarCampo(e.target.value, selStartDate, setSelStartDate)}
+                    className="text-sm min-w-0 flex-1"
+                  />
                   <Input
                     type="time"
                     value={selStartTime}
                     onChange={(e) => setSelStartTime(e.target.value)}
+                    onBlur={(e) => sincronizarCampo(e.target.value, selStartTime, setSelStartTime)}
                     className="text-sm w-[5.75rem] shrink-0"
                     aria-label="Hora da entrega"
                   />
@@ -910,11 +898,19 @@ export function NewContractModal({
               <div>
                 <Label className="mb-1 block text-xs">Devolução</Label>
                 <div className="flex gap-1.5">
-                  <Input type="date" value={selEndDate} onChange={(e) => setSelEndDate(e.target.value)} min={selStartDate} className="text-sm min-w-0 flex-1" />
+                  <Input
+                    type="date"
+                    value={selEndDate}
+                    onChange={(e) => setSelEndDate(e.target.value)}
+                    onBlur={(e) => sincronizarCampo(e.target.value, selEndDate, setSelEndDate)}
+                    min={selStartDate}
+                    className="text-sm min-w-0 flex-1"
+                  />
                   <Input
                     type="time"
                     value={selEndTime}
                     onChange={(e) => setSelEndTime(e.target.value)}
+                    onBlur={(e) => sincronizarCampo(e.target.value, selEndTime, setSelEndTime)}
                     className="text-sm w-[5.75rem] shrink-0"
                     aria-label="Hora da devolução"
                   />
@@ -956,15 +952,37 @@ export function NewContractModal({
                 </Select>
               </div>
             )}
+            {erroBikes && (
+              // Falha explícita com saída: sem isto o campo abria vazio e a
+              // pessoa não tinha o que fazer além de fechar tudo.
+              <div className="flex items-center justify-between gap-2 p-2.5 rounded-md border bg-amber-500/10 border-amber-500/30">
+                <span className="text-xs text-amber-700 dark:text-amber-400">
+                  Não consegui carregar a lista de bicicletas.
+                </span>
+                <Button size="sm" variant="outline" onClick={() => recarregarBikes()} className="h-7 text-xs shrink-0">
+                  Tentar de novo
+                </Button>
+              </div>
+            )}
             <div className="grid grid-cols-2 gap-3">
               <div className="min-w-0">
                 <Label className="mb-1 block text-xs">Bicicleta</Label>
                 <Select
                   value={selBikeId}
                   onValueChange={(v) => { setSelBikeId(v); setSelBikeSizeId(""); }}
-                  disabled={!(selStartDate && selEndDate)}
+                  // Trava também enquanto o catálogo não chegou: melhor um campo
+                  // que se explica do que um que abre vazio.
+                  disabled={!(selStartDate && selEndDate) || carregandoBikes || erroBikes}
                 >
-                  <SelectTrigger className="text-sm w-full min-w-0"><SelectValue placeholder="Selecionar bike" /></SelectTrigger>
+                  <SelectTrigger className="text-sm w-full min-w-0">
+                    <SelectValue
+                      placeholder={
+                        carregandoBikes ? "Carregando bicicletas..."
+                          : erroBikes ? "Não foi possível carregar"
+                          : "Selecionar bike"
+                      }
+                    />
+                  </SelectTrigger>
                   <SelectContent>
                     {bikes.map((b) => (
                       <SelectItem key={b.id} value={String(b.id)}>
