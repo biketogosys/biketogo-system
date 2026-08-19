@@ -1,5 +1,6 @@
 import "dotenv/config";
 import express from "express";
+import compression from "compression";
 import cookieParser from "cookie-parser";
 import { createServer } from "http";
 import net from "net";
@@ -47,6 +48,26 @@ async function startServer() {
   const app = express();
   app.set('trust proxy', 1);
   const server = createServer(app);
+
+  // ─── Compressão HTTP (gzip) ───────────────────────────────────────────────
+  /**
+   * ⚠️ **Antes de qualquer coisa que escreva resposta**, senão não comprime.
+   *
+   * Medido em produção (2026-08-18) antes desta linha existir: o Railway já
+   * comprime os arquivos ESTÁTICOS (o bundle vinha `content-encoding: gzip`),
+   * mas as respostas do tRPC saíam **cruas**. É o pior lugar para faltar: o JS
+   * o navegador baixa uma vez e cacheia; a API é chamada a cada tela.
+   *
+   * Ganho medido num endpoint público real: **2.587 → 586 bytes (78% menos)**.
+   * JSON de lista comprime muito bem porque repete as chaves em toda linha.
+   *
+   * Sem configuração extra de propósito:
+   * - o `threshold` padrão (1KB) já ignora resposta pequena, onde comprimir
+   *   custaria mais CPU do que economiza banda (`auth.me` devolve 33 bytes);
+   * - o projeto não tem SSE nem streaming (conferido), que é o caso em que
+   *   compressão atrapalharia por segurar o buffer.
+   */
+  app.use(compression());
 
   // ─── Helmet.js — headers de segurança HTTP ────────────────────────────────
   registerSecurityMiddlewares(app);
