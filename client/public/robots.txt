@@ -1,8 +1,7 @@
 # BikeTogo — sistema de gestão (admin) da Bike To Go Floripa.
-# O sistema é privado; só a página pública de pré-cadastro deve ser rastreada.
+# Sistema privado: NADA aqui deve ser rastreado nem aparecer em buscador.
 
 User-agent: *
-Allow: /reservar
 Disallow: /
 
-# Nada de sitemap: não há conteúdo público além do /reservar.
+# Sem sitemap: não há conteúdo público a indexar.

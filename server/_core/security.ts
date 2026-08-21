@@ -88,4 +88,31 @@ export function registerSecurityMiddlewares(app: Express) {
       crossOriginEmbedderPolicy: false,
     })
   );
+
+  // ─── Fora dos buscadores, em TODAS as rotas (2026-08-19) ──────────────────
+  /**
+   * ⚠️ **O `robots.txt` NÃO impede indexação — só leitura.** Uma URL bloqueada
+   * ali continua podendo aparecer no Google (listada sem descrição) se alguém
+   * linkar de fora. Aqui isso é problema de privacidade, não de SEO:
+   *
+   * O link `/contrato/{token}` vai por e-mail e WhatsApp para o cliente, e a
+   * página mostra **nome, CPF, RG e telefone**. Basta um cliente colar esse
+   * link num grupo aberto, fórum ou rede social para a URL virar candidata a
+   * indexação.
+   *
+   * ⚠️ **Por que header e não `<meta name="robots">`:** com a URL em `Disallow`,
+   * o buscador não busca o HTML e nunca leria a meta tag — os dois se anulam.
+   * O header viaja na resposta e é lido antes do conteúdo.
+   *
+   * Vale para o site inteiro por decisão do Matheus (2026-08-19): ele não quer
+   * NENHUMA página nos buscadores, nem o `/reservar` (o tráfego vem do site da
+   * loja, não de busca).
+   *
+   * `noarchive` e `nosnippet` fecham o resto: sem cópia em cache e sem trecho
+   * de conteúdo em resultado, caso a URL escape por algum caminho.
+   */
+  app.use((_req, res, next) => {
+    res.setHeader("X-Robots-Tag", "noindex, nofollow, noarchive, nosnippet");
+    next();
+  });
 }
