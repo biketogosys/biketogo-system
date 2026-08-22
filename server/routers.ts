@@ -3596,6 +3596,23 @@ const contractsRouter = router({
           // Para a tela marcar "aguardando pagamento" no contrato encerrado que
           // continua em Ativos — senão ela não entende por que ele não sumiu.
           pago: drizzleSql<boolean>`NOT ${naoPago}`,
+          /**
+           * Quando a bike é ENTREGUE (pedido da Cassiana, 2026-08-19: "da pra
+           * colocar nessa tela a data da reserva?").
+           *
+           * A lista mostrava só `criadoEm`, que é quando ela CADASTROU o
+           * contrato — um contrato criado em agosto pode ser reserva de
+           * setembro, e olhando a lista não dava para saber. Esta é a data que
+           * ela precisa para se organizar.
+           *
+           * Subconsulta em vez de join: um contrato tem vários aluguéis e um
+           * join multiplicaria as linhas. `MIN` porque bikes do mesmo contrato
+           * podem ter períodos diferentes — vale a primeira entrega.
+           */
+          reservadoPara: drizzleSql<string | null>`(
+            SELECT MIN(r."startDate") FROM ${rentalsTable} r
+            WHERE r."contractId" = ${contracts.id} AND r."deletedAt" IS NULL
+          )`,
         })
           .from(contracts)
           .leftJoin(clientsTable, eq(contracts.clientId, clientsTable.id))

@@ -26,6 +26,7 @@ import {
   Link as LinkIcon,
   Mail,
   NotebookPen,
+  CalendarDays,
 } from "lucide-react";
 import { SegmentedTabs } from "@/components/ui/segmented-tabs";
 import { DataTable } from "@/components/ui/data-table";
@@ -1441,6 +1442,30 @@ export default function Contracts() {
             : "—"}
         </span>
       ),
+    },
+    {
+      /**
+       * Quando a bike é entregue (pedido da Cassiana, 2026-08-19). Vem DEPOIS
+       * de "Criado em"/"Encerrado em" porque foi onde ela pediu, e com destaque
+       * porque é a data que ela usa para se organizar — as outras duas são
+       * registro, esta é agenda.
+       */
+      id: "reservadoPara",
+      header: "Reservado para",
+      accessorKey: "reservadoPara",
+      cell: ({ row }) => {
+        const iso = (row.original as any).reservadoPara as string | null;
+        if (!iso) return <span className="text-sm text-muted-foreground">—</span>;
+        // ⚠️ Formatado como STRING: `new Date("2026-09-10")` é meia-noite UTC e
+        // volta um dia no fuso BR (armadilha registrada no CLAUDE.md).
+        const [ano, mes, dia] = iso.split("-");
+        return (
+          <span className="inline-flex items-center gap-1.5 rounded-md border border-primary/30 bg-primary/10 px-2 py-0.5 text-sm font-medium text-primary tabular-nums whitespace-nowrap">
+            <CalendarDays className="h-3.5 w-3.5 shrink-0" aria-hidden />
+            {`${dia}/${mes}/${ano}`}
+          </span>
+        );
+      },
     },
     {
       id: "acoes",
