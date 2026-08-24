@@ -337,7 +337,7 @@ export default function Dashboard() {
                   Receita por modelo de bicicleta
                 </CardTitle>
                 <p className="text-xs text-muted-foreground">
-                  Aluguéis pagos no período · {periodLabel}
+                  Aluguéis com início no período · {periodLabel}
                 </p>
               </CardHeader>
               <CardContent>

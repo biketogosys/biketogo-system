@@ -81,6 +81,7 @@ import {
   deleteExpense,
   getRevenues,
   createRevenue,
+  getWeeklyRevenueRows,
   updateRevenue,
   deleteRevenue,
   getFinancialReport,
@@ -2640,8 +2641,8 @@ const dashboardRouter = router({
     .query(async ({ input }) => {
     const db = await getDb();
     if (!db) return [];
-    const { rentals: rentalsSchema, expenses: expensesSchema, revenues: revenuesSchema } = await import("../drizzle/schema");
-    const { isNotNull, gte: gteOp, lte: lteOp } = await import("drizzle-orm");
+    const { expenses: expensesSchema } = await import("../drizzle/schema");
+    const { gte: gteOp, lte: lteOp } = await import("drizzle-orm");
 
     // Calcular range completo das 8 semanas (7 semanas atrás + semana atual)
     const now = new Date();
@@ -2654,14 +2655,12 @@ const dashboardRouter = router({
     const rangeStartStr = rangeStart.toISOString().split("T")[0];
     const rangeEndStr = rangeEnd.toISOString().split("T")[0];
 
-    // 3 queries totais para o range completo
-    const [rentalRows, revenueRows, expenseRows] = await Promise.all([
-      db.select({ returnedAt: rentalsSchema.returnedAt, total: rentalsSchema.totalAmount })
-        .from(rentalsSchema)
-        .where(and(isNotNull(rentalsSchema.returnedAt), gteOp(rentalsSchema.returnedAt, rangeStart), lteOp(rentalsSchema.returnedAt, rangeEnd))),
-      db.select({ date: revenuesSchema.date, total: revenuesSchema.amount })
-        .from(revenuesSchema)
-        .where(and(gteOp(revenuesSchema.date, rangeStartStr), lteOp(revenuesSchema.date, rangeEndStr))),
+    // 2 queries para o range completo. ⚠️ As receitas saem do livro-caixa
+    // (`getWeeklyRevenueRows`), na MESMA régua dos cards: antes o aluguel vinha
+    // de `rentals.returnedAt` e as extras da tabela inteira, então o pagamento
+    // de um contrato aparecia DUAS vezes no gráfico.
+    const [receitaRows, expenseRows] = await Promise.all([
+      getWeeklyRevenueRows(rangeStartStr, rangeEndStr),
       db.select({ date: expensesSchema.date, total: expensesSchema.amount })
         .from(expensesSchema)
         .where(and(gteOp(expensesSchema.date, rangeStartStr), lteOp(expensesSchema.date, rangeEndStr))),
@@ -2679,13 +2678,15 @@ const dashboardRouter = router({
       const startStr = start.toISOString().split("T")[0];
       const endStr = end.toISOString().split("T")[0];
 
-      const receitaAlugueis = rentalRows
-        .filter(r => r.returnedAt && r.returnedAt >= start && r.returnedAt <= end)
-        .reduce((a, r) => a + parseFloat(r.total ?? "0"), 0);
+      const naSemana = receitaRows.filter((r: any) => r.date >= startStr && r.date <= endStr);
 
-      const receitasExtras = revenueRows
-        .filter(r => r.date >= startStr && r.date <= endStr)
-        .reduce((a, r) => a + parseFloat(r.total ?? "0"), 0);
+      const receitaAlugueis = naSemana
+        .filter((r: any) => r.deContrato)
+        .reduce((a: number, r: any) => a + parseFloat(r.amount ?? "0"), 0);
+
+      const receitasExtras = naSemana
+        .filter((r: any) => !r.deContrato)
+        .reduce((a: number, r: any) => a + parseFloat(r.amount ?? "0"), 0);
 
       const despesas = expenseRows
         .filter(r => r.date >= startStr && r.date <= endStr)
@@ -3288,6 +3289,9 @@ async function recalcEarlyReturn(
         description: `Estorno de devolução antecipada · Contrato #${pv.contractId ?? "?"} (${pv.removedDays} dia(s) não usados)`,
         amount: (-credito).toFixed(2),
         date: todaySaoPaulo(),
+        // Dinheiro DE CONTRATO: o relatório não pode somar esta linha junto das
+        // receitas extras (o abatimento já está no `totalAmount` do aluguel).
+        meta: { kind: "early_return_refund", contractId: pv.contractId ?? null },
       } as any);
     } catch (err) { console.warn("[recalcEarlyReturn] Revenue error:", err); }
   }
@@ -4484,6 +4488,15 @@ const contractsRouter = router({
         .from(rentalsTable)
         .where(and(eq(rentalsTable.contractId, input.id), isNull(rentalsTable.deletedAt)));
 
+      // ⚠️ RECEITA DUPLICADA (corrigido 2026-08-24). Lido ANTES de mexer nos
+      // rentals, e com o MESMO critério do `confirmPayment` (`every(paid)`), de
+      // propósito: enquanto esse critério for falso, o pagamento ainda está por
+      // vir e vai lançar o TOTAL já corrigido — lançar a diferença agora seria
+      // contar o mesmo dinheiro duas vezes. Só depois de pago é que a diferença
+      // vira dinheiro novo (ou estorno) e precisa de lançamento próprio.
+      const contratoJaPago = currentRentals.length > 0
+        && currentRentals.every((r: any) => r.paymentStatus === "paid");
+
       const inputRentalIds = new Set(input.bikes.filter(b => b.rentalId).map(b => b.rentalId!));
 
       // Soft-delete rentals NOT present in input (user removed them)
@@ -4530,7 +4543,12 @@ const contractsRouter = router({
             dailyRate: b.dailyRate ?? null,
             totalAmount: b.totalAmount ?? null,
             paymentType: "presential",
-            paymentStatus: "paid",
+            // Herda a situação do contrato, não "paid" fixo (2026-08-24): num
+            // contrato ainda NÃO pago, a bike nova entrava marcada como paga e
+            // virava receita antes de alguém receber. Em contrato JÁ pago o
+            // "paid" precisa continuar, senão o `every(paid)` do
+            // `confirmPayment` reabre e lança o total inteiro de novo.
+            paymentStatus: contratoJaPago ? "paid" : "pending",
             status: "active",
             source: "manual",
             contractId: input.id,
@@ -4590,16 +4608,21 @@ const contractsRouter = router({
         })
         .where(eq(contracts.id, input.id));
 
-      // Financial adjustment (delta)
+      // Financial adjustment (delta) — SÓ para contrato já pago (ver
+      // `contratoJaPago` acima). Contrato não pago não gera lançamento nenhum
+      // na edição: quem registra a receita é o `confirmPayment`, com o total.
       try {
         const delta = newTotal - oldTotal;
-        if (Math.abs(delta) > 0.001) {
+        if (contratoJaPago && Math.abs(delta) > 0.001) {
           const today = new Date().toISOString().split("T")[0];
           await createRevenue({
             categoryId: 1,
             description: `Ajuste do Contrato #${input.id} (edição)`,
             amount: delta.toFixed(2),
             date: today,
+            // `contractId` no meta: é o que faz o relatório reconhecer a linha
+            // como dinheiro DE CONTRATO e não somá-la como receita extra.
+            meta: { kind: "contract_adjustment", contractId: input.id },
           } as any);
         }
       } catch (err) { console.warn("[contracts.update] Revenue adjustment error:", err); }
@@ -4765,13 +4788,16 @@ const contractsRouter = router({
             description: `Pagamento presencial · Contrato #${input.contractId}`,
             amount: revenueTotal.toFixed(2),
             date: today,
-            meta: linhasValidas.length
-              ? {
-                  kind: "contract_payment",
-                  contractId: input.contractId,
-                  breakdown: linhasValidas.map((l) => ({ method: l.method, amount: l.amount.toFixed(2) })),
-                }
-              : undefined,
+            // `contractId` vai SEMPRE (2026-08-24). Antes o meta inteiro sumia
+            // quando ela confirmava sem informar a forma, e a linha ficava
+            // indistinguível de uma receita extra para o relatório.
+            meta: {
+              kind: "contract_payment",
+              contractId: input.contractId,
+              ...(linhasValidas.length
+                ? { breakdown: linhasValidas.map((l) => ({ method: l.method, amount: l.amount.toFixed(2) })) }
+                : {}),
+            },
           } as any);
         }
       } catch (err) { console.warn("[confirmPayment] Revenue error:", err); }

@@ -456,7 +456,7 @@ function FinancialKpiCards({
           </CardTitle>
         </CardHeader>
         <CardFooter className="flex-col items-start gap-1.5 text-sm">
-          <div className="text-muted-foreground">Contratos com pagamento confirmado</div>
+          <div className="text-muted-foreground">Pagamentos de contrato recebidos no período</div>
         </CardFooter>
       </Card>
 
@@ -474,7 +474,7 @@ function FinancialKpiCards({
           </CardTitle>
         </CardHeader>
         <CardFooter className="flex-col items-start gap-1.5 text-sm">
-          <div className="text-muted-foreground">Lançamentos manuais de receita</div>
+          <div className="text-muted-foreground">Receitas lançadas à mão no período</div>
         </CardFooter>
       </Card>
 

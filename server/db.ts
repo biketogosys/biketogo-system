@@ -923,19 +923,56 @@ export async function deleteRevenue(id: number) {
 }
 
 // ─── Financial Report ────────────────────────────────────────────────────────
-export async function getFinancialReport(startDate: string, endDate: string) {
-  const db = await getDb();
+/**
+ * Reconhece a linha de receita que NASCEU DE CONTRATO (pagamento, ajuste de
+ * edição ou estorno de devolução antecipada), separando-a da receita extra
+ * lançada à mão pela loja.
+ *
+ * Duas vias de propósito: `meta.contractId`, gravado desde 2026-08-24, e a
+ * descrição para o legado sem meta, que sempre contém "Contrato #". Sem a
+ * segunda via, todo lançamento anterior à correção seria lido como receita
+ * extra.
+ */
+function ehReceitaDeContrato() {
+  return sql`(
+    ${revenues.meta}->>'contractId' IS NOT NULL
+    OR ${revenues.description} LIKE '%Contrato #%'
+  )`;
+}
+
+/**
+ * ⚠️ RÉGUA DO FINANCEIRO — mudou em 2026-08-24, leia antes de mexer.
+ *
+ * **Tudo sai da tabela `revenues`, pela data do RECEBIMENTO.** É a mesma fonte
+ * e a mesma data da lista de lançamentos e do CSV do contador, então os cards
+ * batem com a lista linha a linha: "Receita de aluguéis + Receitas extras" é
+ * exatamente a soma do que está na tela.
+ *
+ * O que havia antes, e por que caiu:
+ *
+ * 1. `rentalRevenue` vinha de `rentals` pagos e `extraRevenue` de `revenues`
+ *    inteira. Como o pagamento do contrato é gravado NOS DOIS desde
+ *    2026-07-24, o mesmo dinheiro era contado duas vezes (contrato de R$ 200
+ *    virava R$ 400 de lucro, visto em produção).
+ * 2. A primeira correção tirou a duplicação mas manteve as duas fontes, e aí
+ *    os cards passaram a divergir da lista: os aluguéis eram contados pela data
+ *    de INÍCIO e os lançamentos pela data do PAGAMENTO. A lista somava R$ 1.305
+ *    e o card dizia R$ 740, sem que nenhum dos dois estivesse errado. Foi o
+ *    Matheus quem pegou: "não fica confuso e desorganizado?".
+ *
+ * ⚠️ Consequência aceita: aluguel marcado como pago que nunca gerou lançamento
+ * não é contado. Isso é intencional (o card é o caixa), e o
+ * `scripts/conferir-receitas.mjs` mede quanto existe nessa situação antes de
+ * qualquer deploy.
+ */
+export async function getFinancialReport(startDate: string, endDate: string, dbOverride?: any) {
+  const db = dbOverride ?? (await getDb());
   if (!db) return { rentalRevenue: "0", extraRevenue: "0", totalExpenses: "0" };
-  const [rentalResult, revenueResult, expenseResult] = await Promise.all([
-    db.select({ total: sql<string>`COALESCE(SUM("totalAmount"::numeric), 0)` })
-      .from(rentals)
-      .where(and(
-        eq(rentals.paymentStatus, "paid"),
-        isNull(rentals.deletedAt),
-        gte(rentals.startDate, startDate),
-        lte(rentals.startDate, endDate),
-      )),
-    db.select({ total: sql<string>`COALESCE(SUM("amount"::numeric), 0)` })
+  const [receitaRows, expenseResult] = await Promise.all([
+    db.select({
+      aluguel: sql<string>`COALESCE(SUM(CASE WHEN ${ehReceitaDeContrato()} THEN ${revenues.amount}::numeric ELSE 0 END), 0)`,
+      extra: sql<string>`COALESCE(SUM(CASE WHEN ${ehReceitaDeContrato()} THEN 0 ELSE ${revenues.amount}::numeric END), 0)`,
+    })
       .from(revenues)
       .where(and(gte(revenues.date, startDate), lte(revenues.date, endDate))),
     db.select({ total: sql<string>`COALESCE(SUM("amount"::numeric), 0)` })
@@ -943,10 +980,29 @@ export async function getFinancialReport(startDate: string, endDate: string) {
       .where(and(gte(expenses.date, startDate), lte(expenses.date, endDate))),
   ]);
   return {
-    rentalRevenue: String(rentalResult[0]?.total ?? "0"),
-    extraRevenue: String(revenueResult[0]?.total ?? "0"),
+    rentalRevenue: String(receitaRows[0]?.aluguel ?? "0"),
+    extraRevenue: String(receitaRows[0]?.extra ?? "0"),
     totalExpenses: String(expenseResult[0]?.total ?? "0"),
   };
+}
+
+/**
+ * Movimentação semanal do gráfico do Dashboard, na MESMA régua dos cards (data
+ * do recebimento). ⚠️ Antes daqui somava aluguel por `returnedAt` (data de
+ * DEVOLUÇÃO, uma terceira régua) e, além disso, a tabela de receitas inteira:
+ * o mesmo dinheiro aparecia duas vezes no gráfico, uma como aluguel e outra
+ * como extra.
+ */
+export async function getWeeklyRevenueRows(startDate: string, endDate: string, dbOverride?: any) {
+  const db = dbOverride ?? (await getDb());
+  if (!db) return [];
+  return db.select({
+    date: revenues.date,
+    amount: revenues.amount,
+    deContrato: sql<boolean>`${ehReceitaDeContrato()}`,
+  })
+    .from(revenues)
+    .where(and(gte(revenues.date, startDate), lte(revenues.date, endDate)));
 }
 
 // ─── Rental Stats ────────────────────────────────────────────────────────────

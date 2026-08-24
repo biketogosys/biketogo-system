@@ -79,7 +79,7 @@ export function SectionCards({ data, loading }: SectionCardsProps) {
           <div className="line-clamp-1 flex gap-2 font-medium">
             Aluguéis {fmt(financial.receitaAlugueis)} <TrendingUpIcon className="size-4" />
           </div>
-          <div className="text-muted-foreground">Aluguéis pagos no período</div>
+          <div className="text-muted-foreground">Pagamentos recebidos no período</div>
         </CardFooter>
       </Card>
 
