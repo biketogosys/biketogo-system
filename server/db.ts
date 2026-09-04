@@ -922,6 +922,35 @@ export async function deleteRevenue(id: number) {
   await db.delete(revenues).where(eq(revenues.id, id));
 }
 
+/**
+ * Id da categoria de receita em que entram os lançamentos DE CONTRATO.
+ *
+ * ⚠️ Era `categoryId: 1` **fixo** nos três pontos que gravam receita de
+ * contrato. O número mágico funcionava no dev (onde 1 = "Aluguéis") e falhava
+ * em produção, onde a categoria da loja é a de **id 2** ("Aluguel"): a coluna
+ * não tem FK, então o lançamento gravava apontando para categoria inexistente e
+ * a tela mostrava "—", o CSV do contador saía como "Sem categoria" e o filtro
+ * por categoria não achava nenhum pagamento. Confirmado em produção em
+ * 2026-08-24 pelo `scripts/conferir-receitas.mjs`.
+ *
+ * Resolve por NOME (cobre "Aluguel" e "Aluguéis") e cria a categoria só se a
+ * loja não tiver nenhuma — o id nunca mais entra no código.
+ */
+export async function getCategoriaReceitaAluguelId(dbOverride?: any): Promise<number> {
+  const db = dbOverride ?? (await getDb());
+  if (!db) throw new Error("Database not available");
+  const [achada] = await db.select({ id: revenueCategories.id })
+    .from(revenueCategories)
+    .where(sql`lower(${revenueCategories.name}) LIKE 'alug%'`)
+    .orderBy(revenueCategories.id)
+    .limit(1);
+  if (achada) return achada.id;
+  const [criada] = await db.insert(revenueCategories)
+    .values({ name: "Aluguel" })
+    .returning({ id: revenueCategories.id });
+  return criada.id;
+}
+
 // ─── Financial Report ────────────────────────────────────────────────────────
 /**
  * Reconhece a linha de receita que NASCEU DE CONTRATO (pagamento, ajuste de

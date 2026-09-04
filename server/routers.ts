@@ -82,6 +82,7 @@ import {
   getRevenues,
   createRevenue,
   getWeeklyRevenueRows,
+  getCategoriaReceitaAluguelId,
   updateRevenue,
   deleteRevenue,
   getFinancialReport,
@@ -3285,7 +3286,7 @@ async function recalcEarlyReturn(
   if (pv.alreadyPaid && credito > 0) {
     try {
       await createRevenue({
-        categoryId: 1,
+        categoryId: await getCategoriaReceitaAluguelId(db),
         description: `Estorno de devolução antecipada · Contrato #${pv.contractId ?? "?"} (${pv.removedDays} dia(s) não usados)`,
         amount: (-credito).toFixed(2),
         date: todaySaoPaulo(),
@@ -4616,7 +4617,7 @@ const contractsRouter = router({
         if (contratoJaPago && Math.abs(delta) > 0.001) {
           const today = new Date().toISOString().split("T")[0];
           await createRevenue({
-            categoryId: 1,
+            categoryId: await getCategoriaReceitaAluguelId(db),
             description: `Ajuste do Contrato #${input.id} (edição)`,
             amount: delta.toFixed(2),
             date: today,
@@ -4784,7 +4785,7 @@ const contractsRouter = router({
         const revenueTotal = linhasValidas.length ? linhasValidas.reduce((s, l) => s + l.amount, 0) : totalAmt;
         if (revenueTotal > 0) {
           await createRevenue({
-            categoryId: 1,
+            categoryId: await getCategoriaReceitaAluguelId(db),
             description: `Pagamento presencial · Contrato #${input.contractId}`,
             amount: revenueTotal.toFixed(2),
             date: today,

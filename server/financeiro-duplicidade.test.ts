@@ -375,3 +375,61 @@ describe("D5 · os cards têm que BATER com a lista de lançamentos", () => {
     expect(parseFloat(janeiro.rentalRevenue)).toBe(0);
   });
 });
+
+describe("D6 · categoria do lançamento de contrato", () => {
+  /**
+   * Achado em PRODUÇÃO (2026-08-24, print do Matheus + conferência): o código
+   * gravava `categoryId: 1` fixo, mas a categoria da loja é a de **id 2**
+   * ("Aluguel"). Como a coluna não tem FK, o lançamento entrava apontando para
+   * categoria inexistente: "—" na tela, "Sem categoria" no CSV do contador e
+   * sumia do filtro por categoria.
+   */
+  it("usa a categoria da LOJA, mesmo que o id não seja 1 (cenário da produção)", async () => {
+    // banco como o da produção: a única categoria de receita é a de id 2
+    await alvo.db.delete(schema.revenueCategories);
+    await alvo.db.insert(schema.revenueCategories).values({ id: 2, name: "Aluguel" });
+
+    const ct = await contratoAtivoNaoPago();
+    await comoAdmin().contracts.confirmPayment({
+      contractId: ct.contractId,
+      payments: [{ method: "pix", amount: "200.00" }],
+    });
+
+    const [linha] = await alvo.db.select({ categoryId: schema.revenues.categoryId })
+      .from(schema.revenues);
+    expect(linha.categoryId).toBe(2);
+
+    // e a linha aparece com o NOME da categoria no export do contador
+    const { getFinancialEntries } = await import("./db");
+    const linhas = await getFinancialEntries({ startDate: "2026-08-01", endDate: "2026-08-31" }, alvo.db);
+    expect(linhas.find((l) => l.tipo === "receita")?.categoria).toBe("Aluguel");
+  });
+
+  it("cria a categoria se a loja não tiver nenhuma (em vez de gravar id inválido)", async () => {
+    await alvo.db.delete(schema.revenueCategories);
+
+    const ct = await contratoAtivoNaoPago();
+    await comoAdmin().contracts.confirmPayment({
+      contractId: ct.contractId,
+      payments: [{ method: "cash", amount: "200.00" }],
+    });
+
+    const cats = await alvo.db.select().from(schema.revenueCategories);
+    expect(cats).toHaveLength(1);
+    expect(cats[0].name).toBe("Aluguel");
+
+    const [linha] = await alvo.db.select({ categoryId: schema.revenues.categoryId })
+      .from(schema.revenues);
+    expect(linha.categoryId).toBe(cats[0].id);
+  });
+
+  it("não cria categoria duplicada quando já existe (dois pagamentos seguidos)", async () => {
+    const a = await contratoAtivoNaoPago();
+    const b = await contratoAtivoNaoPago();
+    await comoAdmin().contracts.confirmPayment({ contractId: a.contractId, payments: [{ method: "pix", amount: "200.00" }] });
+    await comoAdmin().contracts.confirmPayment({ contractId: b.contractId, payments: [{ method: "pix", amount: "200.00" }] });
+
+    const cats = await alvo.db.select().from(schema.revenueCategories);
+    expect(cats).toHaveLength(1); // a do seed ("Aluguéis"), reaproveitada
+  });
+});

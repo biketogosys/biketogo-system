@@ -311,10 +311,14 @@ export const revenues = pgTable("revenues", {
   // Detalhamento opcional do lançamento. Para pagamento de contrato dividido em
   // várias formas (Cassiana 2026-07-24): 1 receita com o total + o breakdown por
   // forma aqui, em vez de N linhas soltas no Financeiro. A tela expande pra ver.
+  // ⚠️ `contractId` é o que marca a linha como dinheiro DE CONTRATO, e é por ele
+  // que o relatório separa aluguel de receita extra (2026-08-24). Os três kinds
+  // gravam esse campo; só o pagamento tem `breakdown` (a divisão por forma, que
+  // a tela expande na setinha).
   meta: jsonb("meta").$type<{
-    kind: "contract_payment";
-    contractId: number;
-    breakdown: Array<{ method: string; amount: string }>;
+    kind: "contract_payment" | "contract_adjustment" | "early_return_refund";
+    contractId: number | null;
+    breakdown?: Array<{ method: string; amount: string }>;
   }>(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().notNull(),
