@@ -343,8 +343,16 @@ async function fetchLogoBuffer(logoUrl: string | null): Promise<Buffer | null> {
   return null;
 }
 
-/** Renderiza termos numerados com número dourado */
-function renderTerms(doc: PDFKit.PDFDocument, text: string): void {
+/**
+ * Renderiza termos numerados com número dourado.
+ *
+ * `reservaFinal` = altura do que vem DEPOIS do último parágrafo (o bloco de
+ * assinatura). Serve para o último parágrafo descer junto quando a assinatura
+ * não couber: sem isso ela ia sozinha para uma folha nova, com o resto em
+ * branco. Pedido da Cassiana em 2026-09-05: *"ficou só a assinatura na última
+ * página, tem como ajustar pra ela não ficar sozinha?"*.
+ */
+function renderTerms(doc: PDFKit.PDFDocument, text: string, reservaFinal = 0): void {
   const paragraphs = text.split(/\n{2,}/).map((p) => p.trim()).filter(Boolean);
   const contentBottom = doc.page.height - 44; // igual à margin.bottom do documento
   for (let i = 0; i < paragraphs.length; i++) {
@@ -356,6 +364,17 @@ function renderTerms(doc: PDFKit.PDFDocument, text: string): void {
     // página nova e o texto — desenhado no MESMO `y` salvo, agora obsoleto —
     // pulava pra página seguinte, deixando uma página EM BRANCO no meio.
     if (doc.y + 16 > contentBottom) doc.addPage();
+
+    // Anti-órfã: no ÚLTIMO parágrafo, se ele mais o bloco que vem depois não
+    // couberem juntos, a quebra acontece ANTES dele — assim a folha final
+    // sempre tem texto acompanhando a assinatura.
+    if (i === paragraphs.length - 1 && reservaFinal > 0) {
+      const corpo = clauseMatch ? clauseMatch[2].trim() : para;
+      const largura = clauseMatch ? CW - 16 : CW;
+      const alturaPara = doc.font("Helvetica").fontSize(8.5).heightOfString(corpo, { width: largura });
+      if (doc.y + alturaPara + reservaFinal > contentBottom) doc.addPage();
+    }
+
     const y = doc.y;
     if (clauseMatch) {
       doc.fillColor(GOLD).font("Helvetica-Bold").fontSize(8.5)
@@ -556,13 +575,17 @@ export async function generateContractPdf(
         { k: "sub",    x: 470, w: 85,  t: L.colSubtotal,  a: "right" as const },
       ];
 
+      const cabecalhoBikes = () => {
+        doc.rect(M, y, CW, 18).fill(DARK);
+        doc.fillColor(WHITE).font("Helvetica-Bold").fontSize(7.5);
+        cols.forEach((c) =>
+          doc.text(c.t, c.x + 4, y + 5.5, { width: c.w - 8, align: c.a, lineBreak: false })
+        );
+        y += 18;
+      };
+
       let y = doc.y;
-      doc.rect(M, y, CW, 18).fill(DARK);
-      doc.fillColor(WHITE).font("Helvetica-Bold").fontSize(7.5);
-      cols.forEach((c) =>
-        doc.text(c.t, c.x + 4, y + 5.5, { width: c.w - 8, align: c.a, lineBreak: false })
-      );
-      y += 18;
+      cabecalhoBikes();
 
       const modeloCol = cols.find((c) => c.k === "modelo")!;
       const subCol = cols.find((c) => c.k === "sub")!;
@@ -576,8 +599,10 @@ export async function generateContractPdf(
         const hasDiscount = !isNaN(pct) && pct > 0;
         const rowH = Math.max(16, Math.ceil(Math.max(modelH, 11)) + (hasDiscount ? 9 : 0) + 5);
 
-        // Quebra de página se a linha não couber acima do rodapé
-        if (y + rowH > CONTENT_BOTTOM) { doc.addPage(); y = M; }
+        // Quebra de página se a linha não couber acima do rodapé. O cabeçalho
+        // é redesenhado na folha nova (2026-09-05): tabela partida sem cabeçalho
+        // não se lê no contrato impresso.
+        if (y + rowH > CONTENT_BOTTOM) { doc.addPage(); y = M; cabecalhoBikes(); }
 
         if (i % 2 === 0) doc.rect(M, y, CW, rowH).fill(ALT);
         doc.fillColor(INK).font("Helvetica").fontSize(8);
@@ -629,16 +654,36 @@ export async function generateContractPdf(
         { k: "per",  x: 420, w: 135, t: L.colPeriodo, a: "right" as const },
       ];
 
+      const ROW_H = 16;
+      // Cabeçalho da tabela, redesenhado quando ela continua na página seguinte
+      // (contrato impresso com a lista partida e sem cabeçalho não se lê).
+      const cabecalho = () => {
+        doc.rect(M, y, CW, 18).fill(DARK);
+        doc.fillColor(WHITE).font("Helvetica-Bold").fontSize(7.5);
+        cols.forEach((c) =>
+          doc.text(c.t, c.x + 4, y + 5.5, { width: c.w - 8, align: c.a, lineBreak: false })
+        );
+        y += 18;
+      };
+
       let y = doc.y;
-      doc.rect(M, y, CW, 18).fill(DARK);
-      doc.fillColor(WHITE).font("Helvetica-Bold").fontSize(7.5);
-      cols.forEach((c) =>
-        doc.text(c.t, c.x + 4, y + 5.5, { width: c.w - 8, align: c.a, lineBreak: false })
-      );
-      y += 18;
+      cabecalho();
 
       data.accessories.forEach((a, i) => {
-        if (i % 2 === 0) doc.rect(M, y, CW, 16).fill(ALT);
+        // ⚠️ QUEBRA DE PÁGINA — sem isto o PDF EXPLODE (bug real, 2026-09-05).
+        // A tabela de bikes já tinha esta guarda; esta não. Quando o `y` passava
+        // do fim da folha, o PDFKit abria uma página nova sozinho a CADA
+        // `doc.text` — e são 3 colunas por acessório. O contrato #30 da Cassiana
+        // (3 bikes, 32 acessórios) saiu com **36 páginas** e 1,4 MB: 21 linhas
+        // couberam na primeira folha e as 11 restantes viraram 33 páginas, cada
+        // uma com uma célula solta ("0003 - Capacete", "CAP-020", o período).
+        if (y + ROW_H > CONTENT_BOTTOM) {
+          doc.addPage();
+          y = M;
+          cabecalho();
+        }
+
+        if (i % 2 === 0) doc.rect(M, y, CW, ROW_H).fill(ALT);
         doc.fillColor(INK).font("Helvetica").fontSize(8.5);
         const row: Record<string, string> = {
           item: a.accessoryName || "—",
@@ -648,7 +693,7 @@ export async function generateContractPdf(
         cols.forEach((c) =>
           doc.text(row[c.k], c.x + 4, y + 4.5, { width: c.w - 8, align: c.a, lineBreak: false })
         );
-        y += 16;
+        y += ROW_H;
       });
 
       if (data.accessories.length === 0) {
@@ -661,6 +706,26 @@ export async function generateContractPdf(
     }
 
         // ── 4. VALORES ──────────────────────────────────────────────────────
+    {
+      // ⚠️ O bloco de Valores é desenhado por COORDENADA, então precisa de
+      // espaço reservado ANTES do título (o `ensureSpace` de dentro do
+      // `sectionTitle` só garante 48pt). Com caução, forma de pagamento e um
+      // ajuste de devolução por bike, ele passa disso e cada `doc.text` além da
+      // borda viraria uma página nova — o mesmo mecanismo que estourou a tabela
+      // de acessórios em 2026-09-05.
+      const linhasExtras = (empresaCaucao && empresaCaucao.trim() !== "" ? 1 : 0)
+        + (data.paymentMethod ? 1 : 0);
+      const alturaAjustes = (data.ajustes ?? []).reduce((h, aj) => {
+        const txt = L.ajusteDevolucao
+          .replace("{data}", formatDate(aj.data))
+          .replace("{de}", String(aj.diariasDe))
+          .replace("{para}", String(aj.diariasPara))
+          .replace("{valorDe}", formatCurrency(aj.valorDe))
+          .replace("{valorPara}", formatCurrency(aj.valorPara));
+        return h + doc.font("Helvetica-Oblique").fontSize(8).heightOfString(txt, { width: CW }) + 2;
+      }, 0);
+      ensureSpace(48 + 29 + linhasExtras * 14 + alturaAjustes + 7);
+    }
     sectionTitle(4, L.section4);
     {
       const y = doc.y;
@@ -713,7 +778,9 @@ export async function generateContractPdf(
     doc.fillColor(INK).font("Helvetica").fontSize(8)
       .text(empresaObjetoTexto, M, doc.y, { width: CW });
     doc.moveDown(0.6);
-    renderTerms(doc, empresaTermos);
+    // 64 (bloco de assinatura) + 36 (respiro mínimo): os mesmos números usados
+    // logo abaixo, para a conta bater com o que de fato será desenhado.
+    renderTerms(doc, empresaTermos, 64 + 36);
     // ── ASSINATURAS (ancoradas no RODAPÉ) ─────────────────────────────────────
     // Cassiana 2026-07-27: "a assinatura tem que estar próxima ao rodapé".
     // Antes o bloco seguia o fluxo do texto e parava no meio da página, com um

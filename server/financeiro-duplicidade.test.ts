@@ -79,6 +79,23 @@ function contextoAdmin(): TrpcContext {
 }
 const comoAdmin = () => appRouter.createCaller(contextoAdmin());
 
+/**
+ * ⚠️ DATAS RELATIVAS AO MÊS CORRENTE, nunca fixas.
+ *
+ * Estes testes nasceram com a janela cravada em agosto/2026 e passaram a falhar
+ * sozinhos em 05/09/2026: o `confirmPayment` grava a receita com a data de HOJE,
+ * que saiu da janela consultada. O código estava certo, os testes é que
+ * dependiam do calendário. Tudo aqui passa a girar em torno do mês atual.
+ */
+const HOJE = new Date();
+const iso = (d: Date) => d.toISOString().split("T")[0];
+const DIA = (n: number) => iso(new Date(HOJE.getFullYear(), HOJE.getMonth(), n));
+const MES_INI = iso(new Date(HOJE.getFullYear(), HOJE.getMonth(), 1));
+const MES_FIM = iso(new Date(HOJE.getFullYear(), HOJE.getMonth() + 1, 0));
+/** Uma janela de mês que NÃO é a atual (para provar que o valor não vaza). */
+const OUTRO_MES_INI = iso(new Date(HOJE.getFullYear(), HOJE.getMonth() + 5, 1));
+const OUTRO_MES_FIM = iso(new Date(HOJE.getFullYear(), HOJE.getMonth() + 6, 0));
+
 /** Categoria 1 = "Aluguéis": é a que o código usa fixa ao lançar receita. */
 async function seedCategoria() {
   await alvo.db.insert(schema.revenueCategories).values({ name: "Aluguéis" });
@@ -181,7 +198,7 @@ describe("D2 · totais do Financeiro não podem contar o mesmo dinheiro duas vez
       payments: [{ method: "pix", amount: "200.00" }],
     });
 
-    const rel = await getFinancialReport("2026-08-01", "2026-08-31", alvo.db);
+    const rel = await getFinancialReport(MES_INI, MES_FIM, alvo.db);
     const total = parseFloat(rel.rentalRevenue) + parseFloat(rel.extraRevenue);
 
     expect(total).toBe(200);
@@ -194,10 +211,10 @@ describe("D2 · totais do Financeiro não podem contar o mesmo dinheiro duas vez
       payments: [{ method: "cash", amount: "200.00" }],
     });
     await comoAdmin().financial.createRevenue({
-      categoryId: 1, description: "Venda de camiseta", amount: "80.00", date: "2026-08-15",
+      categoryId: 1, description: "Venda de camiseta", amount: "80.00", date: DIA(15),
     });
 
-    const rel = await getFinancialReport("2026-08-01", "2026-08-31", alvo.db);
+    const rel = await getFinancialReport(MES_INI, MES_FIM, alvo.db);
     expect(parseFloat(rel.rentalRevenue)).toBe(200);
     expect(parseFloat(rel.extraRevenue)).toBe(80);
   });
@@ -213,14 +230,14 @@ describe("D3 · reconhecer o que nasceu de contrato (inclusive o legado)", () =>
   it("linha ANTIGA de contrato (sem meta) não vira receita extra", async () => {
     await alvo.db.insert(schema.revenues).values([
       // legado: exatamente como o sistema gravava antes de 2026-08-24
-      { categoryId: 1, description: "Pagamento presencial · Contrato #9", amount: "500.00", date: "2026-08-05" },
-      { categoryId: 1, description: "Ajuste do Contrato #9 (edição)", amount: "50.00", date: "2026-08-06" },
-      { categoryId: 1, description: "Estorno de devolução antecipada · Contrato #9 (2 dia(s) não usados)", amount: "-120.00", date: "2026-08-07" },
+      { categoryId: 1, description: "Pagamento presencial · Contrato #9", amount: "500.00", date: DIA(5) },
+      { categoryId: 1, description: "Ajuste do Contrato #9 (edição)", amount: "50.00", date: DIA(6) },
+      { categoryId: 1, description: "Estorno de devolução antecipada · Contrato #9 (2 dia(s) não usados)", amount: "-120.00", date: DIA(7) },
       // esta é receita extra de verdade
-      { categoryId: 1, description: "Venda de camiseta", amount: "80.00", date: "2026-08-08" },
+      { categoryId: 1, description: "Venda de camiseta", amount: "80.00", date: DIA(8) },
     ]);
 
-    const rel = await getFinancialReport("2026-08-01", "2026-08-31", alvo.db);
+    const rel = await getFinancialReport(MES_INI, MES_FIM, alvo.db);
     expect(parseFloat(rel.extraRevenue)).toBe(80);
   });
 
@@ -242,11 +259,11 @@ describe("D3 · reconhecer o que nasceu de contrato (inclusive o legado)", () =>
       categoryId: 1,
       description: `Estorno de devolução antecipada · Contrato #${ct.contractId} (1 dia(s) não usados)`,
       amount: "-100.00",
-      date: "2026-08-11",
+      date: DIA(11),
       meta: { kind: "early_return_refund", contractId: ct.contractId },
     });
 
-    const rel = await getFinancialReport("2026-08-01", "2026-08-31", alvo.db);
+    const rel = await getFinancialReport(MES_INI, MES_FIM, alvo.db);
     expect(parseFloat(rel.rentalRevenue)).toBe(100);
     expect(parseFloat(rel.extraRevenue)).toBe(0);
   });
@@ -270,7 +287,7 @@ describe("D4 · bike adicionada a contrato NÃO pago não vira receita antes da 
       ],
     });
 
-    const antes = await getFinancialReport("2026-08-01", "2026-08-31", alvo.db);
+    const antes = await getFinancialReport(MES_INI, MES_FIM, alvo.db);
     expect(parseFloat(antes.rentalRevenue)).toBe(0); // ninguém pagou nada ainda
 
     await comoAdmin().contracts.confirmPayment({
@@ -278,7 +295,7 @@ describe("D4 · bike adicionada a contrato NÃO pago não vira receita antes da 
       payments: [{ method: "cash", amount: "400.00" }],
     });
 
-    const depois = await getFinancialReport("2026-08-01", "2026-08-31", alvo.db);
+    const depois = await getFinancialReport(MES_INI, MES_FIM, alvo.db);
     expect(parseFloat(depois.rentalRevenue)).toBe(400);
     expect(parseFloat(depois.extraRevenue)).toBe(0);
   });
@@ -326,16 +343,16 @@ describe("D5 · os cards têm que BATER com a lista de lançamentos", () => {
       payments: [{ method: "pix", amount: "200.00" }],
     });
     await comoAdmin().financial.createRevenue({
-      categoryId: 1, description: "Venda de camiseta", amount: "80.00", date: "2026-08-15",
+      categoryId: 1, description: "Venda de camiseta", amount: "80.00", date: DIA(15),
     });
     await comoAdmin().financial.createRevenue({
-      categoryId: 1, description: "Taxa de entrega", amount: "25.00", date: "2026-08-16",
+      categoryId: 1, description: "Taxa de entrega", amount: "25.00", date: DIA(16),
     });
 
     const linhas = await receitas();
     const somaDaLista = linhas.reduce((s: number, l: any) => s + parseFloat(l.valor), 0);
 
-    const rel = await getFinancialReport("2026-08-01", "2026-08-31", alvo.db);
+    const rel = await getFinancialReport(MES_INI, MES_FIM, alvo.db);
     const somaDosCards = parseFloat(rel.rentalRevenue) + parseFloat(rel.extraRevenue);
 
     expect(somaDaLista).toBe(305);
@@ -367,12 +384,12 @@ describe("D5 · os cards têm que BATER com a lista de lançamentos", () => {
     });
 
     // recebido hoje (agosto): tem que aparecer em agosto
-    const agora = await getFinancialReport("2026-08-01", "2026-08-31", alvo.db);
+    const agora = await getFinancialReport(MES_INI, MES_FIM, alvo.db);
     expect(parseFloat(agora.rentalRevenue)).toBe(300);
 
     // e NÃO no mês em que a bike sai
-    const janeiro = await getFinancialReport("2027-01-01", "2027-01-31", alvo.db);
-    expect(parseFloat(janeiro.rentalRevenue)).toBe(0);
+    const outroMes = await getFinancialReport(OUTRO_MES_INI, OUTRO_MES_FIM, alvo.db);
+    expect(parseFloat(outroMes.rentalRevenue)).toBe(0);
   });
 });
 
@@ -401,7 +418,7 @@ describe("D6 · categoria do lançamento de contrato", () => {
 
     // e a linha aparece com o NOME da categoria no export do contador
     const { getFinancialEntries } = await import("./db");
-    const linhas = await getFinancialEntries({ startDate: "2026-08-01", endDate: "2026-08-31" }, alvo.db);
+    const linhas = await getFinancialEntries({ startDate: MES_INI, endDate: MES_FIM }, alvo.db);
     expect(linhas.find((l) => l.tipo === "receita")?.categoria).toBe("Aluguel");
   });
 
