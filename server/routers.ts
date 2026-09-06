@@ -2058,10 +2058,13 @@ const settingsRouter = router({
    * motivo quando falha. Existe porque o envio é não-fatal por construção: sem
    * isto, "não chegou" e "nem tentou" são a mesma coisa na tela.
    */
-  sendTestEmail: adminOnlyProcedure.mutation(async () => {
-    const { enviarEmailDeTeste } = await import("./email");
-    return enviarEmailDeTeste();
-  }),
+  sendTestEmail: adminOnlyProcedure
+    // `destino` vazio = manda para a caixa configurada (comportamento de sempre).
+    .input(z.object({ destino: z.string().max(200).optional() }).optional())
+    .mutation(async ({ input }) => {
+      const { enviarEmailDeTeste } = await import("./email");
+      return enviarEmailDeTeste(input?.destino);
+    }),
 
   uploadLogo: adminOnlyProcedure
     // Logo de cabeçalho de e-mail e PDF: 2MB é folga generosa (2026-08-11).

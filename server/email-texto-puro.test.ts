@@ -59,3 +59,37 @@ describe("htmlParaTexto", () => {
     expect(htmlParaTexto(html)).toBe("Um\n\nDois");
   });
 });
+
+/**
+ * DESTINO AVULSO do e-mail de teste (2026-09-06).
+ *
+ * Pedido do Matheus: testar entregabilidade sem CLI e sem terminal, direto no
+ * sistema que já está no ar. Antes o teste ia só para o `notification_email`,
+ * então conferir outra caixa exigia trocar essa configuração e lembrar de
+ * voltar — que é como uma caixa errada fica gravada por semanas.
+ */
+describe("enviarEmailDeTeste — destino", () => {
+  it("recusa endereço sem @, com motivo legível em vez de tentar enviar", async () => {
+    const { enviarEmailDeTeste } = await import("./email");
+    const r = await enviarEmailDeTeste("nao-e-email");
+    expect(r.ok).toBe(false);
+    expect(r.motivo).toMatch(/não é um e-mail válido/i);
+  });
+
+  it("endereço avulso vence a caixa configurada (é o ponto do campo)", async () => {
+    const { enviarEmailDeTeste } = await import("./email");
+    // Sem RESEND_API_KEY o envio falha no transporte, mas o destinatário já foi
+    // escolhido antes disso — que é o que este teste observa.
+    const r = await enviarEmailDeTeste("igymfu@gmail.com");
+    expect(r.motivo).toMatch(/RESEND_API_KEY/i);
+    expect(r.motivo).not.toMatch(/não é um e-mail válido/i);
+  });
+
+  it("espaços em branco contam como vazio (cai na caixa configurada)", async () => {
+    const { enviarEmailDeTeste } = await import("./email");
+    const r = await enviarEmailDeTeste("   ");
+    // Sem banco no teste, a caixa configurada não existe: o motivo tem que ser
+    // esse, e não o de e-mail inválido.
+    expect(r.motivo).toMatch(/Nenhum e-mail configurado|RESEND_API_KEY/i);
+  });
+});

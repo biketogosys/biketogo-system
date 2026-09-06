@@ -115,6 +115,8 @@ export default function Settings() {
 
   // ── Company ──────────────────────────────────────────────────────────────────
   const [companyName, setCompanyName] = useState("");
+  // Destino avulso do e-mail de teste: em branco vale a caixa configurada.
+  const [testeDestino, setTesteDestino] = useState("");
   const [companyLogoUrl, setCompanyLogoUrl] = useState("");
   const [uploadingLogo, setUploadingLogo] = useState(false);
   // Teste de envio: mostra o motivo real da falha na tela (antes o erro só
@@ -585,19 +587,31 @@ export default function Settings() {
             />
             {/* Sem isto, "não chegou" e "nem tentou" ficam iguais na tela: o
                 envio é não-fatal e o erro só existia no log do servidor. */}
-            <div className="flex flex-wrap items-center gap-3">
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={testEmail.isPending}
-                onClick={() => testEmail.mutate()}
-              >
-                <Mail className="w-4 h-4 mr-1.5" />
-                {testEmail.isPending ? "Enviando..." : "Enviar e-mail de teste"}
-              </Button>
-              <span className="text-xs text-muted-foreground">
-                Salve a seção antes de testar.
-              </span>
+            <div className="space-y-2">
+              <div className="flex flex-wrap items-center gap-3">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={testEmail.isPending}
+                  onClick={() => testEmail.mutate({ destino: testeDestino.trim() || undefined })}
+                >
+                  <Mail className="w-4 h-4 mr-1.5" />
+                  {testEmail.isPending ? "Enviando..." : "Enviar e-mail de teste"}
+                </Button>
+                <Input
+                  type="email"
+                  inputMode="email"
+                  autoComplete="off"
+                  placeholder="Enviar para outro e-mail (opcional)"
+                  value={testeDestino}
+                  onChange={(e) => setTesteDestino(e.target.value)}
+                  className="h-9 w-full sm:w-72"
+                />
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Em branco, o teste vai para a caixa configurada acima. Preencher NÃO altera
+                nada no cadastro: serve para conferir se o e-mail está chegando em outra caixa.
+              </p>
             </div>
 
           </div>

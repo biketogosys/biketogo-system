@@ -148,10 +148,18 @@ export async function sendEmail(payload: EmailPayload): Promise<boolean> {
  * Envio de teste para a caixa configurada em Configurações. Devolve o motivo
  * quando falha, para a tela mostrar em vez de o erro morrer no log.
  */
-export async function enviarEmailDeTeste(): Promise<ResultadoEnvio & { destinatario?: string }> {
-  const to = (await getSetting("notification_email")) || (await getSetting("company_email"));
+export async function enviarEmailDeTeste(destino?: string | null): Promise<ResultadoEnvio & { destinatario?: string }> {
+  // Endereço avulso (2026-09-06): testar entregabilidade exigia trocar o
+  // `notification_email` e lembrar de voltar — que é o tipo de configuração que
+  // fica trocada por engano. Com o campo, nada no cadastro é alterado, e dá
+  // para mandar para o mail-tester ou para a caixa de um cliente que reclamou.
+  const avulso = (destino ?? "").trim();
+  const to = avulso || (await getSetting("notification_email")) || (await getSetting("company_email"));
   if (!to || !to.trim()) {
     return { ok: false, motivo: "Nenhum e-mail configurado no campo acima. Preencha e salve antes de testar." };
+  }
+  if (!to.includes("@")) {
+    return { ok: false, motivo: `"${to}" não é um e-mail válido.` };
   }
   const [empresa, replyTo] = await Promise.all([
     carregarEmpresa().catch(() => EMPRESA_VAZIA),
