@@ -678,6 +678,15 @@ export function NewContractModal({
   const createMutation = trpc.contracts.createManual.useMutation({
     onSuccess: (res) => {
       toast.success(`Contrato #${res.id} criado com sucesso!`);
+      // ⚠️ O aviso de reserva pode NÃO ter saído (cliente sem e-mail no
+      // cadastro, Resend fora do ar). Antes isso era silencioso e ela só
+      // descobria pelo cliente, dias depois. O motivo vem pronto do servidor.
+      if (res.avisoEmail) {
+        toast.warning("E-mail de reserva não enviado", {
+          description: res.avisoEmail,
+          duration: 12000,
+        });
+      }
       utils.contracts.list.invalidate();
       handleReset();
       onClose();

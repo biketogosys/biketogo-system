@@ -772,12 +772,12 @@ export async function enviarEmailDeContrato(
 }
 
 /**
- * E-mail de reserva, na criação do contrato. Silencioso quando o cliente não
- * tem e-mail no cadastro (comum no cadastro manual feito na loja).
+ * ⚠️ O wrapper booleano da RESERVA foi removido em 2026-09-06. Ele existia só
+ * para o disparo automático do `createManual` e **engolia o motivo da falha**:
+ * cliente sem e-mail no cadastro gerava contrato sem aviso de reserva e sem
+ * ninguém saber. O `createManual` passou a chamar `enviarEmailDeContrato`
+ * direto e devolve o motivo para a tela. Não recriar este atalho.
  */
-export async function sendReservationEmail(db: any, contractId: number, token: string): Promise<boolean> {
-  return (await enviarEmailDeContrato(db, contractId, "reserva", token)).ok;
-}
 
 /**
  * E-mail de recibo, no encerramento.

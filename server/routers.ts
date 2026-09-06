@@ -103,7 +103,7 @@ import {
   marcarAtualizacoesLidas,
 } from "./updates";
 import { escapeHtml, sendNewLeadEmail, sendOwnerEmail, sendWelcomeEmail } from "./email";
-import { enviarEmailDeContrato, sendReceiptEmail, sendReservationEmail } from "./email-contract";
+import { enviarEmailDeContrato, sendReceiptEmail } from "./email-contract";
 import { carregarAjustesDevolucao } from "./contract-adjustments";
 import { COOKIE_NAME } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
@@ -4280,7 +4280,17 @@ const contractsRouter = router({
       // (pedido da Cassiana — teve cliente que cancelou por não aceitar os
       // termos, e ela quer que ele leia antes). Não-fatal: contrato criado é
       // contrato criado, mesmo com o Resend fora do ar.
-      await sendReservationEmail(db, contract.id, signContractToken(contract.id));
+      //
+      // ⚠️ O MOTIVO da falha vai para a tela (2026-09-06). Antes o disparo usava
+      // o wrapper booleano e jogava o motivo fora: cliente cadastrado sem
+      // e-mail (comum no cadastro feito na loja) gerava contrato SEM aviso de
+      // reserva e **sem ninguém saber**. Foi assim com o contrato do Daniel:
+      // ela só descobriu dias depois, pelo cliente, e a apuração precisou de
+      // três pessoas. O contrato continua sendo criado; o que muda é ela ficar
+      // sabendo na hora.
+      const envioReserva = await enviarEmailDeContrato(
+        db, contract.id, "reserva", signContractToken(contract.id),
+      );
 
       await createAuditLog({
         adminId: (ctx as any).adminUser?.id ?? null,
@@ -4297,7 +4307,12 @@ const contractsRouter = router({
         },
       });
 
-      return { id: contract.id };
+      return {
+        id: contract.id,
+        // `null` = e-mail saiu. Com texto, a tela avisa o que não foi enviado e
+        // por quê (a frase vem do servidor, já escrita para humano).
+        avisoEmail: envioReserva.ok ? null : (envioReserva.motivo ?? "O aviso de reserva não foi enviado."),
+      };
     }),
 
   // Update contract: only allowed if status is "pendente"

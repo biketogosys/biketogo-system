@@ -32,6 +32,50 @@ export type EmailPayload = {
 export type ResultadoEnvio = { ok: boolean; motivo?: string };
 
 /**
+ * Versão em TEXTO PURO do e-mail, derivada do HTML.
+ *
+ * ⚠️ Por que existe (2026-09-06): a mensagem saía **só como HTML**, e e-mail
+ * sem parte `text/plain` é um sinal de spam clássico — está no checklist de
+ * Gmail, Outlook e de qualquer ferramenta de entregabilidade. Foi o único
+ * gatilho REAL que sobrou dentro do nosso controle depois de o SPF, o DKIM e o
+ * DMARC serem auditados (todos certos) e de o `APP_URL` passar a apontar para o
+ * domínio da loja.
+ *
+ * Não é conversão perfeita de HTML para texto, e não precisa ser: o que os
+ * filtros querem é uma alternativa legível com o MESMO conteúdo. Links viram
+ * "texto: url" para o endereço não sumir de quem lê no modo texto.
+ */
+export function htmlParaTexto(html: string): string {
+  return html
+    // o que não é conteúdo
+    .replace(/<style[\s\S]*?<\/style>/gi, "")
+    .replace(/<script[\s\S]*?<\/script>/gi, "")
+    // link vira "rótulo: endereço" (só quando o rótulo não é o próprio endereço)
+    .replace(/<a[^>]+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi, (_m, url, texto) => {
+      const rotulo = String(texto).replace(/<[^>]+>/g, "").trim();
+      return !rotulo || rotulo === url ? String(url) : `${rotulo}: ${url}`;
+    })
+    // quebras estruturais viram quebras de linha
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/(p|div|tr|h1|h2|h3|h4|li|table)>/gi, "\n")
+    .replace(/<\/td>/gi, " ")
+    .replace(/<[^>]+>/g, "")
+    // entidades que o layout usa
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    // arruma o espaçamento: no máximo uma linha em branco entre blocos
+    .split("\n")
+    .map((l) => l.replace(/[ \t]+/g, " ").trim())
+    .join("\n")
+    .replace(/\n{3,}/g, "\n" + "\n")
+    .trim();
+}
+
+/**
  * Para onde vai a resposta do cliente: o e-mail que a Cassiana lê de verdade,
  * configurado em Configurações → "E-mail que recebe os avisos da loja"
  * (`notification_email`), com o `company_email` como reserva.
@@ -74,6 +118,10 @@ export async function sendEmailDetalhado({ to, subject, html, replyTo }: EmailPa
         to: [to],
         subject,
         html,
+        // Parte TEXTO PURO junto do HTML (2026-09-06). Sem ela a mensagem é
+        // HTML-only, que é sinal de spam para Gmail, Outlook e Hotmail — e foi
+        // com Gmail e Hotmail que os clientes não receberam.
+        text: htmlParaTexto(html),
         // `reply_to` é o nome do campo na API do Resend.
         ...(replyTo ? { reply_to: replyTo } : {}),
       }),
