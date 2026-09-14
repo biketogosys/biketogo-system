@@ -14,9 +14,8 @@ import { NavSecondary } from "@/components/sidebar/NavSecondary";
 import { NavUser } from "@/components/sidebar/NavUser";
 import { NewContractModal } from "@/components/NewContractModal";
 import { Link } from "wouter";
+import { LOGO_MARCA } from "@/lib/marca";
 
-const LOGO_URL =
-  "https://d2xsxph8kpxj0f.cloudfront.net/310419663031602743/9oQjN6PX9fNMedgfErUfQE/biketogo-logo_71a6645b.png";
 
 export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
   const [newContractOpen, setNewContractOpen] = React.useState(false);
@@ -35,7 +34,7 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
               >
                 <Link href="/">
                   <img
-                    src={LOGO_URL}
+                    src={LOGO_MARCA}
                     alt="Bike To Go"
                     className="size-7 object-contain rounded-md shrink-0"
                   />

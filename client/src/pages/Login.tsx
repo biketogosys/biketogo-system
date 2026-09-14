@@ -5,7 +5,7 @@ import { Loader2, Bike, Mail, Lock, Eye, EyeOff } from "lucide-react";
 import { toast } from "sonner";
 import { friendlyError } from "@/lib/utils";
 
-const LOGO_URL = "https://d2xsxph8kpxj0f.cloudfront.net/310419663031602743/9oQjN6PX9fNMedgfErUfQE/biketogo-logo_71a6645b.png";
+import { LOGO_MARCA } from "@/lib/marca";
 
 export default function Login() {
   const [, setLocation] = useLocation();
@@ -66,7 +66,7 @@ export default function Login() {
           <div className="px-8 pt-10 pb-6 text-center">
             <div className="flex justify-center mb-6">
               <img
-                src={LOGO_URL}
+                src={LOGO_MARCA}
                 alt="Bike To Go Floripa"
                 className="h-16 w-auto object-contain"
               />
