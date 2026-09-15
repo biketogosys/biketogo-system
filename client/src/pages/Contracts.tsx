@@ -118,6 +118,20 @@ const rentalStatusLabels: Record<string, string> = {
 };
 
 // ─── Status Badge ─────────────────────────────────────────────────────────────
+/**
+ * Nº da unidade física da bike ("RD-BSC-253"), o mesmo que aparece no Novo
+ * Contrato. Pedido da Cassiana (2026-09-14): *"da pra colocar o nº da bike ali?
+ * junto do nome dela"*.
+ *
+ * ⚠️ NÃO usar `bikeSerialNumber`: é o `bikes.serialNumber`, inerte desde
+ * 2026-07-24 (auto-preenchido e nunca exibido). Era ele que aparecia na coluna
+ * "Nº Série" com textos como "Road Sport - Trek".
+ */
+function numeroDaBike(r: { bikeUnitNumeros?: string[] | null }): string | null {
+  const nums = (r.bikeUnitNumeros ?? []).filter(Boolean);
+  return nums.length ? `Nº ${nums.join(", ")}` : null;
+}
+
 function ContractStatusBadge({ status }: { status: ContractStatus }) {
   const cfg = contractStatusConfig[status] ?? contractStatusConfig.ativo;
   return (
@@ -237,7 +251,7 @@ function CloseContractDialog({
                         {rental.bikeBrand} {rental.bikeModel}
                       </p>
                       <p className="text-xs text-muted-foreground">
-                        {rental.bikeSerialNumber} · {rental.startDate} → {rental.endDate ?? "—"}
+                        {numeroDaBike(rental) ? `${numeroDaBike(rental)} · ` : ""}{rental.startDate} → {rental.endDate ?? "—"}
                       </p>
                     </div>
                     <span
@@ -1025,7 +1039,6 @@ function ContractDetail({
             <TableHeader>
               <TableRow>
                 <TableHead>Bike</TableHead>
-                <TableHead>Nº Série</TableHead>
                 <TableHead>Período</TableHead>
                 <TableHead>Valor</TableHead>
                 <TableHead>Status</TableHead>
@@ -1038,8 +1051,12 @@ function ContractDetail({
                 <TableRow key={r.id}>
                   <TableCell className="font-medium">
                     {r.bikeBrand} {r.bikeModel}
+                    {numeroDaBike(r) && (
+                      <span className="ml-1.5 font-normal text-xs text-muted-foreground whitespace-nowrap">
+                        · {numeroDaBike(r)}
+                      </span>
+                    )}
                   </TableCell>
-                  <TableCell className="text-muted-foreground text-xs">{r.bikeSerialNumber}</TableCell>
                   <TableCell className="text-xs">
                     {r.startDate} → {r.endDate ?? "—"}
                   </TableCell>
@@ -1088,7 +1105,7 @@ function ContractDetail({
               ))}
               {(!data.rentals || data.rentals.length === 0) && (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center text-muted-foreground py-6">
+                  <TableCell colSpan={6} className="text-center text-muted-foreground py-6">
                     Nenhuma bike vinculada.
                   </TableCell>
                 </TableRow>

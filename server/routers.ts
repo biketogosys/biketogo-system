@@ -1824,6 +1824,78 @@ const accessoriesRouter = router({
         .where(eq(accessories.id, input.accessoryId));
       return { success: true, removedCount: ids.length };
     }),
+
+  /**
+   * Renomeia uma VARIANTE inteira de um acessório (2026-09-14).
+   *
+   * Pedido da Cassiana: *"esse nome não consigo alterar? eu vi essa semana que é
+   * 120cm, não 150cm"*. Não havia caminho: a variante só era editável unidade a
+   * unidade, e só nas que estavam em manutenção, perdidas ou roubadas.
+   *
+   * ⚠️ Por que renomear é SEGURO e excluir não: o texto da variante mora em UM
+   * lugar só, `accessory_units.variante`. Contratos, PDF, e-mail e a página do
+   * cliente apontam para a unidade pelo `unitId` e leem o nome ao vivo — então o
+   * nome novo aparece em tudo, inclusive nos contratos antigos (que é o certo:
+   * eram 120cm desde sempre, o cadastro estava errado). Excluir, ao contrário, é
+   * `DELETE` definitivo e deixa esses `unitId` apontando para o nada.
+   *
+   * Se já existir outra variante com o nome de destino, as unidades seriam
+   * JUNTADAS num grupo só — e separar depois não tem caminho na tela. Por isso
+   * exige `juntar: true` explícito, confirmado por ela.
+   */
+  renameVariante: adminAuthProcedure
+    .input(z.object({
+      accessoryId: z.number(),
+      /** `null` = o grupo "Padrão" (unidades sem variante). */
+      de: z.string().nullable(),
+      para: z.string().max(100),
+      juntar: z.boolean().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const { accessoryUnits } = await import("../drizzle/schema");
+      const { eq, and, isNull, ne, or, sql: sqlR } = await import("drizzle-orm");
+      const db = await (await import("./db")).getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+
+      const para = input.para.trim();
+      const de = input.de?.trim() || null;
+      if (!para) throw new TRPCError({ code: "BAD_REQUEST", message: "Digite o novo nome da variante." });
+      if (para === de) return { success: true, renomeadas: 0 };
+
+      const doGrupo = de == null ? isNull(accessoryUnits.variante) : eq(accessoryUnits.variante, de);
+      const unidades = await db.select({ id: accessoryUnits.id }).from(accessoryUnits)
+        .where(and(eq(accessoryUnits.accessoryId, input.accessoryId), doGrupo));
+      if (unidades.length === 0) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Essa variante não existe mais neste acessório. Atualize a tela." });
+      }
+
+      // Destino já em uso por OUTRO grupo? Só junta com confirmação explícita.
+      const [colide] = await db.select({ n: sqlR<number>`count(*)` }).from(accessoryUnits)
+        .where(and(
+          eq(accessoryUnits.accessoryId, input.accessoryId),
+          eq(accessoryUnits.variante, para),
+          de == null ? sqlR`true` : or(isNull(accessoryUnits.variante), ne(accessoryUnits.variante, de)),
+        ));
+      if (Number(colide?.n ?? 0) > 0 && !input.juntar) {
+        throw new TRPCError({
+          code: "CONFLICT",
+          message: `Já existe a variante "${para}" neste acessório. Confirme para juntar as unidades nela.`,
+        });
+      }
+
+      await db.update(accessoryUnits).set({ variante: para })
+        .where(and(eq(accessoryUnits.accessoryId, input.accessoryId), doGrupo));
+
+      await createAuditLog({
+        adminId: (ctx as any).adminUser?.id ?? null,
+        acao: "renomeou_variante_acessorio",
+        tabela: "accessories",
+        registroId: input.accessoryId,
+        dadosAntes: { variante: de },
+        dadosDepois: { variante: para, unidades: unidades.length, juntou: Number(colide?.n ?? 0) > 0 },
+      });
+      return { success: true, renomeadas: unidades.length };
+    }),
 });
 
 // ─── Financial router ────────────────────────────────────────────────────────
@@ -2781,7 +2853,7 @@ const dashboardRouter = router({
   // Ação rápida do painel de devoluções: marcar 1 aluguel como devolvido.
   // Devolução "sem drama" (condição ok) — bike danificada continua indo pelo
   // fluxo detalhado de encerramento do contrato. Espelha o contract-close:
-  // returned + libera unidade + recalcula o status do contrato pai.
+  // returned + recalcula o status do contrato pai.
   markReturned: adminAuthProcedure
     .input(z.object({
       rentalId: z.number(),
@@ -2811,8 +2883,15 @@ const dashboardRouter = router({
         returnedAt: new Date(),
         returnCondition: "ok",
       } as any);
+      // ⚠️ NÃO apagar o vínculo com a unidade física aqui (corrigido 2026-09-14).
+      // Esta era a ÚNICA devolução que chamava `releaseBikeUnits`: o "Devolver"
+      // do contrato e o "Encerrar" nunca apagaram. Liberar não precisa de nada —
+      // toda leitura de ocupação filtra `status IN ('pending','active','overdue')`,
+      // então aluguel `returned` já sai do overlap. O que o delete fazia de fato
+      // era destruir o HISTÓRICO: a bike devolvida pela Agenda perdia o nº da
+      // unidade no detalhe do contrato, no PDF regerado, no recibo e na página do
+      // cliente. Apareceu quando a Cassiana pediu o nº da bike no contrato.
       const db = await getDb();
-      if (db) await releaseBikeUnits(db, input.rentalId);
       if ((rental as any).contractId) await recalcContractStatus((rental as any).contractId);
       // Valor mudou ⇒ o PDF guardado está desatualizado. Regera com o valor novo.
       if (db && recalc?.contractId) {

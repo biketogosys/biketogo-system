@@ -26,6 +26,7 @@ import { toast } from "sonner";
 import { friendlyError } from "@/lib/utils";
 import {
   Plus,
+  Pencil,
   Search,
   Package,
   Edit,
@@ -139,6 +140,13 @@ function AccessoryUnitsPanel({ accessoryId, onClose }: { accessoryId: number; on
   const [manutKey, setManutKey] = useState<string | null>(null);
   const [manutQty, setManutQty] = useState(1);
   const [manutObs, setManutObs] = useState("");
+  // Renomear variante (2026-09-14): "esse nome não consigo alterar? é 120cm,
+  // não 150cm". `conflito` guarda a mensagem quando o nome já existe em outro
+  // grupo: a confirmação de JUNTAR fica dentro deste painel, porque abrir um
+  // segundo Dialog por cima trava o Radix (regra 4.1.1 do CLAUDE.md).
+  const [renomeandoKey, setRenomeandoKey] = useState<string | null>(null);
+  const [novoNome, setNovoNome] = useState("");
+  const [conflito, setConflito] = useState<string | null>(null);
 
   const invalidate = () => {
     utils.accessories.getUnits.invalidate();
@@ -159,6 +167,35 @@ function AccessoryUnitsPanel({ accessoryId, onClose }: { accessoryId: number; on
     onSuccess: () => { invalidate(); toast.success("Unidade removida."); },
     onError: (e) => toast.error(friendlyError(e)),
   });
+
+  const renameMut = trpc.accessories.renameVariante.useMutation();
+
+  function abrirRenomear(key: string) {
+    setRenomeandoKey(key);
+    setNovoNome(key === "__null__" ? "" : key);
+    setConflito(null);
+  }
+  function fecharRenomear() {
+    setRenomeandoKey(null);
+    setNovoNome("");
+    setConflito(null);
+  }
+  async function salvarNome(key: string, juntar = false) {
+    try {
+      const r = await renameMut.mutateAsync({
+        accessoryId,
+        de: key === "__null__" ? null : key,
+        para: novoNome,
+        juntar,
+      });
+      invalidate();
+      fecharRenomear();
+      if (r.renomeadas > 0) toast.success(`Nome alterado em ${r.renomeadas} unidade(s).`);
+    } catch (e: any) {
+      if (e?.data?.code === "CONFLICT") { setConflito(e.message); return; }
+      toast.error(friendlyError(e, "Não foi possível alterar o nome."));
+    }
+  }
 
   const deleteMut = trpc.accessories.deleteUnit.useMutation({
     onSuccess: () => { invalidate(); setDeleteUnitId(null); toast.success("Unidade excluída."); },
@@ -301,6 +338,16 @@ function AccessoryUnitsPanel({ accessoryId, onClose }: { accessoryId: number; on
                         ))}
                       </span>
                     </button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground shrink-0"
+                      onClick={() => (renomeandoKey === key ? fecharRenomear() : abrirRenomear(key))}
+                      title="Alterar o nome da variante"
+                      aria-label={`Alterar o nome da variante ${varianteName}`}
+                    >
+                      <Pencil className="w-3.5 h-3.5" />
+                    </Button>
                     {/* Stepper */}
                     <div className="flex items-center gap-1 ml-auto">
                       <Button
@@ -355,6 +402,62 @@ function AccessoryUnitsPanel({ accessoryId, onClose }: { accessoryId: number; on
                       </Button>
                     </div>
                   </div>
+
+                  {/* Renomear variante */}
+                  {renomeandoKey === key && (
+                    <div className="border-t border-border bg-muted/30 p-3 space-y-2">
+                      <Label className="text-xs" htmlFor={`renomear-${key}`}>Nome da variante</Label>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Input
+                          id={`renomear-${key}`}
+                          autoFocus
+                          value={novoNome}
+                          maxLength={100}
+                          onChange={(e) => { setNovoNome(e.target.value); setConflito(null); }}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") { e.preventDefault(); void salvarNome(key); }
+                            if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); fecharRenomear(); }
+                          }}
+                          placeholder={key === "__null__" ? "Ex.: Com chave" : "Ex.: Btwin - 120cm"}
+                          className="h-8 text-sm flex-1 min-w-[10rem]"
+                        />
+                        <Button
+                          size="sm"
+                          className="h-8"
+                          disabled={renameMut.isPending || !novoNome.trim() || !!conflito}
+                          onClick={() => void salvarNome(key)}
+                        >
+                          {renameMut.isPending ? "Salvando..." : "Salvar"}
+                        </Button>
+                        <Button size="sm" variant="ghost" className="h-8" onClick={fecharRenomear}>Cancelar</Button>
+                      </div>
+                      {conflito ? (
+                        <div className="rounded-md border border-amber-500/30 bg-amber-500/10 p-2.5 space-y-2">
+                          <p className="text-xs text-amber-700 dark:text-amber-300">
+                            {conflito} As {total} unidade(s) de "{varianteName}" passam a fazer parte dela, e depois não dá para separar pela tela.
+                          </p>
+                          <div className="flex gap-2">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-7 text-xs border-amber-500/40"
+                              disabled={renameMut.isPending}
+                              onClick={() => void salvarNome(key, true)}
+                            >
+                              Juntar
+                            </Button>
+                            <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setConflito(null)}>
+                              Escolher outro nome
+                            </Button>
+                          </div>
+                        </div>
+                      ) : (
+                        <p className="text-xs text-muted-foreground">
+                          Vale para as {total} unidade(s) deste grupo e aparece também nos contratos que já usam essas unidades.
+                        </p>
+                      )}
+                    </div>
+                  )}
 
                   {/* Manutenção mini-form */}
                   {manutKey === key ? (

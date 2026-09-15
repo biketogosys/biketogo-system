@@ -8,6 +8,16 @@ const log = (acao: string, dadosDepois?: unknown, registroId: number | null = 7)
 });
 
 describe("descreverAuditoria", () => {
+  it("variante de acessório renomeada: nome antigo, novo e quantas unidades (2026-09-14)", () => {
+    const item: AuditLogItem = {
+      ...log("renomeou_variante_acessorio", { variante: "Btwin - 120cm", unidades: 9, juntou: false }),
+      tabela: "accessories",
+      dadosAntes: { variante: "Btwin - 150cm" },
+    } as AuditLogItem;
+    expect(descreverAuditoria(item)).toBe('Variante "Btwin - 150cm" renomeada para "Btwin - 120cm" (9 unidades).');
+    expect(rotuloAcao("renomeou_variante_acessorio")).toBe("Renomeou variante");
+  });
+
   it("contrato criado: conta bikes, acessórios e o desconto com o motivo", () => {
     expect(descreverAuditoria(log("criou_contrato_manual", {
       clientId: 1, bikes: 2, accessories: 3,
