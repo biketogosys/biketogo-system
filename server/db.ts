@@ -1,4 +1,4 @@
-import { and, between, count, desc, eq, gte, ilike, inArray, isNull, lte, ne, notInArray, or, sql } from "drizzle-orm";
+import { and, between, count, desc, eq, gte, ilike, inArray, isNull, lt, lte, ne, notInArray, or, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import {
@@ -48,6 +48,7 @@ import {
   users,
 } from "../drizzle/schema";
 import { ENV } from "./_core/env";
+import { horaSaoPaulo, todaySaoPaulo } from "./overdue";
 
 let _db: ReturnType<typeof drizzle> | null = null;
 
@@ -479,9 +480,23 @@ export async function deleteBike(id: number) {
   await db.delete(bikes).where(eq(bikes.id, id));
 }
 
-export async function getBikeStats() {
+/**
+ * Card "Aluguéis ativos" do Dashboard: bikes EM USO AGORA.
+ *
+ * ⚠️ Conta a partir do HORÁRIO combinado da entrega, não do dia (2026-09-17).
+ * Relato da dona às 09:57: card com 1 e "não tem nenhuma bike na rua". Era o
+ * contrato #42, confirmado, com entrega hoje às 11:00: pelo dia ele já contava.
+ * Aluguel sem hora (anterior à migração 0022) segue contando desde a meia-noite.
+ *
+ * A ponta final não olha hora de propósito: a bike só volta quando alguém marca
+ * a devolução, e a busca atrasada continua na rua.
+ *
+ * "Hoje" é o de São Paulo: o servidor roda em UTC e, das 21h à meia-noite, o
+ * dia UTC já é o seguinte.
+ */
+export async function getBikeStats(dbOverride?: any, now: Date = new Date()) {
   // LOTE-2: count by bike_units, not by bikes.status (which is now inert)
-  const db = await getDb();
+  const db = dbOverride ?? (await getDb());
   if (!db) return { total: 0, available: 0, rented: 0, maintenance: 0 };
 
   // total = units not lost/stolen
@@ -498,8 +513,9 @@ export async function getBikeStats() {
     .where(eq(bikeUnits.status, "manutencao"));
   const maintenance = maintRow?.value ?? 0;
 
-  // rented = sum of rentals.quantity overlapping today (same logic as getSizeBreakdown)
-  const today = new Date().toISOString().split("T")[0];
+  // rented = sum of rentals.quantity already started and not yet returned
+  const today = todaySaoPaulo(now);
+  const agora = horaSaoPaulo(now);
   const rentedRows = await db
     .select({ q: rentals.quantity })
     .from(rentals)
@@ -508,12 +524,18 @@ export async function getBikeStats() {
         inArray(rentals.status, ["pending", "active", "overdue"]),
         isNull(rentals.deletedAt),
         // all rentals rows are bike rentals (accessories live in rental_accessories)
-        lte(rentals.startDate, today),
+        or(
+          lt(rentals.startDate, today),
+          and(
+            eq(rentals.startDate, today),
+            or(isNull(rentals.startTime), lte(rentals.startTime, agora)),
+          ),
+        )!,
         // overdue: endDate já passou mas a bike NÃO voltou — continua em uso
         or(isNull(rentals.endDate), gte(rentals.endDate, today), eq(rentals.status, "overdue"))!,
       )
     );
-  const rented = rentedRows.reduce((s, r) => s + (r.q ?? 1), 0);
+  const rented = rentedRows.reduce((s: number, r: { q: number | null }) => s + (r.q ?? 1), 0);
 
   const available = Math.max(0, total - rented - maintenance);
   return { total, available, rented, maintenance };

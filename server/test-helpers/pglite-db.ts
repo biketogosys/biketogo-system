@@ -79,6 +79,8 @@ export async function makeRental(
     quantity: number;
     startDate: string;
     endDate: string | null;
+    startTime?: string | null;
+    endTime?: string | null;
     status?: string;
     contractId?: number | null;
     deletedAt?: Date | null;
@@ -93,6 +95,8 @@ export async function makeRental(
       quantity: r.quantity,
       startDate: r.startDate,
       endDate: r.endDate,
+      startTime: r.startTime ?? null,
+      endTime: r.endTime ?? null,
       status: r.status ?? "active",
       contractId: r.contractId ?? null,
       deletedAt: r.deletedAt ?? null,

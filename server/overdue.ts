@@ -16,6 +16,19 @@ export function todaySaoPaulo(now: Date = new Date()): string {
 }
 
 /**
+ * Hora atual ("HH:MM", 00:00 a 23:59) no fuso America/Sao_Paulo. Mesmo formato
+ * de `rentals.startTime/endTime`, então compara como texto.
+ */
+export function horaSaoPaulo(now: Date = new Date()): string {
+  return new Intl.DateTimeFormat("en-GB", {
+    timeZone: "America/Sao_Paulo",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).format(now);
+}
+
+/**
  * Marca como "overdue" todo aluguel ATIVO cuja endDate já passou em SP
  * (endDate < hoje-SP). O aluguel só vence no dia SEGUINTE ao endDate: às
  * 23h59-SP do endDate ainda está ativo; às 00h01-SP do dia seguinte vira
