@@ -6,6 +6,7 @@
 // Escopo deliberado: até 999 bilhões, que é ordem de grandeza infinitamente
 // acima de um aluguel de bicicleta. Acima disso devolve string vazia em vez de
 // mentir, e quem chama decide o que fazer.
+import type { Idioma } from "./idioma";
 
 const UNIDADES = [
   "zero", "um", "dois", "três", "quatro", "cinco", "seis", "sete", "oito", "nove",
@@ -71,18 +72,153 @@ function inteiroPorExtenso(n: number): string {
   return ligaComE ? `${inicio.join(", ")} e ${ultima}` : `${inicio.join(", ")}, ${ultima}`;
 }
 
+// ─── Inglês e espanhol (2026-10-15) ──────────────────────────────────────────
+// O recibo do cliente estrangeiro sai no idioma dele, e a frase de quitação
+// leva o valor por extenso como a de português. A moeda continua sendo o REAL:
+// "two hundred twenty reais", "doscientos veinte reales".
+//
+// Escopo menor que o do português, de propósito: até 999.999.999. Acima disso
+// devolve "" (o recibo omite o trecho), em vez de inventar a escala longa do
+// espanhol ("mil millones") para um valor que um aluguel nunca terá.
+
+const EN_UNIDADES = [
+  "zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine",
+  "ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen",
+  "seventeen", "eighteen", "nineteen",
+];
+const EN_DEZENAS = [
+  "", "", "twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety",
+];
+
+function en999(n: number): string {
+  const partes: string[] = [];
+  const c = Math.floor(n / 100);
+  const resto = n % 100;
+  if (c > 0) partes.push(`${EN_UNIDADES[c]} hundred`);
+  if (resto > 0) {
+    if (resto < 20) partes.push(EN_UNIDADES[resto]);
+    else {
+      const u = resto % 10;
+      partes.push(u > 0 ? `${EN_DEZENAS[Math.floor(resto / 10)]}-${EN_UNIDADES[u]}` : EN_DEZENAS[Math.floor(resto / 10)]);
+    }
+  }
+  return partes.join(" ");
+}
+
+function enInteiro(n: number): string {
+  if (n === 0) return EN_UNIDADES[0];
+  const partes: string[] = [];
+  let resto = n;
+  for (const [divisor, nome] of [[1_000_000, "million"], [1_000, "thousand"]] as const) {
+    const qtd = Math.floor(resto / divisor);
+    if (qtd > 0) {
+      partes.push(`${en999(qtd)} ${nome}`);
+      resto %= divisor;
+    }
+  }
+  if (resto > 0) partes.push(en999(resto));
+  return partes.join(" ");
+}
+
+const ES_UNIDADES = [
+  "cero", "uno", "dos", "tres", "cuatro", "cinco", "seis", "siete", "ocho", "nueve",
+  "diez", "once", "doce", "trece", "catorce", "quince", "dieciséis", "diecisiete",
+  "dieciocho", "diecinueve", "veinte", "veintiuno", "veintidós", "veintitrés",
+  "veinticuatro", "veinticinco", "veintiséis", "veintisiete", "veintiocho", "veintinueve",
+];
+const ES_DEZENAS = [
+  "", "", "", "treinta", "cuarenta", "cincuenta", "sesenta", "setenta", "ochenta", "noventa",
+];
+const ES_CENTENAS = [
+  "", "ciento", "doscientos", "trescientos", "cuatrocientos", "quinientos",
+  "seiscientos", "setecientos", "ochocientos", "novecientos",
+];
+
+function es999(n: number): string {
+  if (n === 100) return "cien"; // "ciento" só existe acompanhado (ciento uno)
+  const partes: string[] = [];
+  const c = Math.floor(n / 100);
+  const resto = n % 100;
+  if (c > 0) partes.push(ES_CENTENAS[c]);
+  if (resto > 0) {
+    if (resto < 30) partes.push(ES_UNIDADES[resto]);
+    else {
+      const u = resto % 10;
+      partes.push(u > 0 ? `${ES_DEZENAS[Math.floor(resto / 10)]} y ${ES_UNIDADES[u]}` : ES_DEZENAS[Math.floor(resto / 10)]);
+    }
+  }
+  return partes.join(" ");
+}
+
+/**
+ * Apócope do espanhol: diante de substantivo masculino, "uno" vira "un" e
+ * "veintiuno" vira "veintiún" ("veintiún reales", "treinta y un mil").
+ */
+function apocope(s: string): string {
+  return s.replace(/veintiuno$/, "veintiún").replace(/uno$/, "un");
+}
+
+/** `antesDeNome`: o número vem antes de "reales"/"centavos" e leva apócope. */
+function esInteiro(n: number, antesDeNome: boolean): string {
+  if (n === 0) return ES_UNIDADES[0];
+  const partes: string[] = [];
+  let resto = n;
+  const milhoes = Math.floor(resto / 1_000_000);
+  if (milhoes > 0) {
+    partes.push(milhoes === 1 ? "un millón" : `${apocope(es999(milhoes))} millones`);
+    resto %= 1_000_000;
+  }
+  const milhares = Math.floor(resto / 1_000);
+  if (milhares > 0) {
+    // "mil", nunca "un mil": 1.500 é "mil quinientos".
+    partes.push(milhares === 1 ? "mil" : `${apocope(es999(milhares))} mil`);
+    resto %= 1_000;
+  }
+  if (resto > 0) partes.push(antesDeNome ? apocope(es999(resto)) : es999(resto));
+  return partes.join(" ");
+}
+
+/** Reais e centavos já separados, escritos no idioma pedido. */
+function extensoEstrangeiro(reais: number, centavos: number, idioma: "en" | "es"): string {
+  const partes: string[] = [];
+  if (idioma === "en") {
+    if (reais > 0) partes.push(`${enInteiro(reais)} ${reais === 1 ? "real" : "reais"}`);
+    if (centavos > 0) partes.push(`${enInteiro(centavos)} ${centavos === 1 ? "cent" : "cents"}`);
+    return partes.length ? partes.join(" and ") : "zero reais";
+  }
+  // "un millón DE reales", como o "um milhão de reais" do português.
+  const terminaEmEscala = reais >= 1_000_000 && reais % 1_000_000 === 0;
+  if (reais > 0) {
+    partes.push(`${esInteiro(reais, true)}${terminaEmEscala ? " de" : ""} ${reais === 1 ? "real" : "reales"}`);
+  }
+  if (centavos > 0) partes.push(`${esInteiro(centavos, true)} ${centavos === 1 ? "centavo" : "centavos"}`);
+  return partes.length ? partes.join(" con ") : "cero reales";
+}
+
 /**
  * "220.00" → "duzentos e vinte reais". Aceita number ou string numérica
  * (os valores do banco são `numeric`, que o driver devolve como string).
  * Devolve "" quando o valor não é um número utilizável — quem chama omite a
  * frase em vez de imprimir "NaN reais".
+ *
+ * `idioma` escreve em inglês ou espanhol para o recibo do cliente estrangeiro.
  */
-export function valorPorExtenso(valor: number | string | null | undefined): string {
+export function valorPorExtenso(
+  valor: number | string | null | undefined,
+  idioma: Idioma = "pt",
+): string {
   const n = typeof valor === "string" ? parseFloat(valor) : valor;
   if (n == null || !Number.isFinite(n)) return "";
   const negativo = n < 0;
   const abs = Math.abs(n);
   if (abs >= 1_000_000_000_000) return "";
+
+  if (idioma !== "pt") {
+    if (abs >= 1_000_000_000) return "";
+    const total = Math.round(abs * 100);
+    const texto = extensoEstrangeiro(Math.floor(total / 100), total % 100, idioma);
+    return `${negativo ? (idioma === "en" ? "minus " : "menos ") : ""}${texto}`;
+  }
 
   // Arredonda em centavos ANTES de separar: 0.615 vira 62 centavos, não 61.
   const centavosTotais = Math.round(abs * 100);

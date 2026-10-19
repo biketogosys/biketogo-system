@@ -104,6 +104,7 @@ import {
 } from "./updates";
 import { escapeHtml, sendNewLeadEmail, sendOwnerEmail, sendWelcomeEmail } from "./email";
 import { enviarEmailDeContrato, sendReceiptEmail } from "./email-contract";
+import { IDIOMAS, normalizarIdioma, type Idioma } from "./idioma";
 import { carregarAjustesDevolucao } from "./contract-adjustments";
 import { COOKIE_NAME } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
@@ -439,6 +440,8 @@ const clientsRouter = router({
       complement: z.string().optional(),
       lgpdConsent: z.boolean().optional(),
       lgpdConsentAt: z.string().optional(),
+      // Idioma dos e-mails, do PDF e da página do contrato (2026-10-15)
+      idioma: z.enum(IDIOMAS).optional(),
     }))
     .mutation(async ({ input }) => {
       validarDocumentoCliente({
@@ -496,10 +499,11 @@ const clientsRouter = router({
         complement: sanitize(input.complement) as string | null,
         lgpdConsent: input.lgpdConsent ?? false,
         lgpdConsentAt: input.lgpdConsent ? new Date() : null,
+        idioma: input.idioma ?? "pt",
       });
       // Boas-vindas pro cliente cadastrado na mão pela Cassiana (2026-07-30).
       // Silencioso quando o cadastro veio sem e-mail, que é comum aqui.
-      await sendWelcomeEmail({ nome: input.name, email: input.email, origem: "manual" });
+      await sendWelcomeEmail({ nome: input.name, email: input.email, origem: "manual", idioma: input.idioma });
       return { id };
     }),
   update: adminAuthProcedure
@@ -535,6 +539,7 @@ const clientsRouter = router({
       numeroPassaporte: z.string().max(50).optional(),
       complement: z.string().optional(),
       lgpdConsent: z.boolean().optional(),
+      idioma: z.enum(IDIOMAS).optional(),
     }))
     .mutation(async ({ input }) => {
       const { id, ...data } = input;
@@ -1323,7 +1328,7 @@ const rentalsRouter = router({
           ? await db.select().from(clTable2).where(eqPdf(clTable2.id, contractRow.clientId))
           : [null];
         const data = await buildContractPdfData(db, input.contractId);
-        const pdfBuffer = await generateContractPdf(data, "pt");
+        const pdfBuffer = await generateContractPdf(data, data.idioma); // idioma do cliente
         const suffix = Date.now().toString(36);
         const { url } = await storagePut(`contracts/contrato-${input.contractId}-${suffix}.pdf`, pdfBuffer, "application/pdf");
         pdfUrl = url;
@@ -2272,6 +2277,7 @@ const publicApiRouter = router({
             name: clientsTable.name, cpf: clientsTable.cpf, rg: clientsTable.rg,
             passaporte: clientsTable.numeroPassaporte,
             email: clientsTable.email, phone: clientsTable.phone,
+            idioma: clientsTable.idioma,
           })
             .from(clientsTable).where(eq(clientsTable.id, contract.clientId))
         : [null];
@@ -2388,6 +2394,8 @@ const publicApiRouter = router({
         empresa,
         clausulas,
         pdfUrl: contract.pdfUrl ?? null,
+        // A página abre no idioma do cliente (2026-10-15); o seletor continua.
+        idioma: normalizarIdioma(client?.idioma),
       };
     }),
 
@@ -2545,6 +2553,10 @@ const publicApiRouter = router({
       country: z.string().max(50).optional(),
       // LGPD
       lgpdConsent: z.boolean().optional(),
+      // Idioma em que o cliente preencheu o formulário (2026-10-15). É ele que
+      // decide a língua dos e-mails, não a nacionalidade marcada: o caso real
+      // marcou "brasileiro" e preencheu tudo em inglês.
+      idioma: z.enum(IDIOMAS).optional(),
     }))
     .mutation(async ({ input }) => {
       // Validate CPF for Brazilians
@@ -2602,6 +2614,7 @@ const publicApiRouter = router({
         origin: sanitize(input.howFound) as string | null,
         source: "site",
         status: "lead",
+        idioma: input.idioma ?? "pt",
       } as any);
 
       // Notificar o dono por e-mail (Resend) — não-fatal por construção
@@ -2615,7 +2628,7 @@ const publicApiRouter = router({
       });
       // Boas-vindas pro CLIENTE (pedido do Matheus, 2026-07-30). Não confirma
       // reserva: quem fecha o aluguel é a Cassiana no WhatsApp.
-      await sendWelcomeEmail({ nome: input.name, email: input.email, origem: "reservar" });
+      await sendWelcomeEmail({ nome: input.name, email: input.email, origem: "reservar", idioma: input.idioma });
 
       // Escopo `pre`: uso único POR LADO (o cliente anexa frente e verso).
       return { clientId, success: true, uploadToken: signUploadToken(clientId, "pre") };
@@ -3411,7 +3424,17 @@ export async function releaseBikeUnits(db: any, rentalId: number): Promise<void>
 }
 
 /** Monta o objeto ContractPdfData a partir do banco para um contractId */
-async function buildContractPdfData(db: Awaited<ReturnType<typeof getDb>>, contractId: number) {
+/**
+ * Dados do PDF do contrato. `idioma` força uma língua; sem ele vale a do
+ * cadastro do cliente (2026-10-15). O retorno diz as duas, para quem gera
+ * saber se está produzindo o PDF OFICIAL do cliente ou uma cópia em outra
+ * língua (ver `generatePdf`).
+ */
+async function buildContractPdfData(
+  db: Awaited<ReturnType<typeof getDb>>,
+  contractId: number,
+  idioma?: Idioma,
+) {
   if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
   const { contracts: cT, clients: clT, accessories: accT, contractAccessories: caT, accessoryUnits: auT } = await import("../drizzle/schema");
   const { bikes: bikesT, bikeSizes: bkSizesT } = await import("../drizzle/schema");
@@ -3420,6 +3443,9 @@ async function buildContractPdfData(db: Awaited<ReturnType<typeof getDb>>, contr
   const [clientRow] = contractRow?.clientId
     ? await db.select().from(clT).where(eq(clT.id, contractRow.clientId))
     : [null];
+  const idiomaCliente = normalizarIdioma(clientRow?.idioma);
+  const idiomaPdf = idioma ?? idiomaCliente;
+  const { conectorPeriodo } = await import("./pdf");
   const rentalsForPdf = await db.select({
     id: rT.id, bikeId: rT.bikeId, startDate: rT.startDate, endDate: rT.endDate,
     startTime: rT.startTime, endTime: rT.endTime,
@@ -3455,7 +3481,7 @@ async function buildContractPdfData(db: Awaited<ReturnType<typeof getDb>>, contr
     const s = fmtBr(startsPdf[0]);
     const e = fmtBr((endsPdf.length ? endsPdf : startsPdf).slice(-1)[0]);
     if (!s && !e) return null;
-    return s === e ? s : `${s} a ${e}`;
+    return s === e ? s : `${s} ${conectorPeriodo(idiomaPdf)} ${e}`;
   })();
 
   // F10: recálculos por devolução antecipada deste contrato. A fonte é a
@@ -3506,6 +3532,8 @@ async function buildContractPdfData(db: Awaited<ReturnType<typeof getDb>>, contr
     rentals: rentalsWithBike,
     accessories: accWithSerial,
     ajustes: ajustesPdf,
+    idioma: idiomaPdf,
+    idiomaCliente,
   };
 }
 
@@ -3518,7 +3546,10 @@ async function regenerateContractPdf(db: any, contractId: number, contexto: stri
     const { generateContractPdf } = await import("./pdf");
     const { storagePut } = await import("./storage");
     const data = await buildContractPdfData(db, contractId);
-    const pdfBuffer = await generateContractPdf(data, "pt");
+    // No idioma do cliente: antes era "pt" fixo, e regerar (edição, devolução
+    // antecipada) trocava em silêncio o PDF em inglês do cliente por um em
+    // português.
+    const pdfBuffer = await generateContractPdf(data, data.idioma);
     const suffix = Date.now().toString(36);
     const { url } = await storagePut(`contracts/contrato-${contractId}-${suffix}.pdf`, pdfBuffer, "application/pdf");
     await db.update(contracts).set({ pdfUrl: url }).where(eq(contracts.id, contractId));
@@ -3739,6 +3770,8 @@ const contractsRouter = router({
         clientPhone: clientsTable.phone,
         clientEmail: clientsTable.email,
         clientStatus: clientsTable.status,
+        // Idioma do cliente: marca a opção padrão do reenvio e do PDF.
+        clientIdioma: clientsTable.idioma,
       })
         .from(contracts)
         .leftJoin(clientsTable, eq(contracts.clientId, clientsTable.id))
@@ -3918,6 +3951,8 @@ const contractsRouter = router({
     .input(z.object({
       id: z.number(),
       tipo: z.enum(["reserva", "recibo"]),
+      // Sem idioma, vale o do cadastro do cliente (2026-10-15).
+      idioma: z.enum(IDIOMAS).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
@@ -3925,7 +3960,7 @@ const contractsRouter = router({
 
       const r = await enviarEmailDeContrato(
         db, input.id, input.tipo, signContractToken(input.id),
-        { ignorarGuardaRecibo: true },
+        { ignorarGuardaRecibo: true, idioma: input.idioma },
       );
 
       await createAuditLog({
@@ -3933,7 +3968,10 @@ const contractsRouter = router({
         acao: "reenviou_email_contrato",
         tabela: "contracts",
         registroId: input.id,
-        dadosDepois: { tipo: input.tipo, ok: r.ok, destinatario: r.destinatario ?? null, motivo: r.motivo ?? null },
+        dadosDepois: {
+          tipo: input.tipo, ok: r.ok, destinatario: r.destinatario ?? null,
+          motivo: r.motivo ?? null, idioma: r.idioma ?? null,
+        },
       });
 
       if (!r.ok) {
@@ -4350,7 +4388,7 @@ const contractsRouter = router({
         const [contractRow] = await db.select().from(cTablePdf).where(eqPdf(cTablePdf.id, contract.id));
         const [clientRow] = await db.select().from(clTablePdf).where(eqPdf(clTablePdf.id, input.clientId));
         const data = await buildContractPdfData(db, contract.id);
-        const pdfBuffer = await generateContractPdf(data, "pt");
+        const pdfBuffer = await generateContractPdf(data, data.idioma); // idioma do cliente
         const suffix = Date.now().toString(36);
         const { url: pdfS3Url } = await storagePut(`contracts/contrato-${contract.id}-${suffix}.pdf`, pdfBuffer, "application/pdf");
         pdfUrl = pdfS3Url;
@@ -4918,19 +4956,31 @@ const contractsRouter = router({
       return { success: true, paid: contractRentals.length };
     }),
 
+  /**
+   * "Gerar PDF" do detalhe do contrato.
+   *
+   * ⚠️ Só o PDF no idioma do CLIENTE substitui o `pdfUrl`, que é o arquivo que
+   * ele baixa na página de acompanhamento (2026-10-15). Antes, qualquer idioma
+   * gerado aqui virava o PDF do cliente: a loja gerava em espanhol só para
+   * conferir e o cliente passava a baixar em espanhol. Outro idioma agora é
+   * uma cópia avulsa, aberta na hora e não gravada no contrato.
+   */
   generatePdf: adminAuthProcedure
-    .input(z.object({ contractId: z.number(), language: z.enum(["pt", "en", "es"]).default("pt") }))
+    .input(z.object({ contractId: z.number(), language: z.enum(IDIOMAS).optional() }))
     .mutation(async ({ input }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
-      const data = await buildContractPdfData(db, input.contractId);
+      const data = await buildContractPdfData(db, input.contractId, input.language);
       const { generateContractPdf } = await import("./pdf");
       const { storagePut } = await import("./storage");
-      const pdfBuffer = await generateContractPdf(data, input.language);
+      const pdfBuffer = await generateContractPdf(data, data.idioma);
       const suffix = Date.now().toString(36);
-      const { url } = await storagePut(`contracts/contrato-${input.contractId}-${suffix}.pdf`, pdfBuffer, "application/pdf");
-      await db.update(contracts).set({ pdfUrl: url }).where(eq(contracts.id, input.contractId));
-      return { pdfUrl: url };
+      const { url } = await storagePut(`contracts/contrato-${input.contractId}-${data.idioma}-${suffix}.pdf`, pdfBuffer, "application/pdf");
+      const oficial = data.idioma === data.idiomaCliente;
+      if (oficial) {
+        await db.update(contracts).set({ pdfUrl: url }).where(eq(contracts.id, input.contractId));
+      }
+      return { pdfUrl: url, idioma: data.idioma, oficial };
     }),
 });
 

@@ -67,8 +67,16 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { languages, type Language } from "@/lib/i18n";
+
+/** Nome do idioma na frase do aviso ("enviado em inglês"). */
+const NOME_IDIOMA: Record<Language, string> = { pt: "português", en: "inglês", es: "espanhol" };
 
 const fmtBRL = (v: string | number) =>
   (typeof v === "string" ? parseFloat(v) : v).toLocaleString("pt-BR", {
@@ -533,10 +541,14 @@ function ContractDetail({
   // Reenvio manual dos e-mails do contrato. Os disparos automáticos são
   // não-fatais e engolem a falha, então sem este botão um e-mail que o Resend
   // recusou simplesmente nunca chegava e ninguém ficava sabendo.
+  // Idioma do reenvio (2026-10-15). `null` = o do cadastro do cliente, que é o
+  // que vale quando ela não escolhe nada.
+  const [idiomaEmail, setIdiomaEmail] = useState<Language | null>(null);
   const resendEmailMutation = trpc.contracts.resendEmail.useMutation({
     onSuccess: (res, vars) => {
+      const lingua = NOME_IDIOMA[(vars.idioma ?? "pt") as Language];
       toast.success(
-        `E-mail de ${vars.tipo} enviado${res.destinatario ? ` para ${res.destinatario}` : ""}.`,
+        `E-mail de ${vars.tipo} enviado em ${lingua}${res.destinatario ? ` para ${res.destinatario}` : ""}.`,
       );
     },
     // O servidor devolve o motivo real (sem e-mail no cadastro, contrato não
@@ -607,6 +619,11 @@ function ContractDetail({
     onSuccess: (res) => {
       window.open(res.pdfUrl, "_blank");
       utils.contracts.getById.invalidate({ id: contractId });
+      // Outro idioma é cópia avulsa: o PDF que o cliente baixa continua no
+      // idioma dele. Sem o aviso ela acharia que trocou o documento do cliente.
+      if (!res.oficial) {
+        toast.info(`PDF em ${NOME_IDIOMA[res.idioma as Language]} aberto só para consulta. O do cliente continua no idioma do cadastro.`);
+      }
     },
     onError: (e) => toast.error(friendlyError(e, "Erro ao gerar PDF.")),
   });
@@ -775,6 +792,8 @@ function ContractDetail({
             const rentaisPagos = (data.rentals ?? []) as any[];
             const pago = rentaisPagos.length > 0 && rentaisPagos.every((r) => r.paymentStatus === "paid");
             const podeRecibo = data.status === "encerrado" && pago;
+            const idiomaCliente = (data.clientIdioma ?? "pt") as Language;
+            const idioma = idiomaEmail ?? idiomaCliente;
             return (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
@@ -790,15 +809,31 @@ function ContractDetail({
                     {resendEmailMutation.isPending ? "Enviando..." : "Reenviar e-mail"}
                   </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
+                <DropdownMenuContent align="end" className="w-60">
+                  {/* Escolher o idioma NÃO fecha o menu: é o primeiro passo,
+                      o envio é o item lá embaixo. */}
+                  <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
+                    Idioma do e-mail
+                  </DropdownMenuLabel>
+                  <DropdownMenuRadioGroup value={idioma} onValueChange={(v) => setIdiomaEmail(v as Language)}>
+                    {languages.map((l) => (
+                      <DropdownMenuRadioItem key={l.code} value={l.code} onSelect={(e) => e.preventDefault()}>
+                        {l.label}
+                        {l.code === idiomaCliente && (
+                          <span className="ml-auto pl-2 text-[11px] text-muted-foreground">do cliente</span>
+                        )}
+                      </DropdownMenuRadioItem>
+                    ))}
+                  </DropdownMenuRadioGroup>
+                  <DropdownMenuSeparator />
                   <DropdownMenuItem
-                    onClick={() => resendEmailMutation.mutate({ id: contractId, tipo: "reserva" })}
+                    onClick={() => resendEmailMutation.mutate({ id: contractId, tipo: "reserva", idioma })}
                   >
                     Reserva (com os termos)
                   </DropdownMenuItem>
                   <DropdownMenuItem
                     disabled={!podeRecibo}
-                    onClick={() => resendEmailMutation.mutate({ id: contractId, tipo: "recibo" })}
+                    onClick={() => resendEmailMutation.mutate({ id: contractId, tipo: "recibo", idioma })}
                     title={podeRecibo ? undefined : "O recibo só existe com o contrato encerrado e pago"}
                   >
                     Recibo de pagamento
@@ -981,16 +1016,23 @@ function ContractDetail({
               Gerar PDF
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="start">
-            <DropdownMenuItem onClick={() => generatePdfMutation.mutate({ contractId: data.id, language: "pt" })}>
-              🇧🇷 Português
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => generatePdfMutation.mutate({ contractId: data.id, language: "en" })}>
-              🇺🇸 English
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => generatePdfMutation.mutate({ contractId: data.id, language: "es" })}>
-              🇪🇸 Español
-            </DropdownMenuItem>
+          <DropdownMenuContent align="start" className="w-56">
+            {/* Só o idioma do cliente vira o PDF dele; os outros abrem como
+                cópia para consulta (generatePdf, 2026-10-15). */}
+            {languages.map((l) => {
+              const doCliente = l.code === ((data.clientIdioma ?? "pt") as Language);
+              return (
+                <DropdownMenuItem
+                  key={l.code}
+                  onClick={() => generatePdfMutation.mutate({ contractId: data.id, language: l.code })}
+                >
+                  {l.label}
+                  {doCliente && (
+                    <span className="ml-auto pl-2 text-[11px] text-muted-foreground">do cliente</span>
+                  )}
+                </DropdownMenuItem>
+              );
+            })}
           </DropdownMenuContent>
         </DropdownMenu>
         {data.pdfUrl && (

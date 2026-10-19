@@ -13,6 +13,8 @@
 // - Largura máxima 600px, o consenso que atravessa todos os clientes.
 import { ENV } from "./_core/env";
 import { getSetting } from "./db";
+import { TEXTOS_EMAIL } from "./email-textos";
+import type { Idioma } from "./idioma";
 
 /** Escapa texto do usuário no HTML. Vive aqui porque o layout é quem monta o
  *  HTML; o `email.ts` reexporta para quem já importava de lá. */
@@ -153,8 +155,11 @@ export function montarEmail(opts: {
   preheader?: string;
   corpoHtml: string;
   empresa: DadosEmpresa;
+  /** Idioma do e-mail ao cliente; e-mail para a loja fica em português. */
+  idioma?: Idioma;
 }): string {
   const { titulo, preheader, corpoHtml, empresa } = opts;
+  const lang = TEXTOS_EMAIL[opts.idioma ?? "pt"].htmlLang;
   const logo = urlAbsoluta(empresa.logoUrl);
 
   // ⚠️ SEM o endereço da loja (pedido da dona, 2026-08-04): a operação é 100%
@@ -168,7 +173,7 @@ export function montarEmail(opts: {
 
   return `
 <!DOCTYPE html>
-<html lang="pt-BR">
+<html lang="${lang}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">

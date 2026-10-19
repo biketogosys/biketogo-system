@@ -10,7 +10,7 @@
 // ⚠️ Dados do locatário (documento, CPF, e-mail, telefone) aparecem aqui por
 // decisão do Matheus (2026-07-29), para igualar o sistema antigo. Como o link
 // pode ser encaminhado, quem tiver o link vê esses dados.
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRoute } from "wouter";
 import {
   Bike, CalendarClock, FileText, MessageCircle, Package, User,
@@ -30,6 +30,12 @@ const IDIOMAS = [
   { key: "es", label: "ES", tab: "Español" },
 ] as const;
 type Idioma = (typeof IDIOMAS)[number]["key"];
+
+/** "es-AR" → "es". Só vale enquanto o contrato não carregou. */
+function idiomaDoNavegador(): Idioma {
+  const n = (typeof navigator !== "undefined" ? navigator.language : "").toLowerCase();
+  return n.startsWith("es") ? "es" : n.startsWith("en") ? "en" : "pt";
+}
 
 const T = {
   pt: {
@@ -250,7 +256,15 @@ function Campo({ label, valor }: { label: string; valor?: string | null }) {
 export default function PublicContract() {
   const [, params] = useRoute("/contrato/:token");
   const token = params?.token ?? "";
-  const [lang, setLang] = useState<Idioma>("pt");
+  // Idioma (2026-10-15): antes de o contrato carregar, o do navegador (é o que
+  // vale para "contrato não encontrado"); carregado, o do CADASTRO do cliente.
+  // Depois que ele mexe no seletor, a escolha dele vence.
+  const [lang, setLang] = useState<Idioma>(idiomaDoNavegador);
+  const escolheuIdioma = useRef(false);
+  const escolherIdioma = (i: Idioma) => {
+    escolheuIdioma.current = true;
+    setLang(i);
+  };
   const [contratoAberto, setContratoAberto] = useState(false);
   const t = T[lang];
 
@@ -278,6 +292,10 @@ export default function PublicContract() {
     { token },
     { enabled: token.length > 3, retry: false },
   );
+
+  useEffect(() => {
+    if (data?.idioma && !escolheuIdioma.current) setLang(data.idioma as Idioma);
+  }, [data?.idioma]);
 
   // Contrato pode ter bikes com períodos diferentes: aí o "N diárias" do span
   // inteiro mentiria (dois aluguéis distantes viravam "286 diárias").
@@ -350,7 +368,7 @@ export default function PublicContract() {
               {IDIOMAS.map((i) => (
                 <button
                   key={i.key}
-                  onClick={() => setLang(i.key)}
+                  onClick={() => escolherIdioma(i.key)}
                   className={`px-2 py-1 rounded-md text-[11px] font-semibold transition-colors ${
                     lang === i.key ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
                   }`}

@@ -169,6 +169,13 @@
       "when": 1787077265129,
       "tag": "0023_burly_professor_monster",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1792427803202,
+      "tag": "0024_yellow_hydra",
+      "breakpoints": true
     }
   ]
 }

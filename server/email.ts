@@ -9,6 +9,8 @@ import {
   CORES, EMPRESA_VAZIA, botao, cartao, carregarEmpresa, escapeHtml, linha,
   montarEmail, type DadosEmpresa,
 } from "./email-layout";
+import { TEXTOS_EMAIL } from "./email-textos";
+import type { Idioma } from "./idioma";
 
 const RESEND_ENDPOINT = "https://api.resend.com/emails";
 const SEND_TIMEOUT_MS = 8_000;
@@ -271,13 +273,24 @@ export type BoasVindasInfo = {
   nome: string;
   email: string;
   origem: "reservar" | "manual";
+  /**
+   * Idioma do cliente (2026-10-15). Quem vem do /reservar recebe no idioma em
+   * que preencheu o formulário; no cadastro manual, o que a loja escolheu.
+   */
+  idioma?: Idioma;
 };
 
 export function buildWelcomeEmail(
   info: BoasVindasInfo,
   empresa: DadosEmpresa = EMPRESA_VAZIA,
 ): { subject: string; html: string } {
-  const primeiroNome = info.nome.trim().split(/\s+/)[0] || info.nome;
+  const idioma = info.idioma ?? "pt";
+  const t = TEXTOS_EMAIL[idioma];
+  const bv = t.boasVindas;
+  const nome = info.nome.trim();
+  // Sem nome, a saudação usa a expressão inteira ("Oi, tudo bem!"): cortar na
+  // primeira palavra deixaria "Oi, tudo!" e, em espanhol, "¡Hola, qué!".
+  const primeiroNome = nome ? nome.split(/\s+/)[0] : bv.nomeVazio;
   // ⚠️ Número de ATENDIMENTO, não o do chatbot nem o telefone fixo do rodapé
   // (correção do Matheus, 2026-08-04): "o chatbot é só para quando o cliente for
   // conversar para fazer a reserva; suporte e dúvidas, e quando receber o
@@ -285,33 +298,31 @@ export function buildWelcomeEmail(
   // atendimento estiver vazio.
   const wa = (empresa.whatsappAtendimento || empresa.telefone || "").replace(/\D/g, "");
   const waUrl = wa.length >= 10
-    ? `https://wa.me/${wa.length <= 11 ? `55${wa}` : wa}?text=${encodeURIComponent(`Oi! Sou ${info.nome} e acabei de fazer meu cadastro.`)}`
+    ? `https://wa.me/${wa.length <= 11 ? `55${wa}` : wa}?text=${encodeURIComponent(bv.mensagemWhatsapp(nome))}`
     : "";
 
   const corpo = cartao(
-    "Cadastro recebido",
+    bv.titulo,
     `
-<h1 style="margin:0 0 12px;font-family:${FONTE};font-size:22px;line-height:1.25;color:${CORES.dark};font-weight:700">Oi, ${escapeHtml(primeiroNome)}!</h1>
+<h1 style="margin:0 0 12px;font-family:${FONTE};font-size:22px;line-height:1.25;color:${CORES.dark};font-weight:700">${escapeHtml(t.oi(primeiroNome))}</h1>
 <p style="margin:0 0 10px;font-family:${FONTE};font-size:14px;line-height:1.6;color:${CORES.ink}">
-  ${info.origem === "reservar"
-    ? "Recebemos o seu cadastro. Obrigado por escolher a gente para o seu passeio."
-    : "Seu cadastro foi criado aqui na loja. Obrigado por escolher a gente para o seu passeio."}
+  ${info.origem === "reservar" ? bv.viaReservar : bv.viaManual}
 </p>
 <p style="margin:0;font-family:${FONTE};font-size:14px;line-height:1.6;color:${CORES.ink}">
-  <strong>O próximo passo é seu:</strong> chame a gente no WhatsApp para combinar
-  <strong>a bike, as datas e a entrega</strong>. É por lá que a reserva é fechada.
+  ${bv.proximoPasso}
 </p>
-${waUrl ? botao("Chamar no WhatsApp", waUrl) : ""}
+${waUrl ? botao(bv.botao, waUrl) : ""}
 `.trim(),
   );
 
   return {
-    subject: `Cadastro recebido — ${empresa.nome || "Bike To Go Floripa"}`,
+    subject: bv.assunto(empresa.nome || "Bike To Go Floripa"),
     html: montarEmail({
-      titulo: "Cadastro recebido",
-      preheader: `Oi ${primeiroNome}! Recebemos o seu cadastro. Chame a gente no WhatsApp para fechar a reserva.`,
+      titulo: bv.titulo,
+      preheader: bv.preheader(primeiroNome),
       corpoHtml: corpo,
       empresa,
+      idioma,
     }),
   };
 }
@@ -329,7 +340,7 @@ export async function sendWelcomeEmail(info: Partial<BoasVindasInfo>): Promise<b
       resolverReplyTo(),
     ]);
     const { subject, html } = buildWelcomeEmail(
-      { nome: info.nome || "tudo bem", email, origem: info.origem ?? "manual" },
+      { nome: info.nome ?? "", email, origem: info.origem ?? "manual", idioma: info.idioma },
       empresa,
     );
     return await sendEmail({ to: email, subject, html, replyTo });

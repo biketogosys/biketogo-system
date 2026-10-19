@@ -21,6 +21,11 @@ import {
   rentals as rentalsTable,
   revenues as revenuesTable,
 } from "../drizzle/schema";
+//
+// Idioma (2026-10-15): os dois saem no idioma do CLIENTE (`clients.idioma`),
+// com todo texto vindo de `email-textos.ts` e os termos da mesma cadeia do PDF
+// naquele idioma. O motivo de falha devolvido à tela continua em português:
+// quem lê é a loja.
 import { carregarAjustesDevolucao, type AjusteDevolucao } from "./contract-adjustments";
 import { getSetting } from "./db";
 import { resolverReplyTo, sendEmailDetalhado } from "./email";
@@ -28,6 +33,8 @@ import {
   CORES, EMPRESA_VAZIA, bloco, botao, carregarEmpresa, chip, escapeHtml,
   montarEmail, selo, type DadosEmpresa,
 } from "./email-layout";
+import { TEXTOS_EMAIL } from "./email-textos";
+import { normalizarIdioma, type Idioma } from "./idioma";
 import { ENV } from "./_core/env";
 import { formatarBRL, valorPorExtenso } from "./valor-extenso";
 import { billableDaysWithTime } from "./rental-period";
@@ -37,19 +44,11 @@ const FONTE = "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Aria
 /** Ação de auditoria que serve de guarda anti-duplicação do recibo. */
 export const ACAO_RECIBO_ENVIADO = "enviou_email_recibo";
 
-/** O enum do banco é minúsculo e técnico; o cliente lê o rótulo. */
-const CATEGORIAS_PT: Record<string, string> = {
+/** O enum do banco é minúsculo e técnico; o cliente lê o rótulo (igual nos 3 idiomas). */
+const CATEGORIAS: Record<string, string> = {
   mtb: "MTB",
   speed: "Speed",
   gravel: "Gravel",
-};
-
-const FORMAS_PT: Record<string, string> = {
-  pix: "Pix",
-  credit_card: "Cartão de crédito",
-  debit_card: "Cartão de débito",
-  cash: "Dinheiro",
-  other: "Outra forma",
 };
 
 /**
@@ -107,7 +106,7 @@ export type ItemContratoEmail = {
 export type ContratoEmailData = {
   contractId: number;
   status: string;
-  cliente: { nome: string; email: string | null };
+  cliente: { nome: string; email: string | null; idioma: Idioma };
   /** Horário combinado ("HH:MM") entra junto quando existe: é o que decide a
    *  virada da diária, e o cliente precisa ler o que foi acertado. */
   periodo: {
@@ -139,9 +138,11 @@ export async function carregarDadosContrato(db: any, contractId: number): Promis
   if (!contract || contract.deletedAt) return null;
 
   const [client] = contract.clientId
-    ? await db.select({ name: clientsTable.name, email: clientsTable.email })
+    ? await db.select({ name: clientsTable.name, email: clientsTable.email, idioma: clientsTable.idioma })
         .from(clientsTable).where(eq(clientsTable.id, contract.clientId))
     : [null];
+  const idioma = normalizarIdioma(client?.idioma);
+  const t = TEXTOS_EMAIL[idioma];
 
   const rentalRows = await db.select()
     .from(rentalsTable)
@@ -165,7 +166,7 @@ export async function carregarDadosContrato(db: any, contractId: number): Promis
       .innerJoin(bikeUnitsTable, eq(bikeUnitsTable.id, rentalBikeUnitsTable.bikeUnitId))
       .where(eq(rentalBikeUnitsTable.rentalId, r.id));
     return {
-      modelo: [bike?.brand, bike?.model].filter(Boolean).join(" ") || "Bicicleta",
+      modelo: [bike?.brand, bike?.model].filter(Boolean).join(" ") || t.bicicleta,
       categoria: bike?.category ?? null,
       cor: bike?.color ?? null,
       tamanho,
@@ -191,7 +192,7 @@ export async function carregarDadosContrato(db: any, contractId: number): Promis
   // "Capacete × 2" em vez de duas linhas iguais.
   const acessoriosAgrupados = Object.values(
     (acessorios as Array<{ nome: string | null; qty: number | null }>).reduce((acc, a) => {
-      const nome = a.nome ?? "Acessório";
+      const nome = a.nome ?? t.acessorio;
       acc[nome] = { nome, qty: (acc[nome]?.qty ?? 0) + (a.qty ?? 1) };
       return acc;
     }, {} as Record<string, { nome: string; qty: number }>),
@@ -243,7 +244,7 @@ export async function carregarDadosContrato(db: any, contractId: number): Promis
   return {
     contractId,
     status: contract.status,
-    cliente: { nome: client?.name ?? "", email: client?.email ?? null },
+    cliente: { nome: client?.name ?? "", email: client?.email ?? null, idioma },
     periodo: {
       inicio: inicios[0] ?? null,
       fim: fins[fins.length - 1] ?? null,
@@ -261,17 +262,29 @@ export async function carregarDadosContrato(db: any, contractId: number): Promis
   };
 }
 
-/** Cláusulas em pt, MESMA cadeia do PDF: setting por idioma → legado → default. */
-export async function carregarClausulasPt(): Promise<{ objeto: string; termos: string }> {
+/**
+ * Cláusulas no idioma do cliente, MESMA cadeia do PDF: setting do idioma →
+ * legado (só em português) → default embutido daquele idioma.
+ *
+ * ⚠️ Se a loja personalizou os termos em português e não em inglês, o cliente
+ * em inglês recebe o texto PADRÃO do sistema — que é o que o PDF em inglês já
+ * mostrava. Os campos ficam em Configurações, um por idioma.
+ */
+export async function carregarClausulas(idioma: Idioma = "pt"): Promise<{ objeto: string; termos: string }> {
   const { DEFAULT_OBJETO, DEFAULT_TERMOS } = await import("./contract-defaults");
-  const objetoPt = (await getSetting("company_object_pt")) ?? "";
-  const termosPt = (await getSetting("company_terms_pt")) ?? "";
-  const objetoLegacy = (await getSetting("company_object")) ?? "";
-  const termosLegacy = (await getSetting("company_terms")) ?? "";
+  const objetoIdioma = (await getSetting(`company_object_${idioma}`)) ?? "";
+  const termosIdioma = (await getSetting(`company_terms_${idioma}`)) ?? "";
+  const objetoLegacy = idioma === "pt" ? ((await getSetting("company_object")) ?? "") : "";
+  const termosLegacy = idioma === "pt" ? ((await getSetting("company_terms")) ?? "") : "";
   return {
-    objeto: objetoPt.trim() || objetoLegacy.trim() || DEFAULT_OBJETO.pt,
-    termos: termosPt.trim() || termosLegacy.trim() || DEFAULT_TERMOS.pt,
+    objeto: objetoIdioma.trim() || objetoLegacy.trim() || DEFAULT_OBJETO[idioma],
+    termos: termosIdioma.trim() || termosLegacy.trim() || DEFAULT_TERMOS[idioma],
   };
+}
+
+/** Atalho histórico: as cláusulas em português. */
+export function carregarClausulasPt(): Promise<{ objeto: string; termos: string }> {
+  return carregarClausulas("pt");
 }
 
 function linkDoContrato(contractId: number, token: string): string {
@@ -289,14 +302,8 @@ function paragrafos(texto: string, tamanho = 12): string {
     .join("");
 }
 
-/** Rótulos de status iguais aos da página pública (`PublicContract.tsx`). */
-const STATUS_PT: Record<string, string> = {
-  pendente: "Reserva registrada",
-  ativo: "Em circulação",
-  parcialmente_devolvido: "Devolução parcial",
-  encerrado: "Encerrado",
-  cancelado: "Cancelado",
-};
+// Os rótulos de status (iguais aos da página pública) vivem em
+// `email-textos.ts`, um por idioma.
 
 // Cliente de e-mail não conhece os tokens oklch do tema, então o selo de status
 // repete em hex a família de cor que a página usa em cada situação.
@@ -322,21 +329,22 @@ function detalhe(rotulo: string, valor: string): string {
  * Bloco DETALHES DA LOCAÇÃO: período à esquerda, número do contrato e situação
  * à direita. Mesma divisão da página pública.
  */
-function blocoDetalhes(dados: ContratoEmailData, mesmoPeriodo: boolean): string {
+function blocoDetalhes(dados: ContratoEmailData, mesmoPeriodo: boolean, idioma: Idioma): string {
+  const t = TEXTOS_EMAIL[idioma];
   const dias = diarias(dados.periodo.inicio, dados.periodo.fim, dados.periodo.horaInicio, dados.periodo.horaFim);
   const cor = STATUS_COR[dados.status] ?? STATUS_COR.ativo;
   // ⚠️ Número do contrato EM CIMA, não ao lado do período como na página.
   // Medido: as duas colunas lado a lado somavam 455px de largura mínima (os
   // rótulos e o "Contrato #N" são `nowrap`) e furavam qualquer tela de 375px.
   // E-mail não tem media query confiável para empilhar só no mobile.
-  return bloco("Detalhes da locação", `
+  return bloco(t.detalhes, `
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 14px">
   <tr>
-    <td style="font-family:${FONTE};font-size:19px;font-weight:700;color:${CORES.gold}">Contrato #${dados.contractId}</td>
-    <td align="right" style="vertical-align:middle">${selo(STATUS_PT[dados.status] ?? dados.status, cor)}</td>
+    <td style="font-family:${FONTE};font-size:19px;font-weight:700;color:${CORES.gold}">${escapeHtml(t.contratoN(dados.contractId))}</td>
+    <td align="right" style="vertical-align:middle">${selo(t.status[dados.status] ?? dados.status, cor)}</td>
   </tr>
 </table>
-<p style="margin:0 0 10px;font-family:${FONTE};font-size:12px;color:${CORES.muted}">Calculado para o seguinte período de uso:</p>
+<p style="margin:0 0 10px;font-family:${FONTE};font-size:12px;color:${CORES.muted}">${escapeHtml(t.calculado)}</p>
 <table role="presentation" cellpadding="0" cellspacing="0" border="0">
   ${/* "Entrega", não "Retirada" (pedido da dona, 2026-08-11): a operação é 100%
        de entrega, ninguém retira nada na loja. O rótulo antigo vinha do sistema
@@ -344,9 +352,9 @@ function blocoDetalhes(dados: ContratoEmailData, mesmoPeriodo: boolean): string 
   ${/* Com horário combinado, a data vem acompanhada da hora: é o que define a
        virada da diária, e o cliente precisa ver o que foi acertado. Contrato
        anterior à migração 0022 não tem hora e sai só com a data, como antes. */ ""}
-  ${detalhe("Entrega", comHora(formatarData(dados.periodo.inicio), dados.periodo.horaInicio))}
-  ${detalhe("Tempo contratado", mesmoPeriodo ? `${dias} ${dias === 1 ? "diária" : "diárias"}` : "Períodos diferentes por item")}
-  ${detalhe("Devolução prevista", comHora(formatarData(dados.periodo.fim), dados.periodo.horaFim))}
+  ${detalhe(t.entrega, comHora(formatarData(dados.periodo.inicio), dados.periodo.horaInicio))}
+  ${detalhe(t.tempo, mesmoPeriodo ? t.diarias(dias) : t.periodosVariados)}
+  ${detalhe(t.devolucao, comHora(formatarData(dados.periodo.fim), dados.periodo.horaFim))}
 </table>`.trim());
 }
 
@@ -355,7 +363,8 @@ function blocoDetalhes(dados: ContratoEmailData, mesmoPeriodo: boolean): string 
  * unitário, fator, total), acessórios em chips e "Total =" em destaque.
  * `extraHtml` recebe a linha do ajuste de devolução antecipada, no recibo.
  */
-function blocoItens(dados: ContratoEmailData, mesmoPeriodo: boolean, extraHtml = ""): string {
+function blocoItens(dados: ContratoEmailData, mesmoPeriodo: boolean, idioma: Idioma, extraHtml = ""): string {
+  const t = TEXTOS_EMAIL[idioma];
   // ⚠️ TRÊS colunas, não as quatro da página. Medido num iframe de 375px: com a
   // coluna "Unitário" separada, os três valores `nowrap` mais os paddings do
   // cartão empurravam o e-mail para 455px de largura — rolagem lateral na caixa
@@ -365,9 +374,9 @@ function blocoItens(dados: ContratoEmailData, mesmoPeriodo: boolean, extraHtml =
   const th = `padding:0 8px 8px 0;border-bottom:1px solid ${CORES.line};font-family:${FONTE};font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:${CORES.muted};white-space:nowrap`;
   const cabecalho = `
 <tr>
-  <td style="${th}">Equipamento</td>
-  <td align="right" style="${th}">Fator</td>
-  <td align="right" style="${th.replace("0 8px 8px 0", "0 0 8px")}">Total</td>
+  <td style="${th}">${escapeHtml(t.colEquipamento)}</td>
+  <td align="right" style="${th}">${escapeHtml(t.colFator)}</td>
+  <td align="right" style="${th.replace("0 8px 8px 0", "0 0 8px")}">${escapeHtml(t.colTotal)}</td>
 </tr>`.trim();
 
   const linhas = dados.itens.map((item) => {
@@ -376,12 +385,12 @@ function blocoItens(dados: ContratoEmailData, mesmoPeriodo: boolean, extraHtml =
     // resumo de valores, com o abatimento em reais. Repetir nos dois lugares
     // fazia a mesma informação aparecer duas vezes com formatos diferentes.
     const detalhes = [
-      item.categoria ? (CATEGORIAS_PT[item.categoria] ?? item.categoria) : null,
-      item.tamanho ? `Tam. ${item.tamanho}` : null,
+      item.categoria ? (CATEGORIAS[item.categoria] ?? item.categoria) : null,
+      item.tamanho ? t.tamanho(item.tamanho) : null,
       item.cor,
       item.numerosSistema.join(", ") || null,
-      !mesmoPeriodo && item.inicio ? `${formatarData(item.inicio)} a ${formatarData(item.fim)}` : null,
-      item.diaria ? `${formatarBRL(item.diaria)} por diária` : null,
+      !mesmoPeriodo && item.inicio ? t.periodo(formatarData(item.inicio), formatarData(item.fim)) : null,
+      item.diaria ? t.porDiaria(formatarBRL(item.diaria)) : null,
     ].filter(Boolean).join(" · ");
     const td = `padding:10px 8px;border-bottom:1px solid ${CORES.line};font-family:${FONTE}`;
     return `
@@ -397,7 +406,7 @@ function blocoItens(dados: ContratoEmailData, mesmoPeriodo: boolean, extraHtml =
 
   const acessorios = dados.acessorios.length
     ? `
-<p style="margin:16px 0 8px;font-family:${FONTE};font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:${CORES.muted}">Acessórios inclusos</p>
+<p style="margin:16px 0 8px;font-family:${FONTE};font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:${CORES.muted}">${escapeHtml(t.acessorios)}</p>
 <div>${dados.acessorios.map((a) => chip(`${a.nome}${a.qty > 1 ? ` ${a.qty}×` : ""}`)).join("")}</div>`.trim()
     : "";
 
@@ -408,11 +417,11 @@ function blocoItens(dados: ContratoEmailData, mesmoPeriodo: boolean, extraHtml =
   const numeroValor = `font-family:${FONTE};font-size:13px;font-weight:600;color:${CORES.ink};white-space:nowrap;width:1%;padding:2px 0`;
   const linhasDesconto = resumo.desconto >= 0.01 ? `
   <tr>
-    <td align="right" style="${rotuloValor}">Subtotal</td>
+    <td align="right" style="${rotuloValor}">${escapeHtml(t.subtotal)}</td>
     <td align="right" style="${numeroValor}">${formatarBRL(resumo.subtotal)}</td>
   </tr>
   <tr>
-    <td align="right" style="${rotuloValor}">Desconto${resumo.percentual ? ` ${percentualLegivel(resumo.percentual)}%` : ""}</td>
+    <td align="right" style="${rotuloValor}">${escapeHtml(t.desconto)}${resumo.percentual ? ` ${percentualLegivel(resumo.percentual)}%` : ""}</td>
     <td align="right" style="${numeroValor};color:${CORES.gold}">&minus;${formatarBRL(resumo.desconto)}</td>
   </tr>` : "";
 
@@ -420,12 +429,12 @@ function blocoItens(dados: ContratoEmailData, mesmoPeriodo: boolean, extraHtml =
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:14px">
   ${linhasDesconto}
   <tr>
-    <td align="right" style="font-family:${FONTE};font-size:13px;color:${CORES.muted};padding-right:10px${linhasDesconto ? ";padding-top:6px" : ""}">Total =</td>
+    <td align="right" style="font-family:${FONTE};font-size:13px;color:${CORES.muted};padding-right:10px${linhasDesconto ? ";padding-top:6px" : ""}">${escapeHtml(t.totalIgual)}</td>
     <td align="right" style="font-family:${FONTE};font-size:22px;font-weight:700;color:${CORES.gold};white-space:nowrap;width:1%${linhasDesconto ? ";padding-top:6px" : ""}">${formatarBRL(dados.valorTotal)}</td>
   </tr>
 </table>`.trim();
 
-  return bloco("Itens da locação", `
+  return bloco(t.itens, `
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse">
   ${cabecalho}
   ${linhas}
@@ -444,18 +453,18 @@ ${total}`.trim());
  * reserva no mesmo dia, para os dois e-mails fecharem igual. Os dados da
  * empresa seguem no rodapé escuro que o `montarEmail` desenha.
  */
-function linhaCidadeData(empresa: DadosEmpresa): string {
-  const hoje = new Date().toLocaleDateString("pt-BR", { day: "numeric", month: "long", year: "numeric" });
+function linhaCidadeData(empresa: DadosEmpresa, idioma: Idioma): string {
+  const hoje = new Date().toLocaleDateString(TEXTOS_EMAIL[idioma].localeData, { day: "numeric", month: "long", year: "numeric" });
   const cidadeData = [empresa.cidade, hoje].filter((p) => p && String(p).trim()).join(", ");
   if (!cidadeData) return "";
   return `<p style="margin:10px 0 0;font-family:${FONTE};font-size:11px;color:${CORES.ink}">${escapeHtml(cidadeData)}.</p>`;
 }
 
 /** Saudação de abertura, comum aos dois e-mails. */
-function abertura(dados: ContratoEmailData, linhaEvento: string, complemento: string): string {
+function abertura(dados: ContratoEmailData, linhaEvento: string, complemento: string, idioma: Idioma): string {
   const primeiroNome = dados.cliente.nome.trim().split(/\s+/)[0] || dados.cliente.nome;
   return `
-<p style="margin:0 0 14px;font-family:${FONTE};font-size:23px;line-height:1.25;color:${CORES.dark};font-weight:700">Oi, ${escapeHtml(primeiroNome)}!</p>
+<p style="margin:0 0 14px;font-family:${FONTE};font-size:23px;line-height:1.25;color:${CORES.dark};font-weight:700">${escapeHtml(TEXTOS_EMAIL[idioma].oi(primeiroNome))}</p>
 <p style="margin:0 0 10px;font-family:${FONTE};font-size:14px;line-height:1.65;color:${CORES.ink}">${linhaEvento}</p>
 <p style="margin:0 0 20px;font-family:${FONTE};font-size:14px;line-height:1.65;color:${CORES.ink}">${complemento}</p>`.trim();
 }
@@ -547,54 +556,56 @@ function temPeriodoUnico(dados: ContratoEmailData): boolean {
 
 // ─── E-mail A: RESERVA (com os termos dentro) ────────────────────────────────
 
+/**
+ * `idioma` padrão é o do cadastro do cliente; o reenvio manual pode pedir outro.
+ * `clausulas` tem de vir no MESMO idioma (`carregarClausulas(idioma)`).
+ */
 export function buildReservationEmail(
   dados: ContratoEmailData,
   clausulas: { objeto: string; termos: string },
   empresa: DadosEmpresa = EMPRESA_VAZIA,
   link = "",
+  idioma: Idioma = dados.cliente.idioma ?? "pt",
 ): { subject: string; html: string } {
+  const t = TEXTOS_EMAIL[idioma];
+  const r = t.reserva;
   const mesmoPeriodo = temPeriodoUnico(dados);
 
-  const termos = bloco("Condições do contrato", `
-<p style="margin:0 0 10px;font-family:${FONTE};font-size:13px;font-weight:700;color:${CORES.dark}">Objeto do contrato</p>
+  const termos = bloco(r.condicoes, `
+<p style="margin:0 0 10px;font-family:${FONTE};font-size:13px;font-weight:700;color:${CORES.dark}">${escapeHtml(r.objeto)}</p>
 ${paragrafos(clausulas.objeto)}
 <div style="height:1px;background:${CORES.line};margin:16px 0"></div>
-<p style="margin:0 0 10px;font-family:${FONTE};font-size:13px;font-weight:700;color:${CORES.dark}">Condições gerais</p>
+<p style="margin:0 0 10px;font-family:${FONTE};font-size:13px;font-weight:700;color:${CORES.dark}">${escapeHtml(r.condicoesGerais)}</p>
 ${paragrafos(clausulas.termos)}`.trim());
 
   const corpo = [
-    abertura(
-      dados,
-      "Reservado! Registramos o seu pedido de reserva de bicicleta.",
-      // Quem chama é o CLIENTE (pedido da dona, 2026-08-04): a loja não sai
-      // atrás, a conversa começa por ele no WhatsApp.
-      "Abaixo estão os detalhes e as condições do contrato de locação, para você ler com calma. Chame a gente no WhatsApp para combinar a entrega.",
-    ),
-    blocoDetalhes(dados, mesmoPeriodo),
-    blocoItens(dados, mesmoPeriodo),
-    chamada("Visualizar detalhes da reserva", link, "Acompanhe a sua reserva online quando quiser. O link é só seu."),
+    abertura(dados, escapeHtml(r.evento), escapeHtml(r.complemento), idioma),
+    blocoDetalhes(dados, mesmoPeriodo, idioma),
+    blocoItens(dados, mesmoPeriodo, idioma),
+    chamada(r.botao, link, r.legenda),
     termos,
     // Mesmo fecho do recibo (decisão do Matheus, 2026-08-11): sem faixa de
     // título e sem os dados da loja, que já vêm no rodapé escuro logo abaixo.
     // O conteúdo é o próprio da reserva; o que saiu foi só a duplicação.
     bloco(null, `
-<p style="margin:0 0 8px;font-family:${FONTE};font-size:12px;line-height:1.65;color:${CORES.muted}">A Bike To Go se responsabiliza pela integridade e pelo funcionamento dos equipamentos locados, e o cliente deve devolvê-los nas mesmas condições em que foram disponibilizados.</p>
-<p style="margin:0;font-family:${FONTE};font-size:12px;line-height:1.65;color:${CORES.muted}">Os valores acima se referem ao período informado. Devolução antecipada ou renovação alteram o valor, e a página de acompanhamento passa a mostrar o valor atualizado.</p>
-${linhaCidadeData(empresa)}`.trim()),
+<p style="margin:0 0 8px;font-family:${FONTE};font-size:12px;line-height:1.65;color:${CORES.muted}">${escapeHtml(r.fecho[0])}</p>
+<p style="margin:0;font-family:${FONTE};font-size:12px;line-height:1.65;color:${CORES.muted}">${escapeHtml(r.fecho[1])}</p>
+${linhaCidadeData(empresa, idioma)}`.trim()),
   ].join("");
 
   const bike = dados.itens[0]?.modelo;
   return {
-    subject: `Reserva de aluguel de bicicletas: contrato #${dados.contractId}`,
+    subject: r.assunto(dados.contractId),
     html: montarEmail({
-      titulo: "Reserva de aluguel de bicicletas",
+      titulo: r.titulo,
       preheader: [
-        `Reserva #${dados.contractId} registrada`,
+        r.preheader(dados.contractId),
         bike,
         dados.periodo.inicio ? formatarData(dados.periodo.inicio) : "",
       ].filter(Boolean).join(" · "),
       corpoHtml: corpo,
       empresa,
+      idioma,
     }),
   };
 }
@@ -614,18 +625,23 @@ ${linhaCidadeData(empresa)}`.trim()),
  * ⚠️ Cada parte some sozinha quando o dado não existe (cadastro sem nome,
  * receita antiga sem data), em vez de deixar buraco na frase.
  */
-export function quitacao(dados: ContratoEmailData, periodoTexto: string): string {
+export function quitacao(
+  dados: ContratoEmailData,
+  periodoTexto: string,
+  idioma: Idioma = dados.cliente.idioma ?? "pt",
+): string {
+  const q = TEXTOS_EMAIL[idioma].recibo.quitacao;
   const valor = `<strong>${formatarBRL(dados.valorTotal)}</strong>`;
-  const extenso = valorPorExtenso(dados.valorTotal);
+  const extenso = valorPorExtenso(dados.valorTotal, idioma);
   const nome = dados.cliente.nome.trim();
 
   const partes = [
-    nome ? `Recebemos de <strong>${escapeHtml(nome)}</strong> o valor de ${valor}` : `Recebemos o valor de ${valor}`,
+    nome ? q.deQuem(escapeHtml(nome), valor) : q.semNome(valor),
     extenso ? ` (${escapeHtml(extenso)})` : "",
-    dados.dataPagamento ? `, no dia <strong>${escapeHtml(formatarData(dados.dataPagamento))}</strong>` : "",
-    `, referente ao <strong>contrato #${dados.contractId}</strong>`,
-    ", de aluguel de equipamentos para ciclismo",
-    periodoTexto ? `, no período de ${escapeHtml(periodoTexto)}` : "",
+    dados.dataPagamento ? q.noDia(escapeHtml(formatarData(dados.dataPagamento))) : "",
+    q.contrato(dados.contractId),
+    q.objeto,
+    periodoTexto ? q.noPeriodo(escapeHtml(periodoTexto)) : "",
     ".",
   ];
   return partes.join("");
@@ -635,60 +651,62 @@ export function buildReceiptEmail(
   dados: ContratoEmailData,
   empresa: DadosEmpresa = EMPRESA_VAZIA,
   link = "",
+  idioma: Idioma = dados.cliente.idioma ?? "pt",
 ): { subject: string; html: string } {
+  const t = TEXTOS_EMAIL[idioma];
+  const rc = t.recibo;
   const mesmoPeriodo = temPeriodoUnico(dados);
   const total = dados.valorTotal;
-  const extenso = valorPorExtenso(total);
   const periodoTexto = dados.periodo.inicio
-    ? `${formatarData(dados.periodo.inicio)}${dados.periodo.fim ? ` a ${formatarData(dados.periodo.fim)}` : ""}`
+    ? rc.quitacao.periodo(
+        formatarData(dados.periodo.inicio),
+        dados.periodo.fim ? formatarData(dados.periodo.fim) : null,
+      )
     : "";
 
   // A fonte desta linha é a AUDITORIA da F10 — é o único lugar com o valor
   // anterior. Sem ela o cliente recebe um total diferente do combinado, calado.
   const ajustes = dados.ajustes.map((a) => `
-<p style="margin:14px 0 0;padding:10px 12px;background:${CORES.alt};border-left:3px solid ${CORES.gold};border-radius:0 6px 6px 0;font-family:${FONTE};font-size:12px;line-height:1.6;color:${CORES.ink}">Devolução antecipada em ${formatarData(new Date(a.data).toISOString().slice(0, 10))}: período ajustado de ${a.diariasDe} para ${a.diariasPara} ${a.diariasPara === 1 ? "diária" : "diárias"} e valor de ${formatarBRL(a.valorDe)} para ${formatarBRL(a.valorPara)}.</p>`.trim()).join("");
+<p style="margin:14px 0 0;padding:10px 12px;background:${CORES.alt};border-left:3px solid ${CORES.gold};border-radius:0 6px 6px 0;font-family:${FONTE};font-size:12px;line-height:1.6;color:${CORES.ink}">${escapeHtml(rc.ajuste(formatarData(new Date(a.data).toISOString().slice(0, 10)), a.diariasDe, a.diariasPara, formatarBRL(a.valorDe), formatarBRL(a.valorPara)))}</p>`.trim()).join("");
 
   const formas = dados.formasPagamento.map((f) => `
 <tr>
-  <td style="padding:9px 8px 9px 0;border-bottom:1px solid ${CORES.line};font-family:${FONTE};font-size:13px;color:${CORES.ink}">${escapeHtml(FORMAS_PT[f.method] ?? f.method)}</td>
+  <td style="padding:9px 8px 9px 0;border-bottom:1px solid ${CORES.line};font-family:${FONTE};font-size:13px;color:${CORES.ink}">${escapeHtml(t.formas[f.method] ?? f.method)}</td>
   <td align="right" style="padding:9px 0;border-bottom:1px solid ${CORES.line};font-family:${FONTE};font-size:13px;font-weight:600;color:${CORES.ink};white-space:nowrap">${formatarBRL(f.amount)}</td>
 </tr>`.trim()).join("");
 
-  const recibo = bloco("Recibo de pagamento", `
+  const recibo = bloco(rc.bloco, `
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse">
   ${formas}
   <tr>
-    <td style="padding:13px 8px 0 0;font-family:${FONTE};font-size:13px;color:${CORES.muted}">Total recebido</td>
+    <td style="padding:13px 8px 0 0;font-family:${FONTE};font-size:13px;color:${CORES.muted}">${escapeHtml(rc.totalRecebido)}</td>
     <td align="right" style="padding:13px 0 0;font-family:${FONTE};font-size:22px;font-weight:700;color:${CORES.gold};white-space:nowrap">${formatarBRL(total)}</td>
   </tr>
 </table>
-<p style="margin:18px 0 0;padding-top:14px;border-top:1px solid ${CORES.line};font-family:${FONTE};font-size:13px;line-height:1.65;color:${CORES.ink}">${quitacao(dados, periodoTexto)}</p>`.trim());
+<p style="margin:18px 0 0;padding-top:14px;border-top:1px solid ${CORES.line};font-family:${FONTE};font-size:13px;line-height:1.65;color:${CORES.ink}">${quitacao(dados, periodoTexto, idioma)}</p>`.trim());
 
   const corpo = [
-    abertura(
-      dados,
-      "Obrigado por pedalar com a gente! O seu aluguel foi encerrado.",
-      "Abaixo está o recibo com o resumo da locação e do pagamento, para você guardar.",
-    ),
-    blocoDetalhes(dados, mesmoPeriodo),
-    blocoItens(dados, mesmoPeriodo, ajustes),
+    abertura(dados, escapeHtml(rc.evento), escapeHtml(rc.complemento), idioma),
+    blocoDetalhes(dados, mesmoPeriodo, idioma),
+    blocoItens(dados, mesmoPeriodo, idioma, ajustes),
     recibo,
-    chamada("Visualizar contrato", link, "Os detalhes completos continuam disponíveis online."),
+    chamada(rc.botao, link, rc.legenda),
     // Fecho do recibo SEM faixa de título e SEM os dados da loja (pedido da
     // dona, 2026-08-11): o título "Termo de ciência" não dizia nada ali, e os
     // dados da empresa já aparecem no rodapé escuro do e-mail, logo abaixo.
     bloco(null, `
-<p style="margin:0;font-family:${FONTE};font-size:12px;line-height:1.65;color:${CORES.muted}">Este recibo refere-se exclusivamente aos equipamentos, valores e período de locação descritos acima. Guarde-o para seus registros.</p>
-${linhaCidadeData(empresa)}`.trim()),
+<p style="margin:0;font-family:${FONTE};font-size:12px;line-height:1.65;color:${CORES.muted}">${escapeHtml(rc.fecho)}</p>
+${linhaCidadeData(empresa, idioma)}`.trim()),
   ].join("");
 
   return {
-    subject: `Recibo de pagamento de locação de bicicletas: contrato #${dados.contractId}`,
+    subject: rc.assunto(dados.contractId),
     html: montarEmail({
-      titulo: "Recibo de pagamento",
-      preheader: `Contrato #${dados.contractId} encerrado · ${formatarBRL(total)}`,
+      titulo: rc.titulo,
+      preheader: rc.preheader(dados.contractId, formatarBRL(total)),
       corpoHtml: corpo,
       empresa,
+      idioma,
     }),
   };
 }
@@ -702,6 +720,8 @@ export type ResultadoEmailContrato = {
   /** Por que não saiu. Em português, para aparecer na tela do reenvio. */
   motivo?: string;
   destinatario?: string;
+  /** Idioma em que o e-mail foi montado (vai para a Auditoria do reenvio). */
+  idioma?: Idioma;
 };
 
 /**
@@ -718,7 +738,11 @@ export async function enviarEmailDeContrato(
   contractId: number,
   tipo: TipoEmailContrato,
   token: string,
-  opts: { ignorarGuardaRecibo?: boolean } = {},
+  opts: {
+    ignorarGuardaRecibo?: boolean;
+    /** Força um idioma (reenvio manual). Sem ele vale o do cadastro do cliente. */
+    idioma?: Idioma;
+  } = {},
 ): Promise<ResultadoEmailContrato> {
   try {
     if (tipo === "recibo" && !opts.ignorarGuardaRecibo) {
@@ -746,9 +770,10 @@ export async function enviarEmailDeContrato(
       resolverReplyTo(),
     ]);
     const link = linkDoContrato(contractId, token);
+    const idioma = opts.idioma ?? dados.cliente.idioma;
     const { subject, html } = tipo === "reserva"
-      ? buildReservationEmail(dados, await carregarClausulasPt(), empresa, link)
-      : buildReceiptEmail(dados, empresa, link);
+      ? buildReservationEmail(dados, await carregarClausulas(idioma), empresa, link, idioma)
+      : buildReceiptEmail(dados, empresa, link, idioma);
 
     // Resposta do cliente vai para a caixa da loja, não para o remetente de
     // envio (que não tem caixa: o MX do domínio aponta para o Shopify).
@@ -764,7 +789,7 @@ export async function enviarEmailDeContrato(
         dadosDepois: { para: email, pago: dados.pago },
       });
     }
-    return { ...r, destinatario: email };
+    return { ...r, destinatario: email, idioma };
   } catch (err) {
     console.warn(`[Email] Erro no e-mail de ${tipo}:`, err);
     return { ok: false, motivo: `Erro inesperado ao montar o e-mail: ${String(err)}` };

@@ -398,6 +398,9 @@ export default function PublicReservation() {
         state: stateUF,
         country,
         lgpdConsent,
+        // Idioma em que ele preencheu: decide a língua dos e-mails, do PDF e
+        // da página do contrato. Não a nacionalidade (2026-10-15).
+        idioma: lang,
       });
 
       // Upload documents after client is created (SEC-1: use HMAC token, never raw clientId)

@@ -103,6 +103,14 @@ export const clients = pgTable("clients", {
   nacionalidade: nacionalidadeEnum("nacionalidade"),
   tipoDocumento: tipoDocumentoEnum("tipo_documento"),
   numeroPassaporte: varchar("numero_passaporte", { length: 50 }),
+  // Idioma dos e-mails, do PDF e da página do contrato: "pt", "en" ou "es"
+  // (pedido da dona, 2026-10-15: "tem como enviar pro cliente em inglês?").
+  //
+  // ⚠️ NÃO é derivado da nacionalidade. O caso real marcou "brasileiro" e
+  // preencheu tudo em inglês; e estrangeiro em Floripa é muito argentino, que lê
+  // espanhol. Vem do idioma em que o cliente preencheu o /reservar, ou da loja
+  // no cadastro manual. Cadastro anterior a 0024 fica em português.
+  idioma: varchar("idioma", { length: 2 }).default("pt").notNull(),
   // Documents
   docFrontUrl: text("docFrontUrl"),
   docBackUrl: text("docBackUrl"),

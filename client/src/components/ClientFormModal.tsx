@@ -31,6 +31,7 @@ import {
 } from "@/hooks/useMask";
 import { friendlyError } from "@/lib/utils";
 import { DdiPicker } from "@/components/DdiPicker";
+import { languages, type Language } from "@/lib/i18n";
 
 // Extrai o DDI de um telefone salvo como "+XX numero"
 function parseDDI(phone: string | null | undefined): { ddi: string; number: string } {
@@ -70,6 +71,8 @@ export function ClientFormModal({ open, onClose, onSuccess, client }: ClientForm
     ddi: initDdi,
     phone: initPhone,
     email: client?.email ?? "",
+    // Idioma dos e-mails, do PDF e da página do contrato (2026-10-15).
+    idioma: ((client?.idioma as Language | undefined) ?? "pt") as Language,
     instagram: client?.instagram ?? "",
     zipCode: client?.zipCode ?? "",
     street: client?.street ?? "",
@@ -217,6 +220,7 @@ export function ClientFormModal({ open, onClose, onSuccess, client }: ClientForm
         gender: form.gender || undefined,
         phone: phone || undefined,
         email: form.email || undefined,
+        idioma: form.idioma,
         instagram: form.instagram || undefined,
         zipCode: form.zipCode || undefined,
         street: form.street || undefined,
@@ -423,6 +427,22 @@ export function ClientFormModal({ open, onClose, onSuccess, client }: ClientForm
                   <div>
                     <Label className={labelCls}>E-mail *</Label>
                     <Input type="email" value={form.email} onChange={(e) => set("email", e.target.value)} placeholder="joao@email.com" className={inputCls} />
+                  </div>
+                  {/* Separado da nacionalidade de propósito: argentino lê
+                      espanhol, e o caso real marcou "brasileiro" lendo inglês. */}
+                  <div>
+                    <Label className={labelCls}>Idioma dos e-mails e do contrato</Label>
+                    <Select value={form.idioma} onValueChange={(v) => set("idioma", v as Language)}>
+                      <SelectTrigger className={`${inputCls} w-full`}><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {languages.map((l) => (
+                          <SelectItem key={l.code} value={l.code}>{l.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-[11px] text-muted-foreground mt-1.5">
+                      Quem se cadastra pelo link já vem com o idioma em que preencheu.
+                    </p>
                   </div>
                 </div>
 

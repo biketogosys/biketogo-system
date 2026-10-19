@@ -96,11 +96,11 @@ function formatDate(d: Date | string | null | undefined): string {
   return dt.toLocaleDateString("pt-BR");
 }
 
-function formatDateLong(d: Date | string | null | undefined): string {
+function formatDateLong(d: Date | string | null | undefined, locale = "pt-BR"): string {
   if (!d) return "—";
   const dt = typeof d === "string" ? new Date(d) : d;
   if (isNaN(dt.getTime())) return "—";
-  return dt.toLocaleDateString("pt-BR", { day: "numeric", month: "long", year: "numeric" });
+  return dt.toLocaleDateString(locale, { day: "numeric", month: "long", year: "numeric" });
 }
 
 function formatCurrency(v: string | number | null | undefined): string {
@@ -124,17 +124,18 @@ function calcSubtotal(r: ContractPdfData["rentals"][0]): string {
 
 /** Exportada só para teste: o PDF usa fonte embutida e não dá para conferir o
  *  texto gerado lendo o arquivo. */
-export function periodLabel(r: ContractPdfData["rentals"][0]): string {
+export function periodLabel(r: ContractPdfData["rentals"][0], conector = "a"): string {
   // Com horário o período vira "20/07/2026 09:00 a 21/07/2026 18:00": é o
   // combinado que decide a virada da diária, então precisa estar no documento.
   // Sem horário (contrato legado) sai como sempre saiu, só as datas.
+  // `conector` é "to" no PDF em inglês (antes era "a" fixo nos três idiomas).
   const s = formatDate(r.startDate);
   const e = formatDate(r.endDate);
   if (s === "—" && e === "—") return "—";
   const si = r.startTime ? `${s} ${r.startTime}` : s;
   const ei = r.endTime ? `${e} ${r.endTime}` : e;
   if (si === ei) return si;
-  return `${si} a ${ei}`;
+  return `${si} ${conector} ${ei}`;
 }
 
 // ── Internacionalização ──────────────────────────────────────────────────────
@@ -172,6 +173,22 @@ const PDF_LABELS: Record<PdfLanguage, {
   /** F10: explica por que o valor difere do papel assinado. Placeholders:
    *  {data} {de} {para} {valorDe} {valorPara} */
   ajusteDevolucao: string;
+  // ⚠️ Estes cinco eram texto fixo em português no corpo do gerador, e o PDF em
+  // inglês saía com "Emitido em" e "11 de agosto de 2026" (2026-10-15, quando
+  // o PDF passou a sair no idioma do cliente).
+  numero: string;
+  emitidoEm: string;
+  /** Placeholder {pct}. */
+  descontoAplicado: string;
+  /** Placeholders {p} {n}. */
+  pagina: string;
+  /** Locale da data por extenso do fecho ("Florianópolis, 11 de agosto de 2026."). */
+  localeData: string;
+  /** Rótulos das caixas LOCADORA e LOCATÁRIO(A), também fixos até 2026-10-15. */
+  partes: {
+    razaoSocial: string; cnpj: string; endereco: string; cidade: string;
+    nome: string; cpf: string; rg: string; telefone: string;
+  };
 }> = {
   pt: {
     contractTitle: "CONTRATO DE LOCAÇÃO DE BICICLETA",
@@ -203,6 +220,15 @@ const PDF_LABELS: Record<PdfLanguage, {
     periodo:   "a",
     ajusteDevolucao: "Devolução antecipada em {data}: período ajustado de {de} para {para} diárias e valor de {valorDe} para {valorPara}.",
     contractObject: "Objeto do contrato",
+    numero: "Nº",
+    emitidoEm: "Emitido em",
+    descontoAplicado: "desconto de {pct}% aplicado",
+    pagina: "Página {p} de {n}",
+    localeData: "pt-BR",
+    partes: {
+      razaoSocial: "Razão social", cnpj: "CNPJ", endereco: "Endereço", cidade: "Cidade",
+      nome: "Nome", cpf: "CPF", rg: "RG", telefone: "Telefone",
+    },
   },
   en: {
     contractTitle: "BICYCLE RENTAL CONTRACT",
@@ -234,6 +260,15 @@ const PDF_LABELS: Record<PdfLanguage, {
     periodo:   "to",
     ajusteDevolucao: "Early return on {data}: rental period adjusted from {de} to {para} daily rates and amount from {valorDe} to {valorPara}.",
     contractObject: "Object of the contract",
+    numero: "No.",
+    emitidoEm: "Issued on",
+    descontoAplicado: "{pct}% discount applied",
+    pagina: "Page {p} of {n}",
+    localeData: "en-GB",
+    partes: {
+      razaoSocial: "Company name", cnpj: "CNPJ", endereco: "Address", cidade: "City",
+      nome: "Name", cpf: "CPF", rg: "ID / Passport", telefone: "Phone",
+    },
   },
   es: {
     contractTitle: "CONTRATO DE ALQUILER DE BICICLETA",
@@ -265,8 +300,22 @@ const PDF_LABELS: Record<PdfLanguage, {
     periodo:   "a",
     ajusteDevolucao: "Devolución anticipada el {data}: período ajustado de {de} a {para} días y valor de {valorDe} a {valorPara}.",
     contractObject: "Objeto del contrato",
+    numero: "Nº",
+    emitidoEm: "Emitido el",
+    descontoAplicado: "descuento del {pct}% aplicado",
+    pagina: "Página {p} de {n}",
+    localeData: "es-ES",
+    partes: {
+      razaoSocial: "Razón social", cnpj: "CNPJ", endereco: "Dirección", cidade: "Ciudad",
+      nome: "Nombre", cpf: "CPF", rg: "Documento / Pasaporte", telefone: "Teléfono",
+    },
   },
 };
+
+/** "a" / "to": o conector entre as duas datas de um período, no idioma do PDF. */
+export function conectorPeriodo(language: PdfLanguage): string {
+  return PDF_LABELS[language].periodo;
+}
 
 async function fetchSetting(key: string, placeholder: string): Promise<string> {
   try {
@@ -438,7 +487,7 @@ export async function generateContractPdf(
   const logoBuffer = await fetchLogoBuffer(logoUrl || null);
 
   const emitidoEm = formatDate(data.criadoEm);
-  const emitidoLong = formatDateLong(data.criadoEm);
+  const emitidoLong = formatDateLong(data.criadoEm, L.localeData);
   const contractNum = String(data.contractId).padStart(4, "0");
 
   return new Promise((resolve, reject) => {
@@ -489,9 +538,9 @@ export async function generateContractPdf(
 
     // Nº e data (alinhados à direita)
     doc.fillColor(GOLD).font("Helvetica-Bold").fontSize(12)
-      .text(`Nº ${contractNum}`, 360, 28, { width: CW - 320, align: "right", lineBreak: false });
+      .text(`${L.numero} ${contractNum}`, 360, 28, { width: CW - 320, align: "right", lineBreak: false });
     doc.fillColor(BANDTX).font("Helvetica").fontSize(8)
-      .text(`Emitido em ${emitidoEm}`, 360, 50, { width: CW - 320, align: "right", lineBreak: false });
+      .text(`${L.emitidoEm} ${emitidoEm}`, 360, 50, { width: CW - 320, align: "right", lineBreak: false });
 
     doc.y = 108; doc.x = M;
 
@@ -515,19 +564,19 @@ export async function generateContractPdf(
       const y0 = doc.y, pad = 11;
 
       const locadoraRows: [string, string][] = [
-        ["Razão social", empresaNome],
-        ["CNPJ",         empresaCnpj],
-        ["Endereço",     empresaEndereco],
-        ["Cidade",       empresaCidade],
+        [L.partes.razaoSocial, empresaNome],
+        [L.partes.cnpj,        empresaCnpj],
+        [L.partes.endereco,    empresaEndereco],
+        [L.partes.cidade,      empresaCidade],
       ];
       // Endereço do locatário adicionado (pedido Cassiana 2026-07-24); pode
       // quebrar em 2 linhas, então o box tem altura dinâmica (mede o conteúdo).
       const locatarioRows: [string, string][] = [
-        ["Nome",     data.clientName || "—"],
-        ["CPF",      data.clientCpf  || "—"],
-        ["RG",       data.clientRg   || "—"],
-        ["Telefone", data.clientPhone || "—"],
-        ["Endereço", data.clientAddress || "—"],
+        [L.partes.nome,     data.clientName || "—"],
+        [L.partes.cpf,      data.clientCpf  || "—"],
+        [L.partes.rg,       data.clientRg   || "—"],
+        [L.partes.telefone, data.clientPhone || "—"],
+        [L.partes.endereco, data.clientAddress || "—"],
       ];
 
       // Mede a altura necessária de um conjunto de linhas (rótulo+valor na mesma
@@ -614,7 +663,7 @@ export async function generateContractPdf(
           tam:    r.tamanho || "—",
           qtd:    String(r.quantity ?? 1),
           sis:    r.bikeUnitNumeros || r.bikeSerialNumber || "—",
-          per:    periodLabel(r),
+          per:    periodLabel(r, L.periodo),
           diaria: formatCurrency(r.dailyRate),
           sub:    calcSubtotal(r),
         };
@@ -624,7 +673,7 @@ export async function generateContractPdf(
         // Desconto aplicado, logo abaixo do subtotal
         if (hasDiscount) {
           doc.fillColor(GOLD).font("Helvetica").fontSize(6.5)
-            .text(`desconto de ${pct % 1 === 0 ? pct.toFixed(0) : pct}% aplicado`, subCol.x + 4, y + 15, { width: subCol.w - 8, align: "right", lineBreak: false });
+            .text(L.descontoAplicado.replace("{pct}", String(pct % 1 === 0 ? pct.toFixed(0) : pct)), subCol.x + 4, y + 15, { width: subCol.w - 8, align: "right", lineBreak: false });
           doc.fillColor(INK).font("Helvetica").fontSize(8);
         }
         y += rowH;
@@ -833,9 +882,7 @@ export async function generateContractPdf(
           `${empresaNome} · CNPJ ${empresaCnpj} · ${empresaCidade} · ${empresaEmail}`,
           M, H - 17, { width: CW - 60, lineBreak: false }
         );
-      const pageLabel = language === "en"
-        ? `Page ${p + 1} of ${range.count}`
-        : `Página ${p + 1} de ${range.count}`;
+      const pageLabel = L.pagina.replace("{p}", String(p + 1)).replace("{n}", String(range.count));
       doc.fillColor(GOLD).font("Helvetica").fontSize(7)
         .text(pageLabel, M, H - 17, { width: CW, align: "right", lineBreak: false });
     }

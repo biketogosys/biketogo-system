@@ -1,0 +1,1 @@
+ALTER TABLE "clients" ADD COLUMN "idioma" varchar(2) DEFAULT 'pt' NOT NULL;

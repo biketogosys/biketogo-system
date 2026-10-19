@@ -19,6 +19,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
 import { friendlyError } from "@/lib/utils";
+import { languages } from "@/lib/i18n";
 // ─── Lightbox ────────────────────────────────────────────────────────────────
 function Lightbox({ src, alt, onClose }: { src: string; alt: string; onClose: () => void }) {
   const handleKey = (e: React.KeyboardEvent) => { if (e.key === "Escape") onClose(); };
@@ -502,6 +503,10 @@ export default function ClientProfile() {
                   <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                     <InfoRow label="WhatsApp" value={client.phone} />
                     <InfoRow label="E-mail" value={client.email} />
+                    <InfoRow
+                      label="Idioma dos e-mails"
+                      value={languages.find((l) => l.code === client.idioma)?.label ?? "Português"}
+                    />
                     <InfoRow label="Instagram" value={client.instagram} />
                     <InfoRow label="Hospedagem" value={client.accommodation} />
                   </div>
