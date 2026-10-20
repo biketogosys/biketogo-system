@@ -479,7 +479,16 @@ export default function ClientProfile() {
                     <InfoRow label="Nome" value={client.name} />
                     <InfoRow label="Data de nascimento" value={client.birthDate} />
                     <InfoRow label="Gênero" value={client.gender} />
-                    <InfoRow label="Nacionalidade" value={(client as any).nacionalidade === "estrangeiro" ? "Estrangeiro" : "Brasileiro"} />
+                    {/* Vazio é "não informada", nunca "Brasileiro" (2026-10-20): era
+                        assim que todo estrangeiro do /reservar aparecia brasileiro. */}
+                    <InfoRow
+                      label="Nacionalidade"
+                      value={
+                        (client as any).nacionalidade === "estrangeiro" ? "Estrangeiro"
+                          : (client as any).nacionalidade === "brasileiro" ? "Brasileiro"
+                          : "Não informada"
+                      }
+                    />
                     {(client as any).nacionalidade !== "estrangeiro" ? (
                       <>
                         <InfoRow label="CPF" value={(client as any).cpf} />

@@ -35,7 +35,9 @@ export interface ContractPdfData {
   contractId: number;
   clientName: string;
   clientCpf?: string | null;
+  /** RG do brasileiro ou passaporte do estrangeiro; `clientDocTipo` diz qual. */
   clientRg?: string | null;
+  clientDocTipo?: "rg" | "passaporte";
   clientPhone?: string | null;
   clientEmail?: string | null;
   clientAddress?: string | null; // endereço já formatado (pedido Cassiana 2026-07-24)
@@ -187,7 +189,7 @@ const PDF_LABELS: Record<PdfLanguage, {
   /** Rótulos das caixas LOCADORA e LOCATÁRIO(A), também fixos até 2026-10-15. */
   partes: {
     razaoSocial: string; cnpj: string; endereco: string; cidade: string;
-    nome: string; cpf: string; rg: string; telefone: string;
+    nome: string; cpf: string; rg: string; passaporte: string; telefone: string;
   };
 }> = {
   pt: {
@@ -227,7 +229,7 @@ const PDF_LABELS: Record<PdfLanguage, {
     localeData: "pt-BR",
     partes: {
       razaoSocial: "Razão social", cnpj: "CNPJ", endereco: "Endereço", cidade: "Cidade",
-      nome: "Nome", cpf: "CPF", rg: "RG", telefone: "Telefone",
+      nome: "Nome", cpf: "CPF", rg: "RG", passaporte: "Passaporte", telefone: "Telefone",
     },
   },
   en: {
@@ -267,7 +269,7 @@ const PDF_LABELS: Record<PdfLanguage, {
     localeData: "en-GB",
     partes: {
       razaoSocial: "Company name", cnpj: "CNPJ", endereco: "Address", cidade: "City",
-      nome: "Name", cpf: "CPF", rg: "ID / Passport", telefone: "Phone",
+      nome: "Name", cpf: "CPF", rg: "ID (RG)", passaporte: "Passport", telefone: "Phone",
     },
   },
   es: {
@@ -307,7 +309,7 @@ const PDF_LABELS: Record<PdfLanguage, {
     localeData: "es-ES",
     partes: {
       razaoSocial: "Razón social", cnpj: "CNPJ", endereco: "Dirección", cidade: "Ciudad",
-      nome: "Nombre", cpf: "CPF", rg: "Documento / Pasaporte", telefone: "Teléfono",
+      nome: "Nombre", cpf: "CPF", rg: "Documento (RG)", passaporte: "Pasaporte", telefone: "Teléfono",
     },
   },
 };
@@ -574,7 +576,7 @@ export async function generateContractPdf(
       const locatarioRows: [string, string][] = [
         [L.partes.nome,     data.clientName || "—"],
         [L.partes.cpf,      data.clientCpf  || "—"],
-        [L.partes.rg,       data.clientRg   || "—"],
+        [data.clientDocTipo === "passaporte" ? L.partes.passaporte : L.partes.rg, data.clientRg || "—"],
         [L.partes.telefone, data.clientPhone || "—"],
         [L.partes.endereco, data.clientAddress || "—"],
       ];

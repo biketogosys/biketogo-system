@@ -177,13 +177,23 @@ export function ClientFormModal({ open, onClose, onSuccess, client }: ClientForm
     if (!isEdit && !form.phone.trim()) return fail("contato", "Telefone obrigatório");
     if (!form.height.trim()) return fail("identificacao", "Altura obrigatória");
     if (!String(form.weight).trim()) return fail("identificacao", "Peso obrigatório");
-    if (isBrazilian && form.nacionalidade === "brasileiro" || (isEdit && isBrazilian)) {
+    // ⚠️ Nacionalidade vazia NÃO é brasileiro (2026-10-20). Antes a edição
+    // tratava vazio como brasileiro e exigia CPF: o estrangeiro vindo do
+    // /reservar (que não gravava a nacionalidade) não salvava. Agora ela escolhe.
+    if (!form.nacionalidade) return fail("identificacao", "Escolha a nacionalidade do cliente");
+    if (form.nacionalidade === "brasileiro") {
       if (!form.cpf || form.cpf.replace(/\D/g, "").length < 11) return fail("identificacao", "CPF obrigatório (11 dígitos)");
       if (!isValidCPF(form.cpf)) return fail("identificacao", "CPF inválido, verifique os dígitos");
+      // RG obrigatório só na criação: no /reservar ele é opcional para
+      // brasileiro, e exigir na edição travaria o cadastro (mesma regra do
+      // telefone, logo acima).
       const rgDigits = form.rg.replace(/[.\-\s]/g, "");
-      if (!rgDigits || rgDigits.length < 7) return fail("identificacao", "RG obrigatório (mín. 7 dígitos)");
+      if (!isEdit && (!rgDigits || rgDigits.length < 7)) return fail("identificacao", "RG obrigatório (mín. 7 dígitos)");
+      if (isEdit && rgDigits && rgDigits.length < 7) return fail("identificacao", "RG incompleto (mín. 7 dígitos)");
     }
-    if (form.nacionalidade === "estrangeiro" && !isEdit) {
+    if (form.nacionalidade === "estrangeiro") {
+      // Também na edição: o servidor recusa estrangeiro sem passaporte, e a
+      // mensagem aqui leva para a aba certa.
       if (!form.numeroPassaporte.trim() || form.numeroPassaporte.trim().length < 5) return fail("identificacao", "Passaporte obrigatório (mínimo 5 caracteres)");
     }
     if (!form.lgpdConsent) return fail("documentos", "Você precisa aceitar os termos de privacidade para continuar.");
@@ -209,9 +219,13 @@ export function ClientFormModal({ open, onClose, onSuccess, client }: ClientForm
     try {
       const fullName = `${form.firstName.trim()} ${form.lastName.trim()}`;
       const phone = form.ddi !== "+55" && form.phone ? `${form.ddi} ${form.phone}` : form.phone;
+      // Estrangeiro cujo RG é o próprio passaporte (sobra do bug do /reservar):
+      // "" limpa o RG no servidor, senão o número ficaria nos dois campos.
+      const rgEhPassaporte = !!form.rg.trim()
+        && form.rg.trim().toUpperCase() === form.numeroPassaporte.trim().toUpperCase();
       const docFields = isBrazilian
         ? { cpf: form.cpf || undefined, rg: form.rg || undefined, numeroPassaporte: undefined }
-        : { cpf: undefined, rg: undefined, numeroPassaporte: form.numeroPassaporte || undefined };
+        : { cpf: undefined, rg: rgEhPassaporte ? "" : undefined, numeroPassaporte: form.numeroPassaporte || undefined };
       const common = {
         name: fullName,
         ...docFields,
@@ -342,7 +356,20 @@ export function ClientFormModal({ open, onClose, onSuccess, client }: ClientForm
                   <p className="form-group-title">Documento</p>
                   <div>
                     <Label className={labelCls}>Nacionalidade</Label>
-                    <Select value={form.nacionalidade} onValueChange={(v) => set("nacionalidade", v as "brasileiro" | "estrangeiro")}>
+                    <Select
+                      value={form.nacionalidade}
+                      onValueChange={(v) => setForm((f) => ({
+                        ...f,
+                        nacionalidade: v as "brasileiro" | "estrangeiro",
+                        // Cadastro do /reservar anterior a 2026-10-20 guardava o
+                        // passaporte no RG. Ao marcar estrangeiro, ele volta
+                        // para o campo certo (até o script de correção rodar).
+                        numeroPassaporte:
+                          v === "estrangeiro" && !f.numeroPassaporte && !f.cpf && f.rg
+                            ? f.rg.trim().toUpperCase()
+                            : f.numeroPassaporte,
+                      }))}
+                    >
                       <SelectTrigger className={`${inputCls} w-full`}><SelectValue placeholder="Selecionar..." /></SelectTrigger>
                       <SelectContent>
                         <SelectItem value="brasileiro">Brasileiro</SelectItem>

@@ -373,6 +373,10 @@ export default function PublicReservation() {
     try {
       const result = await submitMutation.mutateAsync({
         name: fullName,
+        // A nacionalidade não era enviada (2026-10-20): todo cadastro do link
+        // ficava sem ela, o perfil mostrava "Brasileiro" e a edição exigia CPF
+        // de estrangeiro.
+        nacionalidade: isBrazilian ? "brasileiro" : "estrangeiro",
         cpf: isBrazilian ? cpf : undefined,
         rg: isBrazilian && rg.trim() ? rg : undefined,
         passport: !isBrazilian ? passport : undefined,

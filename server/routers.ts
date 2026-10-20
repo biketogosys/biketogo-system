@@ -105,6 +105,7 @@ import {
 import { escapeHtml, sendNewLeadEmail, sendOwnerEmail, sendWelcomeEmail } from "./email";
 import { enviarEmailDeContrato, sendReceiptEmail } from "./email-contract";
 import { IDIOMAS, normalizarIdioma, type Idioma } from "./idioma";
+import { documentoDoContrato, documentosDoReservar } from "./nacionalidade";
 import { carregarAjustesDevolucao } from "./contract-adjustments";
 import { COOKIE_NAME } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
@@ -2557,8 +2558,21 @@ const publicApiRouter = router({
       // decide a língua dos e-mails, não a nacionalidade marcada: o caso real
       // marcou "brasileiro" e preencheu tudo em inglês.
       idioma: z.enum(IDIOMAS).optional(),
+      // Nacionalidade escolhida no formulário (2026-10-20). Até aqui não vinha,
+      // e todo cadastro do link ficava sem ela. Sem o campo (aba antiga), ela
+      // sai dos documentos em `documentosDoReservar`.
+      nacionalidade: z.enum(["brasileiro", "estrangeiro"]).optional(),
     }))
     .mutation(async ({ input }) => {
+      const docs = documentosDoReservar(input);
+      // Mesma regra do cadastro manual: brasileiro com CPF válido, estrangeiro
+      // com passaporte. O formulário já exige; aqui é a garantia do servidor.
+      validarDocumentoCliente({
+        nacionalidade: docs.nacionalidade,
+        cpf: docs.cpf,
+        numeroPassaporte: docs.numeroPassaporte,
+      });
+
       // Validate CPF for Brazilians
       if (input.cpf && input.cpf.replace(/\D/g, "").length > 0) {
         if (!validarCPF(input.cpf)) {
@@ -2577,7 +2591,7 @@ const publicApiRouter = router({
       // "já existe". Quem é de verdade reconhece a própria situação.
       {
         const dup = await encontrarClienteDuplicado({
-          cpf: input.cpf, email: input.email, passaporte: input.passport,
+          cpf: docs.cpf, email: input.email, passaporte: docs.numeroPassaporte,
         });
         if (dup) {
           throw new TRPCError({
@@ -2592,8 +2606,12 @@ const publicApiRouter = router({
       // Create client with status 'lead'
       const clientId = await createClient({
         name: input.name,
-        cpf: sanitize(input.cpf) as string | null,
-        rg: sanitize(input.rg ?? input.passport) as string | null,
+        // ⚠️ Passaporte no lugar dele, nunca mais na coluna `rg` (2026-10-20).
+        nacionalidade: docs.nacionalidade,
+        cpf: docs.cpf,
+        rg: docs.rg,
+        numeroPassaporte: docs.numeroPassaporte,
+        tipoDocumento: docs.tipoDocumento,
         birthDate: sanitize(input.birthDate) as string | null,
         gender: sanitize(input.gender) as string | null,
         height: sanitize(input.height) as string | null,
@@ -3518,11 +3536,16 @@ async function buildContractPdfData(
     return partes.length ? partes.join(" · ") : null;
   })();
 
+  // Estrangeiro sai com o passaporte e o rótulo de passaporte (2026-10-20);
+  // antes a caixa só conhecia "RG", e o passaporte do /reservar morava lá.
+  const documento = documentoDoContrato(clientRow);
+
   return {
     contractId,
     clientName: clientRow?.name ?? "—",
     clientCpf: clientRow?.cpf ?? null,
-    clientRg: clientRow?.rg ?? null,
+    clientRg: documento.valor,
+    clientDocTipo: documento.tipo,
     clientPhone: clientRow?.phone ?? null,
     clientEmail: clientRow?.email ?? null,
     clientAddress,
