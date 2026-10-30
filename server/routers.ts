@@ -108,6 +108,7 @@ import { IDIOMAS, normalizarIdioma, type Idioma } from "./idioma";
 import { documentoDoContrato, documentosDoReservar } from "./nacionalidade";
 import { carregarAjustesDevolucao } from "./contract-adjustments";
 import { COOKIE_NAME } from "@shared/const";
+import { enderecoEmLinha } from "@shared/enderecos";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import { ENV } from "./_core/env";
@@ -3522,19 +3523,8 @@ async function buildContractPdfData(
   }));
 
   // Endereço do cliente já formatado para o contrato (Cassiana 2026-07-24).
-  const clientAddress = (() => {
-    if (!clientRow) return null;
-    const linha1 = [clientRow.street, clientRow.number].filter(Boolean).join(", ");
-    const compl = clientRow.complement ? ` (${clientRow.complement})` : "";
-    const cidadeUf = [clientRow.city, clientRow.state].filter(Boolean).join("/");
-    const partes = [
-      linha1 + compl,
-      clientRow.neighborhood,
-      cidadeUf,
-      clientRow.zipCode ? `CEP ${clientRow.zipCode}` : null,
-    ].map((p) => (p || "").trim()).filter(Boolean);
-    return partes.length ? partes.join(" · ") : null;
-  })();
+  // Conforme o país (2026-10-26): no exterior sai sem o rótulo "CEP" e com o país.
+  const clientAddress = enderecoEmLinha(clientRow);
 
   // Estrangeiro sai com o passaporte e o rótulo de passaporte (2026-10-20);
   // antes a caixa só conhecia "RG", e o passaporte do /reservar morava lá.

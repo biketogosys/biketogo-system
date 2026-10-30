@@ -15,6 +15,8 @@ import {
 import { translations, languages, type Language } from "@/lib/i18n";
 import { maskCPF, maskRG, maskCEP, maskPhone, maskDate, isValidCPF } from "@/hooks/useMask";
 import { COUNTRIES, countryOptionValue, DDI_OPTIONS } from "@/lib/countries";
+import { ehBrasil, formatoEndereco, paisDaOrigem } from "@shared/enderecos";
+import { bytesDoDataUrl, enviarComRetentativa, prepararFoto } from "@/lib/foto-documento";
 
 // ─── Logo URL via env ─────────────────────────────────────────────────────────
 const LOGO_URL = (import.meta as any).env?.VITE_LOGO_URL as string | undefined;
@@ -172,14 +174,19 @@ export default function PublicReservation() {
   // DDI separado do número (turista estrangeiro): o telefone é salvo como
   // "+DDI número", o mesmo formato do cadastro do admin. Só o +55 recebe
   // máscara brasileira; o resto o próprio turista digita como usa.
-  const [phoneDdi, setPhoneDdi] = useState("+55");
+  // ⚠️ O select guarda o PAÍS, não o código (2026-10-27): +1 é EUA e Canadá,
+  // e com o código como valor o navegador mostrava a primeira opção dele. O
+  // turista americano escolhia Estados Unidos e via "Canadá".
+  const [phoneDdiPais, setPhoneDdiPais] = useState("Brasil");
+  const phoneDdi = DDI_OPTIONS.find((o) => o.name === phoneDdiPais)?.code ?? "+55";
   const [phone, setPhone] = useState("");
   const isBrPhone = phoneDdi === "+55";
   const [email, setEmail] = useState("");
   const [instagram, setInstagram] = useState("");
-  const [accommodation, setAccommodation] = useState("");
+  // ⚠️ "Onde está hospedado?" SAIU do formulário (dona, 2026-10-26: "o
+  // endereço da hospedagem não precisa ter, eles fazem muita bagunça com isso").
 
-  // Step 2 — Endereço
+  // Step 2 — Endereço (de CASA, conforme o país — `shared/enderecos.ts`)
   const [zipCode, setZipCode] = useState("");
   const [street, setStreet] = useState("");
   const [number, setNumber] = useState("");
@@ -187,7 +194,22 @@ export default function PublicReservation() {
   const [neighborhood, setNeighborhood] = useState("");
   const [city, setCity] = useState("");
   const [stateUF, setStateUF] = useState("");
-  const [country] = useState("Brasil");
+  // País do endereço: até ele escolher, vale o país do documento. Era "Brasil"
+  // fixo no código, e o estrangeiro não tinha como informar o endereço de casa.
+  const [paisEscolhido, setPaisEscolhido] = useState<string | null>(null);
+  const [outroPais, setOutroPais] = useState("");
+  const paisSelect = paisEscolhido
+    ?? (docOrigin === "Outro" ? "Outro" : (paisDaOrigem(docOrigin) || "Brasil"));
+  const country = paisSelect === "Outro" ? outroPais.trim() : paisSelect;
+  const enderecoBr = paisSelect !== "Outro" && ehBrasil(country);
+  const formato = formatoEndereco(enderecoBr ? "Brasil" : (country || "Outro"));
+  const escolherPais = (v: string) => {
+    // Trocar entre Brasil e exterior muda o formato do CEP e do estado: o que
+    // estava digitado no formato antigo não serve no novo.
+    const vaiSerBr = v !== "Outro" && ehBrasil(v);
+    if (vaiSerBr !== enderecoBr) { setZipCode(""); setStateUF(""); }
+    setPaisEscolhido(v);
+  };
   const [cepLoading, setCepLoading] = useState(false);
 
   // Step 3 — Documentos + LGPD
@@ -204,6 +226,11 @@ export default function PublicReservation() {
   const [docBackUploading, setDocBackUploading] = useState(false);
   const frontRef = useRef<HTMLInputElement>(null);
   const backRef = useRef<HTMLInputElement>(null);
+  // Lados que não chegaram depois do cadastro gravado, e o token para reenviar
+  // da tela final (vale 2h). Antes a falha era só um console.warn (2026-10-29).
+  const [uploadToken, setUploadToken] = useState<string | null>(null);
+  const [docsPendentes, setDocsPendentes] = useState<Array<"front" | "back">>([]);
+  const [reenvio, setReenvio] = useState<"nenhum" | "enviando" | "ok" | "falhou">("nenhum");
   const [lgpdConsent, setLgpdConsent] = useState(false);
   const [marketingConsent, setMarketingConsent] = useState(false);
 
@@ -234,36 +261,65 @@ export default function PublicReservation() {
   }, []);
 
   // ─── Document photo ───────────────────────────────────────────────────────────
-  const handleDocPhoto = (side: "front" | "back", file: File) => {
-    if (file.size > 10 * 1024 * 1024) {
+  const handleDocPhoto = async (side: "front" | "back", file: File) => {
+    const LIMITE = 10 * 1024 * 1024;
+    const recusar = () =>
       setErrors(e => ({ ...e, [side === "front" ? "docFront" : "docBack"]: t.docUploadError }));
-      return;
-    }
-    const mime = file.type || "image/jpeg";
+    // PDF vai como veio, então o limite vale antes de ler. Foto é reduzida
+    // primeiro (`prepararFoto`): a de 12 MB do celular vira algumas centenas
+    // de KB e passa.
+    if (!file.type.startsWith("image/") && file.size > LIMITE) return recusar();
+    let foto: { base64: string; mime: string };
+    try { foto = await prepararFoto(file); } catch { return recusar(); }
+    if (bytesDoDataUrl(foto.base64) > LIMITE) return recusar();
+    const { base64: b64, mime } = foto;
     const isPdf = mime === "application/pdf";
-    const reader = new FileReader();
-    reader.onload = ev => {
-      const b64 = ev.target?.result as string;
-      if (side === "front") {
-        setDocFrontBase64(b64);
-        setDocFrontMime(mime);
-        setDocFrontName(file.name);
-        if (isPdf) {
-          setDocFrontIsPdf(true);
-          setDocFrontPreview(null);
-          setShowVerso(false);
-        } else {
-          setDocFrontIsPdf(false);
-          setDocFrontPreview(b64);
-        }
+    if (side === "front") {
+      setDocFrontBase64(b64);
+      setDocFrontMime(mime);
+      setDocFrontName(file.name);
+      if (isPdf) {
+        setDocFrontIsPdf(true);
+        setDocFrontPreview(null);
+        setShowVerso(false);
       } else {
-        setDocBackBase64(b64);
-        setDocBackMime(mime);
-        setDocBackPreview(b64);
+        setDocFrontIsPdf(false);
+        setDocFrontPreview(b64);
       }
-      setErrors(e => { const n = { ...e }; delete n[side === "front" ? "docFront" : "docBack"]; return n; });
-    };
-    reader.readAsDataURL(file);
+    } else {
+      setDocBackBase64(b64);
+      setDocBackMime(mime);
+      setDocBackPreview(b64);
+    }
+    setErrors(e => { const n = { ...e }; delete n[side === "front" ? "docFront" : "docBack"]; return n; });
+  };
+
+  // Envia os lados pedidos e devolve os que NÃO chegaram. Usado no envio do
+  // formulário e no botão de reenviar da tela final.
+  const enviarLados = async (token: string, lados: Array<"front" | "back">) => {
+    const falharam: Array<"front" | "back"> = [];
+    for (const side of lados) {
+      const base64 = side === "front" ? docFrontBase64 : docBackBase64;
+      if (!base64) continue;
+      const mimeType = side === "front" ? docFrontMime : docBackMime;
+      const setUploading = side === "front" ? setDocFrontUploading : setDocBackUploading;
+      setUploading(true);
+      const r = await enviarComRetentativa(() => uploadDocMutation.mutateAsync({ token, base64, side, mimeType }));
+      setUploading(false);
+      if (r === "falhou") {
+        console.warn(`[reservar] o documento (${side}) não chegou depois das tentativas`);
+        falharam.push(side);
+      }
+    }
+    return falharam;
+  };
+
+  const reenviarDocumentos = async () => {
+    if (!uploadToken) return;
+    setReenvio("enviando");
+    const falharam = await enviarLados(uploadToken, docsPendentes);
+    setDocsPendentes(falharam);
+    setReenvio(falharam.length ? "falhou" : "ok");
   };
 
   // ─── Validation ───────────────────────────────────────────────────────────────
@@ -272,6 +328,7 @@ export default function PublicReservation() {
   const fieldValues: Record<string, string> = {
     firstName, lastName, cpf, rg, passport, birthDate, height, weight,
     phone, email, zipCode, state: stateUF, city, street, number, neighborhood,
+    country: paisSelect === "Outro" ? outroPais : paisSelect,
   };
 
   // ─── Fonte ÚNICA de validação: erro (ou undefined) de UM campo ──────────────
@@ -304,12 +361,20 @@ export default function PublicReservation() {
         if (!email || !email.trim()) return lang === "pt" ? "E-mail obrigatório" : lang === "en" ? "Email required" : "Correo obligatorio";
         if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return t.invalidEmail;
         return undefined;
-      case "zipCode": return (!zipCode || zipCode.replace(/\D/g, "").length < 8) ? t.required : undefined;
+      // Endereço conforme o país (2026-10-26). Brasil: as regras de sempre.
+      // Exterior: só presença, NUNCA o formato do código (recusar um código
+      // válido por engano trava o cadastro do turista).
+      case "country": return paisSelect === "Outro" && !outroPais.trim() ? t.required : undefined;
+      case "zipCode":
+        if (enderecoBr) return (!zipCode || zipCode.replace(/\D/g, "").length < 8) ? t.required : undefined;
+        return formato.codigoObrigatorio && !zipCode.trim() ? t.required : undefined;
       case "street": return !street.trim() ? t.required : undefined;
-      case "number": return !number.trim() ? t.required : undefined;
-      case "neighborhood": return !neighborhood.trim() ? t.required : undefined;
+      case "number": return enderecoBr && !number.trim() ? t.required : undefined;
+      case "neighborhood": return enderecoBr && !neighborhood.trim() ? t.required : undefined;
       case "city": return !city.trim() ? t.required : undefined;
-      case "state": return !stateUF ? t.required : undefined;
+      case "state":
+        if (enderecoBr) return !stateUF ? t.required : undefined;
+        return formato.regiao && formato.regiaoObrigatoria && !stateUF.trim() ? t.required : undefined;
       default: return undefined;
     }
   };
@@ -317,7 +382,7 @@ export default function PublicReservation() {
   const STEP_FIELDS: Record<number, string[]> = {
     0: ["firstName", "lastName", "cpf", "rg", "passport", "birthDate", "height", "weight"],
     1: ["phone", "email"],
-    2: ["zipCode", "state", "city", "street", "number", "neighborhood"],
+    2: ["country", "zipCode", "state", "city", "street", "number", "neighborhood"],
   };
 
   // Ao SAIR do campo: marca visitado e valida. "Premiar cedo, punir tarde":
@@ -392,14 +457,15 @@ export default function PublicReservation() {
         phone: `${phoneDdi} ${phone}`.trim(),
         email,
         instagram,
-        accommodation,
-        zipCode,
-        street,
-        number,
+        // Endereço de casa conforme o país. Número e bairro só existem no
+        // formato brasileiro; no exterior o número vai na linha 1.
+        zipCode: zipCode.trim(),
+        street: street.trim(),
+        number: enderecoBr ? number : undefined,
         complement,
-        neighborhood,
-        city,
-        state: stateUF,
+        neighborhood: enderecoBr ? neighborhood : undefined,
+        city: city.trim(),
+        state: stateUF.trim(),
         country,
         lgpdConsent,
         // Idioma em que ele preencheu: decide a língua dos e-mails, do PDF e
@@ -409,23 +475,13 @@ export default function PublicReservation() {
 
       // Upload documents after client is created (SEC-1: use HMAC token, never raw clientId)
       // NÃO-FATAL: o lead já foi criado acima. Se o upload falhar, ainda mostramos
-      // a tela de sucesso (documentos ficam pendentes) — assim o usuário não reenvia
-      // o formulário e duplica o lead.
-      const { clientId: _cid, uploadToken } = result as any;
-      if (uploadToken) {
-        if (docFrontBase64) {
-          setDocFrontUploading(true);
-          try { await uploadDocMutation.mutateAsync({ token: uploadToken, base64: docFrontBase64, side: "front", mimeType: docFrontMime }); }
-          catch (e) { console.warn("[reservar] falha no upload da frente do documento:", e); }
-          finally { setDocFrontUploading(false); }
-        }
-        if (docBackBase64) {
-          setDocBackUploading(true);
-          try { await uploadDocMutation.mutateAsync({ token: uploadToken, base64: docBackBase64, side: "back", mimeType: docBackMime }); }
-          catch (e) { console.warn("[reservar] falha no upload do verso do documento:", e); }
-          finally { setDocBackUploading(false); }
-        }
-      }
+      // a tela de sucesso, assim o usuário não reenvia o formulário e duplica o
+      // lead. Mas ela AVISA e oferece reenviar (2026-10-29): em silêncio, os
+      // clientes 100 e 104 ficaram sem documento e a loja só viu no perfil.
+      const token: string | undefined = (result as any).uploadToken;
+      const lados: Array<"front" | "back"> = docBackBase64 ? ["front", "back"] : ["front"];
+      setUploadToken(token ?? null);
+      setDocsPendentes(token ? await enviarLados(token, lados) : lados);
 
       setSubmitted(true);
     } catch (err: any) {
@@ -439,12 +495,19 @@ export default function PublicReservation() {
   // ─── Success screen ───────────────────────────────────────────────────────────
   if (submitted) {
     const waNumber = waData?.number;
+    const semDocumento = docsPendentes.length > 0;
     const waMsg = encodeURIComponent(
-      lang === "pt"
+      (lang === "pt"
         ? "Olá! Acabei de me cadastrar no site da Bike To Go e gostaria de solicitar uma reserva."
         : lang === "en"
         ? "Hi! I just registered on the Bike To Go website and would like to request a reservation."
-        : "¡Hola! Acabo de registrarme en el sitio de Bike To Go y me gustaría solicitar una reserva."
+        : "¡Hola! Acabo de registrarme en el sitio de Bike To Go y me gustaría solicitar una reserva.")
+      // Quem chega pelo WhatsApp sem documento já avisa a loja na primeira mensagem.
+      + (!semDocumento ? "" : lang === "pt"
+        ? " A foto do meu documento não foi enviada pelo site, vou mandar por aqui."
+        : lang === "en"
+        ? " My document photo didn't go through on the website, I'll send it here."
+        : " La foto de mi documento no se envió por el sitio, la mando por aquí.")
     );
     return (
       <div className={`min-h-screen ${bg} flex items-center justify-center p-4`}>
@@ -462,6 +525,45 @@ export default function PublicReservation() {
               ? "Your registration is complete. You can now request your reservation."
               : "Tu registro fue completado. Ahora puedes solicitar tu reserva."}
           </p>
+          {semDocumento && (
+            <div role="alert" className="border border-destructive/40 bg-destructive/10 rounded-xl p-5 text-left mb-6">
+              <p className={`flex items-center gap-2 text-sm font-semibold ${textPrimary} mb-1.5`}>
+                <AlertCircle className="w-4 h-4 text-destructive shrink-0" />
+                {lang === "pt" ? "A foto do seu documento não chegou" : lang === "en" ? "Your document photo didn't reach us" : "La foto de tu documento no llegó"}
+              </p>
+              <p className={`text-sm ${textSecondary} leading-relaxed mb-4`}>
+                {reenvio === "falhou"
+                  ? (lang === "pt"
+                    ? `Não deu de novo. Mande a foto pelo WhatsApp da loja${waNumber ? ", no botão abaixo" : ""}.`
+                    : lang === "en"
+                    ? `It failed again. Please send the photo through the store's WhatsApp${waNumber ? ", using the button below" : ""}.`
+                    : `No funcionó de nuevo. Envía la foto por el WhatsApp de la tienda${waNumber ? ", con el botón de abajo" : ""}.`)
+                  : (lang === "pt"
+                    ? "Seu cadastro foi feito, mas a foto do documento não foi enviada. Tente de novo."
+                    : lang === "en"
+                    ? "Your registration was saved, but the document photo wasn't sent. Please try again."
+                    : "Tu registro fue guardado, pero la foto del documento no se envió. Inténtalo de nuevo.")}
+              </p>
+              <button
+                type="button"
+                onClick={reenviarDocumentos}
+                disabled={reenvio === "enviando" || !uploadToken}
+                className="inline-flex items-center justify-center gap-2 w-full px-5 py-3 rounded-xl text-sm font-semibold border border-destructive/50 text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-60"
+              >
+                {reenvio === "enviando"
+                  ? <><Loader2 className="w-4 h-4 animate-spin" />{lang === "en" ? "Sending..." : "Enviando..."}</>
+                  : <><Upload className="w-4 h-4" />{lang === "pt" ? "Enviar a foto de novo" : lang === "en" ? "Send the photo again" : "Enviar la foto de nuevo"}</>}
+              </button>
+            </div>
+          )}
+          {reenvio === "ok" && (
+            <div role="status" className="flex items-center gap-2 border border-primary/40 bg-primary/10 rounded-xl p-4 text-left text-sm font-semibold mb-6">
+              <CheckCircle2 className="w-4 h-4 text-primary shrink-0" />
+              <span className={textPrimary}>
+                {lang === "pt" ? "Documento recebido. Obrigado!" : lang === "en" ? "Document received. Thank you!" : "Documento recibido. ¡Gracias!"}
+              </span>
+            </div>
+          )}
           <div className={`${cardBg} border rounded-xl p-5 text-left mb-6`}>
             <p className={`text-sm font-semibold ${textPrimary} mb-2`}>
               {lang === "pt" ? "Próximos passos:" : lang === "en" ? "Next steps:" : "Próximos pasos:"}
@@ -782,12 +884,12 @@ export default function PublicReservation() {
                   <div className="w-28 shrink-0">
                     <select
                       className={selectBase}
-                      value={phoneDdi}
-                      onChange={e => setPhoneDdi(e.target.value)}
+                      value={phoneDdiPais}
+                      onChange={e => setPhoneDdiPais(e.target.value)}
                       aria-label="DDI"
                     >
                       {DDI_OPTIONS.map(o => (
-                        <option key={`${o.name}-${o.code}`} value={o.code}>
+                        <option key={`${o.name}-${o.code}`} value={o.name}>
                           {o.flag} {o.code} {o.name}
                         </option>
                       ))}
@@ -807,16 +909,10 @@ export default function PublicReservation() {
                   type="email" value={email} onChange={e => setEmail(e.target.value)} />
               </Field>
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <Field label={t.instagram}>
-                <input className={inputNormal} placeholder={t.instagramPlaceholder}
-                  value={instagram} onChange={e => setInstagram(e.target.value)} />
-              </Field>
-              <Field label={t.accommodation} hint={t.accommodationHint}>
-                <input className={inputNormal} placeholder={t.accommodationPlaceholder}
-                  value={accommodation} onChange={e => setAccommodation(e.target.value)} />
-              </Field>
-            </div>
+            <Field label={t.instagram}>
+              <input className={inputNormal} placeholder={t.instagramPlaceholder}
+                value={instagram} onChange={e => setInstagram(e.target.value)} />
+            </Field>
 
             {/* Como nos encontrou — movido da Identificação (é marketing, casa
                 com Instagram e alivia o passo 1) */}
@@ -839,6 +935,25 @@ export default function PublicReservation() {
             <div className={`flex items-center gap-2 pb-3 border-b ${sectionBorder}`}>
               <span className="text-primary text-sm font-bold uppercase tracking-widest flex items-center gap-2"><HomeIcon className="w-4 h-4 shrink-0" />{t.sectionAddress}</span>
             </div>
+
+            {/* País do endereço de CASA. Começa no país do documento; mudar
+                aqui troca o formato (Brasil: CEP e UF; exterior: internacional). */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <Field label={lang === "en" ? "Country" : "País"} required {...(paisSelect === "Outro" ? {} : fieldProps("country"))}>
+                <select className={selectBase} value={paisSelect} onChange={e => escolherPais(e.target.value)}>
+                  {COUNTRIES.map(c => <option key={c.name} value={c.name}>{c.flag} {c.name}</option>)}
+                  <option value="Outro">🌍 {lang === "pt" ? "Outro país" : lang === "en" ? "Other country" : "Otro país"}</option>
+                </select>
+              </Field>
+              {paisSelect === "Outro" && (
+                <Field label={lang === "pt" ? "Qual país?" : lang === "en" ? "Which country?" : "¿Qué país?"} required {...fieldProps("country")}>
+                  <input className={errors.country ? inputError : inputNormal} maxLength={50}
+                    value={outroPais} onChange={e => setOutroPais(e.target.value)} />
+                </Field>
+              )}
+            </div>
+
+            {enderecoBr ? (<>
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
               <Field label={t.zipCode} required {...fieldProps("zipCode")}>
                 <div className="relative">
@@ -884,6 +999,43 @@ export default function PublicReservation() {
                   value={neighborhood} onChange={e => setNeighborhood(e.target.value)} />
               </Field>
             </div>
+            </>) : (<>
+            {/* Endereço internacional: rua e número na linha 1, sem bairro, e o
+                código postal com o nome e o exemplo do país (sem validar formato). */}
+            <Field
+              label={lang === "pt" ? "Endereço" : lang === "en" ? "Address line 1" : "Dirección"}
+              required {...fieldProps("street")}
+            >
+              <input className={errors.street ? inputError : inputNormal} maxLength={255}
+                placeholder={lang === "pt" ? "Rua e número" : lang === "en" ? "Street and number" : "Calle y número"}
+                value={street} onChange={e => setStreet(e.target.value)} />
+            </Field>
+            <Field label={lang === "pt" ? "Complemento" : lang === "en" ? "Address line 2" : "Dirección (línea 2)"}>
+              <input className={inputNormal} maxLength={100}
+                placeholder={lang === "pt" ? "Apto, bloco, casa..." : lang === "en" ? "Apartment, suite, unit..." : "Depto, piso..."}
+                value={complement} onChange={e => setComplement(e.target.value)} />
+            </Field>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <Field label={t.city} required {...fieldProps("city")}>
+                <input className={errors.city ? inputError : inputNormal} maxLength={100}
+                  value={city} onChange={e => setCity(e.target.value)} />
+              </Field>
+              {formato.regiao && (
+                <Field label={formato.regiao[lang]} required={formato.regiaoObrigatoria} {...fieldProps("state")}>
+                  <input className={errors.state ? inputError : inputNormal} maxLength={50}
+                    placeholder={formato.exemploRegiao ? `${lang === "en" ? "e.g." : lang === "es" ? "Ej:" : "Ex:"} ${formato.exemploRegiao}` : undefined}
+                    value={stateUF} onChange={e => setStateUF(e.target.value)} />
+                </Field>
+              )}
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <Field label={formato.codigo[lang]} required={formato.codigoObrigatorio} {...fieldProps("zipCode")}>
+                <input className={errors.zipCode ? inputError : inputNormal} maxLength={10} autoCapitalize="characters"
+                  placeholder={formato.exemploCodigo ? `${lang === "en" ? "e.g." : lang === "es" ? "Ej:" : "Ex:"} ${formato.exemploCodigo}` : undefined}
+                  value={zipCode} onChange={e => setZipCode(e.target.value.toUpperCase())} />
+              </Field>
+            </div>
+            </>)}
           </div>
         )}
 

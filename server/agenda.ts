@@ -18,6 +18,8 @@ export type AgendaItem = {
   accommodation: string | null;
   neighborhood: string | null;
   city: string | null;
+  // País do endereço de casa: a Agenda não mostra endereço estrangeiro como local de entrega.
+  country: string | null;
   bikeModel: string;
   tamanho: string | null;
   quantity: number | null;
@@ -36,6 +38,7 @@ const baseSelect = {
   accommodation: clients.accommodation,
   neighborhood: clients.neighborhood,
   city: clients.city,
+  country: clients.country,
   bikeModel: bikes.model,
   tamanho: bikeSizes.tamanho,
   quantity: rentals.quantity,

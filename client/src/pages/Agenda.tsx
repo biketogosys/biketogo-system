@@ -18,6 +18,7 @@ import { useMarkReturned } from "@/hooks/useMarkReturned";
 import { ExtendRentalDialog, type ExtendableRental } from "@/components/ExtendRentalDialog";
 import { EarlyReturnDialog, type EarlyReturnTarget } from "@/components/EarlyReturnDialog";
 import { AgendaMiniMonth, type DayDensity } from "@/components/AgendaMiniMonth";
+import { ehBrasil } from "@shared/enderecos";
 import { NewContractModal } from "@/components/NewContractModal";
 import { buildWhatsappUrl } from "@/lib/whatsapp";
 
@@ -39,13 +40,22 @@ type Item = {
   id: number; day: string; deliveryTime: string | null;
   clientId: number; clientName: string; clientPhone: string | null;
   accommodation: string | null; neighborhood: string | null; city: string | null;
+  country: string | null;
   bikeModel: string; tamanho: string | null; quantity: number | null;
   dailyRate: string | null;
   contractId: number | null; status: string; daysLate: number;
 };
 
+/**
+ * Onde entregar, como pista para a loja. A hospedagem vem primeiro (cadastros
+ * antigos e o cadastro manual ainda a têm). Endereço de casa no EXTERIOR não
+ * aparece: desde 2026-10-26 o turista informa o endereço de casa no país dele,
+ * e a Agenda mostraria "Buenos Aires" como local de entrega. O local do turista
+ * é combinado no WhatsApp.
+ */
 function locationOf(item: Item): string | null {
   if (item.accommodation?.trim()) return item.accommodation.trim();
+  if (!ehBrasil(item.country)) return null;
   const parts = [item.neighborhood, item.city].filter((p) => p && p.trim());
   return parts.length ? parts.join(" · ") : null;
 }

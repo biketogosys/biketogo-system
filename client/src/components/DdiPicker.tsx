@@ -23,7 +23,12 @@ export function DdiPicker({
   disabled?: boolean;
 }) {
   const [open, setOpen] = useState(false);
-  const atual = ddiLabel(value);
+  // Só o CÓDIGO é salvo, e +1 é EUA e Canadá ao mesmo tempo. Quem acabou de
+  // escolher vê o país que escolheu; telefone já salvo mostra o principal do
+  // código (`ddiLabel`). Antes aparecia o Canadá para todo +1 (2026-10-27).
+  const [escolhido, setEscolhido] = useState<string | null>(null);
+  const atual = (escolhido && DDI_OPTIONS.find((o) => o.name === escolhido && o.code === value))
+    || ddiLabel(value);
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -64,12 +69,12 @@ export function DdiPicker({
                 <CommandItem
                   key={`${o.name}-${o.code}`}
                   value={`${o.name} ${o.code}`}
-                  onSelect={() => { onChange(o.code); setOpen(false); }}
+                  onSelect={() => { setEscolhido(o.name); onChange(o.code); setOpen(false); }}
                 >
                   <span className="mr-2">{o.flag}</span>
                   <span className="flex-1 truncate">{o.name}</span>
                   <span className="text-muted-foreground tabular-nums">{o.code}</span>
-                  {value === o.code && <Check className="ml-2 h-4 w-4 text-primary" />}
+                  {atual?.name === o.name && <Check className="ml-2 h-4 w-4 text-primary" />}
                 </CommandItem>
               ))}
             </CommandGroup>

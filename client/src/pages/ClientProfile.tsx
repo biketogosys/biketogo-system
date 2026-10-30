@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/dialog";
 import { friendlyError } from "@/lib/utils";
 import { languages } from "@/lib/i18n";
+import { formatoEndereco } from "@shared/enderecos";
 // ─── Lightbox ────────────────────────────────────────────────────────────────
 function Lightbox({ src, alt, onClose }: { src: string; alt: string; onClose: () => void }) {
   const handleKey = (e: React.KeyboardEvent) => { if (e.key === "Escape") onClose(); };
@@ -525,15 +526,23 @@ export default function ClientProfile() {
                   <h3 className="text-xs font-semibold text-primary uppercase tracking-wider mb-3">
                     Endereço
                   </h3>
-                  <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                    <InfoRow label="CEP" value={client.zipCode} />
-                    <InfoRow label="Rua" value={client.street} />
-                    <InfoRow label="Número" value={client.number} />
-                    <InfoRow label="Bairro" value={client.neighborhood} />
-                    <InfoRow label="Cidade" value={client.city} />
-                    <InfoRow label="Estado" value={client.state} />
-                    <InfoRow label="País" value={client.country} />
-                  </div>
+                  {/* Rótulos conforme o país (2026-10-26): "ZIP code", "CAP",
+                      "Província"... O complemento não aparecia em lugar nenhum. */}
+                  {(() => {
+                    const fmt = formatoEndereco(client.country);
+                    return (
+                      <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                        <InfoRow label={fmt.codigo.pt} value={client.zipCode} />
+                        <InfoRow label={fmt.brasil ? "Rua" : "Endereço"} value={client.street} />
+                        <InfoRow label="Número" value={client.number} />
+                        <InfoRow label="Complemento" value={client.complement} />
+                        <InfoRow label="Bairro" value={client.neighborhood} />
+                        <InfoRow label="Cidade" value={client.city} />
+                        <InfoRow label={fmt.regiao?.pt ?? "Região"} value={client.state} />
+                        <InfoRow label="País" value={client.country} />
+                      </div>
+                    );
+                  })()}
                 </div>
 
                 {client.source && (

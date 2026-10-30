@@ -240,7 +240,23 @@ export const DDI_OPTIONS: DdiOption[] = COUNTRIES.map((c) => ({
   flag: c.flag,
 }));
 
-/** País mostrado para um DDI salvo (o primeiro da lista, Brasil vence o +55). */
+/**
+ * Código dividido entre países: qual mostrar quando só o código foi salvo.
+ *
+ * ⚠️ Bug real (2026-10-27): o telefone de um cliente dos EUA aparecia com a
+ * bandeira do CANADÁ ("+1 não era estados unidos?"). A busca pegava o primeiro
+ * país da lista com o código, e em ordem alfabética Canadá vem antes de Estados
+ * Unidos (e Escócia antes de Reino Unido).
+ */
+const PRINCIPAL_DO_DDI: Record<string, string> = {
+  "+1": "Estados Unidos",
+  "+7": "Rússia",
+  "+44": "Reino Unido",
+};
+
+/** País mostrado para um DDI salvo (Brasil vence o +55; código dividido usa o principal). */
 export function ddiLabel(code: string): DdiOption | undefined {
-  return DDI_OPTIONS.find((o) => o.code === code);
+  const principal = PRINCIPAL_DO_DDI[code];
+  return (principal && DDI_OPTIONS.find((o) => o.name === principal))
+    || DDI_OPTIONS.find((o) => o.code === code);
 }

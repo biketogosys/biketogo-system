@@ -32,6 +32,8 @@ import {
 import { friendlyError } from "@/lib/utils";
 import { DdiPicker } from "@/components/DdiPicker";
 import { languages, type Language } from "@/lib/i18n";
+import { COUNTRIES } from "@/lib/countries";
+import { ehBrasil, formatoEndereco } from "@shared/enderecos";
 
 // Extrai o DDI de um telefone salvo como "+XX numero"
 function parseDDI(phone: string | null | undefined): { ddi: string; number: string } {
@@ -118,6 +120,20 @@ export function ClientFormModal({ open, onClose, onSuccess, client }: ClientForm
   function set<K extends keyof typeof form>(key: K, value: (typeof form)[K]) {
     setForm((f) => ({ ...f, [key]: value }));
   }
+
+  // Endereço conforme o país (2026-10-26), mesma regra do /reservar.
+  const enderecoBr = ehBrasil(form.country);
+  const formato = formatoEndereco(form.country);
+  const escolherPais = (pais: string) => setForm((f) => {
+    // Brasil ⇄ exterior muda o formato do CEP e do estado.
+    const mudaFormato = ehBrasil(pais) !== ehBrasil(f.country);
+    return { ...f, country: pais, ...(mudaFormato ? { zipCode: "", state: "" } : {}) };
+  });
+  // País gravado fora da lista (cadastro antigo digitado à mão) continua
+  // aparecendo como opção, senão o select ficaria em branco.
+  const opcoesPais = COUNTRIES.some((c) => c.name === form.country) || !form.country
+    ? COUNTRIES.map((c) => c.name)
+    : [form.country, ...COUNTRIES.map((c) => c.name)];
 
   const handleCEP = useCallback(async (val: string) => {
     const masked = maskCEP(val);
@@ -236,11 +252,14 @@ export function ClientFormModal({ open, onClose, onSuccess, client }: ClientForm
         email: form.email || undefined,
         idioma: form.idioma,
         instagram: form.instagram || undefined,
-        zipCode: form.zipCode || undefined,
+        zipCode: form.zipCode.trim() || undefined,
         street: form.street || undefined,
-        number: form.number || undefined,
+        // Número e bairro só existem no endereço brasileiro. No exterior, ""
+        // limpa o que tenha sobrado (ex.: o CEP da pousada que o turista
+        // digitava antes de existir o endereço internacional).
+        number: enderecoBr ? (form.number || undefined) : "",
         complement: form.complement || undefined,
-        neighborhood: form.neighborhood || undefined,
+        neighborhood: enderecoBr ? (form.neighborhood || undefined) : "",
         city: form.city || undefined,
         state: form.state || undefined,
         country: form.country || "Brasil",
@@ -503,6 +522,17 @@ export function ClientFormModal({ open, onClose, onSuccess, client }: ClientForm
 
               {/* ── Aba 3: Endereço ── */}
               <TabsContent value="endereco" className="mt-0 space-y-4">
+                {/* País primeiro: ele decide o formato (mesmo roteiro do /reservar). */}
+                <div>
+                  <Label className={labelCls}>País</Label>
+                  <Select value={form.country || "Brasil"} onValueChange={escolherPais}>
+                    <SelectTrigger className={`${inputCls} w-full`}><SelectValue /></SelectTrigger>
+                    <SelectContent className="max-h-72">
+                      {opcoesPais.map((p) => <SelectItem key={p} value={p}>{p}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                {enderecoBr ? (<>
                 <div className="grid grid-cols-3 gap-3">
                   <div className="col-span-2">
                     <Label className={labelCls}>CEP</Label>
@@ -540,10 +570,36 @@ export function ClientFormModal({ open, onClose, onSuccess, client }: ClientForm
                     <Input value={form.city} onChange={(e) => set("city", e.target.value)} placeholder="Florianópolis" className={inputCls} />
                   </div>
                 </div>
+                </>) : (<>
+                {/* Endereço internacional: sem bairro, número na linha 1, código
+                    postal com o nome do país e sem validar formato. */}
                 <div>
-                  <Label className={labelCls}>País</Label>
-                  <Input value={form.country} onChange={(e) => set("country", e.target.value)} placeholder="Brasil" className={inputCls} />
+                  <Label className={labelCls}>Endereço (rua e número)</Label>
+                  <Input value={form.street} onChange={(e) => set("street", e.target.value)} placeholder="123 Main St" className={inputCls} maxLength={255} />
                 </div>
+                <div>
+                  <Label className={labelCls}>Complemento</Label>
+                  <Input value={form.complement} onChange={(e) => set("complement", e.target.value)} placeholder="Apt 4B" className={inputCls} maxLength={100} />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <Label className={labelCls}>Cidade</Label>
+                    <Input value={form.city} onChange={(e) => set("city", e.target.value)} className={inputCls} maxLength={100} />
+                  </div>
+                  {formato.regiao && (
+                    <div>
+                      <Label className={labelCls}>{formato.regiao.pt}</Label>
+                      <Input value={form.state} onChange={(e) => set("state", e.target.value)} placeholder={formato.exemploRegiao || undefined} className={inputCls} maxLength={50} />
+                    </div>
+                  )}
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <Label className={labelCls}>{formato.codigo.pt}</Label>
+                    <Input value={form.zipCode} onChange={(e) => set("zipCode", e.target.value.toUpperCase())} placeholder={formato.exemploCodigo || undefined} className={inputCls} maxLength={10} />
+                  </div>
+                </div>
+                </>)}
               </TabsContent>
 
               {/* ── Aba 4: Documentos + uso interno + LGPD (espelha o passo 4 do /reservar) ── */}
