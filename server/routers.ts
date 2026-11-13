@@ -6,7 +6,7 @@ import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { getReturnsDue, todaySaoPaulo } from "./overdue";
 import { getAgenda } from "./agenda";
-import { globalSearch } from "./search";
+import { globalSearch, nomeTemAsPalavras } from "./search";
 import {
   extendRental,
   applyEarlyReturn,
@@ -109,6 +109,8 @@ import { documentoDoContrato, documentosDoReservar } from "./nacionalidade";
 import { carregarAjustesDevolucao } from "./contract-adjustments";
 import { COOKIE_NAME } from "@shared/const";
 import { enderecoEmLinha } from "@shared/enderecos";
+import { rgValido } from "@shared/rg";
+import { MAX_PARCELAS, parcelasDoCredito } from "@shared/pagamento";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import { ENV } from "./_core/env";
@@ -154,12 +156,9 @@ function validarCPF(cpf: string): boolean {
   return r === parseInt(digits[10]);
 }
 
-function validarRG(rg: string): boolean {
-  const clean = rg.replace(/[.\-\s]/g, "").toUpperCase();
-  if (clean.length < 7 || clean.length > 9) return false;
-  // Aceita formato livre (dígito verificador pode ser X em alguns estados)
-  return /^[0-9]{6,8}[0-9X]$/.test(clean);
-}
+// RG de qualquer estado, com letra (MG) ou 10 dígitos (RS): `shared/rg.ts`.
+const validarRG = rgValido;
+const MSG_RG_INVALIDO = "RG inválido. Confira o número: de 7 a 14 letras e números.";
 
 function validarDocumentoCliente(input: {
   nacionalidade?: string | null;
@@ -188,7 +187,7 @@ function validarDocumentoCliente(input: {
 
   if (rg && rg.replace(/[.\-\s]/g, "").length > 0) {
     if (!validarRG(rg)) {
-      throw new TRPCError({ code: "BAD_REQUEST", message: "RG inválido. Verifique o dígito verificador." });
+      throw new TRPCError({ code: "BAD_REQUEST", message: MSG_RG_INVALIDO });
     }
   }
 }
@@ -2582,7 +2581,7 @@ const publicApiRouter = router({
       }
       if (input.rg && input.rg.replace(/[.\-\s]/g, "").length > 0) {
         if (!validarRG(input.rg)) {
-          throw new TRPCError({ code: "BAD_REQUEST", message: "RG inválido." });
+          throw new TRPCError({ code: "BAD_REQUEST", message: MSG_RG_INVALIDO });
         }
       }
 
@@ -3691,6 +3690,8 @@ const contractsRouter = router({
       page: z.number().min(1).default(1),
       limit: z.number().min(1).max(100).default(20),
       view: z.enum(["ativos", "arquivados"]).default("ativos"),
+      // Nome do cliente, na aba Arquivados (pedido da dona, 2026-11-10).
+      search: z.string().trim().max(120).optional(),
     }))
     .query(async ({ input }) => {
       const db = await getDb();
@@ -3714,7 +3715,16 @@ const contractsRouter = router({
       const statusCond = input.view === "arquivados"
         ? estaArquivado
         : drizzleSql`NOT ${estaArquivado}`;
-      const where = and(isNull(contracts.deletedAt), statusCond);
+      const where = and(
+        isNull(contracts.deletedAt),
+        statusCond,
+        nomeTemAsPalavras(clientsTable.name, input.search ?? ""),
+      );
+      // Arquivados: o mais recente primeiro (pedido da dona, 2026-11-10). O `id`
+      // desempata para a paginação não repetir contrato criado no mesmo instante.
+      const ordem = input.view === "arquivados"
+        ? [desc(contracts.criadoEm), desc(contracts.id)]
+        : [contracts.criadoEm];
       const [items, countResult] = await Promise.all([
         db.select({
           id: contracts.id,
@@ -3748,11 +3758,14 @@ const contractsRouter = router({
           .from(contracts)
           .leftJoin(clientsTable, eq(contracts.clientId, clientsTable.id))
           .where(where)
-          .orderBy(contracts.criadoEm)
+          .orderBy(...ordem)
           .limit(input.limit)
           .offset(offset),
+        // O join é porque a busca olha o nome do cliente. Não multiplica linha:
+        // cada contrato tem um cliente só.
         db.select({ count: drizzleSql<number>`count(*)` })
           .from(contracts)
+          .leftJoin(clientsTable, eq(contracts.clientId, clientsTable.id))
           .where(where),
       ]);
       const total = Number(countResult[0]?.count ?? 0);
@@ -4858,6 +4871,9 @@ const contractsRouter = router({
       payments: z.array(z.object({
         method: z.enum(["pix", "credit_card", "debit_card", "cash", "other"]),
         amount: z.string().optional(),
+        // Em quantas vezes a maquininha parcelou (dona, 2026-11-06). Só vale
+        // no crédito; nas outras formas é descartado em `parcelasDoCredito`.
+        parcelas: z.number().int().min(1).max(MAX_PARCELAS).optional(),
       })).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
@@ -4888,12 +4904,15 @@ const contractsRouter = router({
       // Normaliza as formas de pagamento: `payments` (novo, pode dividir) tem
       // prioridade; senão cai no `paymentMethod` único (retrocompat). O rótulo
       // amigável da forma é montado na TELA (Financeiro), não aqui.
-      type PayLine = { method: string; amount: number };
+      type PayLine = { method: string; amount: number; parcelas?: number };
       let payLines: PayLine[];
       if (input.payments && input.payments.length > 0) {
         const comValor = input.payments.some((p) => p.amount != null && p.amount !== "");
         if (comValor) {
-          payLines = input.payments.map((p) => ({ method: p.method, amount: parseFloat(p.amount || "0") || 0 }));
+          payLines = input.payments.map((p) => ({
+            method: p.method, amount: parseFloat(p.amount || "0") || 0,
+            parcelas: parcelasDoCredito(p.method, p.parcelas),
+          }));
           const soma = payLines.reduce((s, l) => s + l.amount, 0);
           // Guarda contra digitação errada no recebimento (tolerância de 1 centavo).
           if (totalAmt > 0 && Math.abs(soma - totalAmt) > 0.01) {
@@ -4902,7 +4921,8 @@ const contractsRouter = router({
           }
         } else {
           // formas sem valor → forma única cobrindo o total
-          payLines = [{ method: input.payments[0].method, amount: totalAmt }];
+          const [unica] = input.payments;
+          payLines = [{ method: unica.method, amount: totalAmt, parcelas: parcelasDoCredito(unica.method, unica.parcelas) }];
         }
       } else if (input.paymentMethod) {
         payLines = [{ method: input.paymentMethod, amount: totalAmt }];
@@ -4944,7 +4964,10 @@ const contractsRouter = router({
               kind: "contract_payment",
               contractId: input.contractId,
               ...(linhasValidas.length
-                ? { breakdown: linhasValidas.map((l) => ({ method: l.method, amount: l.amount.toFixed(2) })) }
+                ? { breakdown: linhasValidas.map((l) => ({
+                    method: l.method, amount: l.amount.toFixed(2),
+                    ...(l.parcelas ? { parcelas: l.parcelas } : {}),
+                  })) }
                 : {}),
             },
           } as any);

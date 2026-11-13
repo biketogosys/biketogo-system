@@ -2,6 +2,7 @@
  * useMask.ts — Bloco C
  * Funções de máscara para campos de formulário e busca de CEP via ViaCEP.
  */
+import { mascararRG, rgValido } from "@shared/rg";
 
 // ─── Funções de máscara ───────────────────────────────────────────────────────
 
@@ -22,13 +23,12 @@ export function obfuscateCPF(cpf: string | null | undefined): string {
   return `${d.slice(0, 3)}.***.***-${d.slice(9)}`;
 }
 
-/** RG: 00.000.000-0 (padrão SP — aceita outros formatos) */
+/**
+ * RG: formato de SP quando é só número; com letra (MG) ou mais de 9 dígitos
+ * (RS), como foi digitado. Regra em `shared/rg.ts`, a mesma do servidor.
+ */
 export function maskRG(value: string): string {
-  const clean = value.replace(/[^\dXx]/g, "").slice(0, 9).toUpperCase();
-  if (clean.length <= 2) return clean;
-  if (clean.length <= 5) return clean.replace(/(\d{2})(\d)/, "$1.$2");
-  if (clean.length <= 8) return clean.replace(/(\d{2})(\d{3})(\d)/, "$1.$2.$3");
-  return clean.replace(/(\d{2})(\d{3})(\d{3})([\dX])/, "$1.$2.$3-$4");
+  return mascararRG(value);
 }
 
 /** CEP: 00000-000 */
@@ -92,9 +92,7 @@ export function isValidCPF(cpf: string): boolean {
 }
 
 export function isValidRG(rg: string): boolean {
-  const clean = rg.replace(/[.\-\s]/g, "").toUpperCase();
-  if (clean.length < 7 || clean.length > 9) return false;
-  return /^[0-9]{6,8}[0-9X]$/.test(clean);
+  return rgValido(rg);
 }
 
 // ─── ViaCEP ───────────────────────────────────────────────────────────────────

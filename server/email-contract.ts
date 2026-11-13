@@ -38,6 +38,7 @@ import { normalizarIdioma, type Idioma } from "./idioma";
 import { ENV } from "./_core/env";
 import { formatarBRL, valorPorExtenso } from "./valor-extenso";
 import { billableDaysWithTime } from "./rental-period";
+import { formaComParcelas } from "@shared/pagamento";
 
 const FONTE = "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
 
@@ -119,7 +120,7 @@ export type ContratoEmailData = {
   acessorios: Array<{ nome: string; qty: number }>;
   valorTotal: string | null;
   pago: boolean;
-  formasPagamento: Array<{ method: string; amount: string }>;
+  formasPagamento: Array<{ method: string; amount: string; parcelas?: number }>;
   /**
    * Dia em que o pagamento entrou (`YYYY-MM-DD`), para a frase de quitação do
    * recibo. Pedido da dona (2026-08-11): recibo sem data não serve de recibo.
@@ -212,11 +213,13 @@ export async function carregarDadosContrato(db: any, contractId: number): Promis
   })
     .from(revenuesTable)
     .where(sql`${revenuesTable.meta}->>'contractId' = ${String(contractId)}`);
-  const formasPagamento: Array<{ method: string; amount: string }> = [];
+  const formasPagamento: Array<{ method: string; amount: string; parcelas?: number }> = [];
   let dataPagamento: string | null = null;
   for (const rev of receitas as Array<{ meta: any; date: any; createdAt: any }>) {
     if (rev.meta?.kind !== "contract_payment") continue;
-    for (const b of rev.meta.breakdown ?? []) formasPagamento.push({ method: b.method, amount: b.amount });
+    for (const b of rev.meta.breakdown ?? []) {
+      formasPagamento.push({ method: b.method, amount: b.amount, parcelas: b.parcelas });
+    }
     if (!dataPagamento) {
       const bruta = rev.date ?? rev.createdAt ?? null;
       if (bruta) {
@@ -671,7 +674,7 @@ export function buildReceiptEmail(
 
   const formas = dados.formasPagamento.map((f) => `
 <tr>
-  <td style="padding:9px 8px 9px 0;border-bottom:1px solid ${CORES.line};font-family:${FONTE};font-size:13px;color:${CORES.ink}">${escapeHtml(t.formas[f.method] ?? f.method)}</td>
+  <td style="padding:9px 8px 9px 0;border-bottom:1px solid ${CORES.line};font-family:${FONTE};font-size:13px;color:${CORES.ink}">${escapeHtml(formaComParcelas(t.formas[f.method] ?? f.method, f.parcelas, idioma))}</td>
   <td align="right" style="padding:9px 0;border-bottom:1px solid ${CORES.line};font-family:${FONTE};font-size:13px;font-weight:600;color:${CORES.ink};white-space:nowrap">${formatarBRL(f.amount)}</td>
 </tr>`.trim()).join("");
 

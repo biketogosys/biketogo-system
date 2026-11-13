@@ -326,7 +326,9 @@ export const revenues = pgTable("revenues", {
   meta: jsonb("meta").$type<{
     kind: "contract_payment" | "contract_adjustment" | "early_return_refund";
     contractId: number | null;
-    breakdown?: Array<{ method: string; amount: string }>;
+    // `parcelas` só no crédito parcelado (2026-11-06); ausente = à vista ou
+    // registro anterior a isso. Tipo só do TypeScript: não muda a coluna.
+    breakdown?: Array<{ method: string; amount: string; parcelas?: number }>;
   }>(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().notNull(),

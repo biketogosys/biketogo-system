@@ -49,6 +49,7 @@ import {
 } from "../drizzle/schema";
 import { ENV } from "./_core/env";
 import { horaSaoPaulo, todaySaoPaulo } from "./overdue";
+import { compararPeloNome } from "./ordem-pelo-nome";
 
 let _db: ReturnType<typeof drizzle> | null = null;
 
@@ -702,7 +703,11 @@ export async function getAccessories(opts?: {
     conditions.push(or(ilike(accessories.name, q), ilike(accessories.serialNumber, q)));
   }
   const where = conditions.length > 0 ? and(...conditions) : undefined;
-  return db.select().from(accessories).where(where).orderBy(desc(accessories.createdAt));
+  const lista = await db.select().from(accessories).where(where);
+  // Pelo número do nome (2026-11-07): a dona numera para escolher a ordem. Era
+  // o último cadastrado primeiro. Quem pagina (accessories.list) corta DEPOIS
+  // daqui, então a página 2 continua a numeração. Empate: o mais antigo.
+  return lista.sort((a, b) => compararPeloNome(a.name, b.name) || a.id - b.id);
 }
 
 export async function getAccessoryById(id: number) {
@@ -906,9 +911,13 @@ export async function getFinancialEntries(
       descricao: r.descricao ?? "",
       valor: r.valor ?? "0",
       // Pagamento dividido: o contador precisa saber que R$225 entraram como
-      // Pix + Dinheiro, senão não bate com o extrato.
+      // Pix + Dinheiro, senão não bate com o extrato. Crédito parcelado ganha
+      // um terceiro campo, `credit_card:300.00:3`: o extrato da maquininha
+      // mostra parcelas, não o total (2026-11-06).
       formas: r.meta?.kind === "contract_payment" && Array.isArray(r.meta.breakdown)
-        ? r.meta.breakdown.map((b: any) => `${b.method}:${b.amount}`).join(" | ")
+        ? r.meta.breakdown
+          .map((b: any) => `${b.method}:${b.amount}${b.parcelas ? `:${b.parcelas}` : ""}`)
+          .join(" | ")
         : null,
     })),
     ...despRows.map((d: any) => ({

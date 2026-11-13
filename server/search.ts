@@ -4,8 +4,35 @@
 // PULAR pra algo, não pra listar. CPF/telefone casam por dígitos (ignora
 // máscara). Escala atual (centenas de linhas) dispensa índice trigram —
 // revisitar se a base crescer 10x (nota já registrada no HANDOFF).
-import { and, desc, eq, ilike, isNull, or, sql } from "drizzle-orm";
+import { and, desc, eq, ilike, isNull, or, sql, type SQL } from "drizzle-orm";
+import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import { clients, bikes, contracts } from "../drizzle/schema";
+
+/**
+ * Acentos que a busca por nome ignora, nas duas direções: "joao" acha "João" e
+ * "João" acha "Joao". As duas listas andam juntas, letra a letra.
+ *
+ * `translate` em vez da extensão `unaccent`, que pediria DDL em produção e não
+ * existe no PGlite dos testes. Maiúscula e minúscula estão listadas porque o
+ * ILIKE em letra acentuada depende da collation do banco; sem acento, não.
+ */
+const COM_ACENTO = "ÁÀÂÃÄÅáàâãäåÉÈÊËéèêëÍÌÎÏíìîïÓÒÔÕÖóòôõöÚÙÛÜúùûüÇçÑñÝýÿ";
+const SEM_ACENTO = "AAAAAAaaaaaaEEEEeeeeIIIIiiiiOOOOOoooooUUUUuuuuCcNnYyy";
+
+/**
+ * Condição "o nome tem todas estas palavras", ignorando acento e maiúscula.
+ * Palavra a palavra para "maria nunez" achar "María José Fernández Núñez".
+ * Devolve `undefined` com a busca vazia; o `and()` do Drizzle descarta.
+ */
+export function nomeTemAsPalavras(coluna: AnyPgColumn, busca: string): SQL | undefined {
+  const semAcento = (valor: AnyPgColumn | string) =>
+    sql`translate(${valor}, ${COM_ACENTO}, ${SEM_ACENTO})`;
+  const condicoes = busca.trim().split(/\s+/).filter(Boolean).map((palavra) => {
+    const literal = palavra.replace(/[\\%_]/g, "\\$&");
+    return sql`${semAcento(coluna)} ILIKE ${semAcento(`%${literal}%`)}`;
+  });
+  return and(...condicoes);
+}
 
 export type SearchResults = {
   clients: { id: number; name: string; cpf: string | null; status: string }[];

@@ -6,6 +6,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
+import { useDebounced } from "@/hooks/useDebounced";
 import {
   Bike, CalendarDays, DollarSign, FileText, LayoutDashboard,
   Search, Settings, Shield, User, Users,
@@ -38,15 +39,6 @@ const CONTRACT_STATUS: Record<string, string> = {
   pendente: "Pendente", ativo: "Ativo", parcialmente_devolvido: "Parcial",
   encerrado: "Encerrado", cancelado: "Cancelado",
 };
-
-function useDebounced(value: string, ms: number): string {
-  const [v, setV] = useState(value);
-  useEffect(() => {
-    const t = setTimeout(() => setV(value), ms);
-    return () => clearTimeout(t);
-  }, [value, ms]);
-  return v;
-}
 
 export function GlobalSearch() {
   const [open, setOpen] = useState(false);

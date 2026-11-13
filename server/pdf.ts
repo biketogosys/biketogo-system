@@ -140,10 +140,29 @@ export function periodLabel(r: ContractPdfData["rentals"][0], conector = "a"): s
   return `${si} ${conector} ${ei}`;
 }
 
+/**
+ * Caixa do título no cabeçalho: de x=126 (depois do logo) até o nº do contrato,
+ * que começa em x=360.
+ */
+export const LARGURA_TITULO = 236;
+
+/**
+ * Tamanho de fonte para o texto caber em UMA linha (2026-11-06).
+ *
+ * Em espanhol o título ("CONTRATO DE ALQUILER DE BICICLETA") passava 1,2pt da
+ * caixa, quebrava em duas linhas e a segunda caía em cima do nome da empresa:
+ * a dona viu as letras passando umas nas outras. O português cabe por 0,3pt,
+ * ou seja, estava na beirada também. A fonte diminui só o necessário.
+ */
+export function tamanhoParaCaber(larguraNoMaximo: number, caixa: number, maximo: number): number {
+  if (larguraNoMaximo <= caixa) return maximo;
+  return Math.floor((maximo * caixa / larguraNoMaximo) * 10) / 10;
+}
+
 // ── Internacionalização ──────────────────────────────────────────────────────
 export type PdfLanguage = "pt" | "en" | "es";
 
-const PDF_LABELS: Record<PdfLanguage, {
+export const PDF_LABELS: Record<PdfLanguage, {
   contractTitle: string;
   bikesSubtitle: string;
   contractObject: string;
@@ -532,11 +551,14 @@ export async function generateContractPdf(
       }
     }
 
-    // Título e subtítulo
-    doc.fillColor(WHITE).font("Helvetica-Bold").fontSize(12)
-      .text(L.contractTitle, 126, 30, { width: 236, lineBreak: false });
+    // Título e subtítulo. ⚠️ Com `width`, o PDFKit quebra a linha mesmo com
+    // `lineBreak: false`: o título precisa CABER, senão a segunda linha cai em
+    // cima do subtítulo (`tamanhoParaCaber`).
+    doc.fillColor(WHITE).font("Helvetica-Bold").fontSize(12);
+    doc.fontSize(tamanhoParaCaber(doc.widthOfString(L.contractTitle), LARGURA_TITULO, 12))
+      .text(L.contractTitle, 126, 30, { width: LARGURA_TITULO, lineBreak: false });
     doc.fillColor(BANDTX).font("Helvetica").fontSize(8)
-      .text(`${empresaNome} · ${empresaSub}`, 126, 50, { width: 236, lineBreak: false });
+      .text(`${empresaNome} · ${empresaSub}`, 126, 50, { width: LARGURA_TITULO, lineBreak: false });
 
     // Nº e data (alinhados à direita)
     doc.fillColor(GOLD).font("Helvetica-Bold").fontSize(12)

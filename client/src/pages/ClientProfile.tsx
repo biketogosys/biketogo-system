@@ -19,8 +19,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
 import { friendlyError } from "@/lib/utils";
-import { languages } from "@/lib/i18n";
-import { formatoEndereco } from "@shared/enderecos";
+import { ClientDataSections } from "@/components/ClientData";
 // ─── Lightbox ────────────────────────────────────────────────────────────────
 function Lightbox({ src, alt, onClose }: { src: string; alt: string; onClose: () => void }) {
   const handleKey = (e: React.KeyboardEvent) => { if (e.key === "Escape") onClose(); };
@@ -62,16 +61,6 @@ function StatusBadge({ status }: { status: string }) {
   };
   const s = map[status] ?? { cls: "badge-lead", label: status };
   return <span className={s.cls}>{s.label}</span>;
-}
-
-function InfoRow({ label, value }: { label: string; value?: string | null }) {
-  if (!value) return null;
-  return (
-    <div className="flex flex-col gap-0.5">
-      <span className="text-xs text-muted-foreground">{label}</span>
-      <span className="text-sm text-foreground">{value}</span>
-    </div>
-  );
 }
 
 // ─── Main ClientProfile ───────────────────────────────────────────────────────
@@ -470,91 +459,7 @@ export default function ClientProfile() {
 
           {/* Tab content */}
           <div className="bg-card border border-border rounded-xl p-5">
-            {activeTab === "cadastro" && (
-              <div className="space-y-6">
-                <div>
-                  <h3 className="text-xs font-semibold text-primary uppercase tracking-wider mb-3">
-                    Identificação
-                  </h3>
-                  <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                    <InfoRow label="Nome" value={client.name} />
-                    <InfoRow label="Data de nascimento" value={client.birthDate} />
-                    <InfoRow label="Gênero" value={client.gender} />
-                    {/* Vazio é "não informada", nunca "Brasileiro" (2026-10-20): era
-                        assim que todo estrangeiro do /reservar aparecia brasileiro. */}
-                    <InfoRow
-                      label="Nacionalidade"
-                      value={
-                        (client as any).nacionalidade === "estrangeiro" ? "Estrangeiro"
-                          : (client as any).nacionalidade === "brasileiro" ? "Brasileiro"
-                          : "Não informada"
-                      }
-                    />
-                    {(client as any).nacionalidade !== "estrangeiro" ? (
-                      <>
-                        <InfoRow label="CPF" value={(client as any).cpf} />
-                        <InfoRow label="RG" value={(client as any).rg} />
-                        <InfoRow label="Tipo de documento" value={(client as any).tipoDocumento?.toUpperCase()} />
-                      </>
-                    ) : (
-                      <InfoRow label="Passaporte" value={(client as any).numeroPassaporte} />
-                    )}
-                    <InfoRow label="Altura" value={client.height ? `${client.height} cm` : null} />
-                    <InfoRow label="Peso" value={(client as any).weight ? `${(client as any).weight} kg` : null} />
-                    <InfoRow label="Frequência de pedal" value={client.pedalFrequency} />
-                    <InfoRow label="Origem" value={client.origin} />
-                  </div>
-                </div>
-
-                <div className="border-t border-border pt-4">
-                  <h3 className="text-xs font-semibold text-primary uppercase tracking-wider mb-3">
-                    Contato
-                  </h3>
-                  <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                    <InfoRow label="WhatsApp" value={client.phone} />
-                    <InfoRow label="E-mail" value={client.email} />
-                    <InfoRow
-                      label="Idioma dos e-mails"
-                      value={languages.find((l) => l.code === client.idioma)?.label ?? "Português"}
-                    />
-                    <InfoRow label="Instagram" value={client.instagram} />
-                    <InfoRow label="Hospedagem" value={client.accommodation} />
-                  </div>
-                </div>
-
-                <div className="border-t border-border pt-4">
-                  <h3 className="text-xs font-semibold text-primary uppercase tracking-wider mb-3">
-                    Endereço
-                  </h3>
-                  {/* Rótulos conforme o país (2026-10-26): "ZIP code", "CAP",
-                      "Província"... O complemento não aparecia em lugar nenhum. */}
-                  {(() => {
-                    const fmt = formatoEndereco(client.country);
-                    return (
-                      <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                        <InfoRow label={fmt.codigo.pt} value={client.zipCode} />
-                        <InfoRow label={fmt.brasil ? "Rua" : "Endereço"} value={client.street} />
-                        <InfoRow label="Número" value={client.number} />
-                        <InfoRow label="Complemento" value={client.complement} />
-                        <InfoRow label="Bairro" value={client.neighborhood} />
-                        <InfoRow label="Cidade" value={client.city} />
-                        <InfoRow label={fmt.regiao?.pt ?? "Região"} value={client.state} />
-                        <InfoRow label="País" value={client.country} />
-                      </div>
-                    );
-                  })()}
-                </div>
-
-                {client.source && (
-                  <div className="border-t border-border pt-4">
-                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                      <Shield className="w-3 h-3" />
-                      Cadastro via: <span className="text-foreground capitalize">{client.source}</span>
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
+            {activeTab === "cadastro" && <ClientDataSections client={client} />}
 
             {activeTab === "documentacao" && (
               <div className="space-y-6">

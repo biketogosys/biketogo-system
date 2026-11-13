@@ -1,6 +1,8 @@
 import { trpc } from "@/lib/trpc";
 import { NewContractModal, PAYMENT_METHODS } from "@/components/NewContractModal";
+import { ClientDataDialog } from "@/components/ClientData";
 import { usePageParam } from "@/hooks/usePageParam";
+import { useDebounced } from "@/hooks/useDebounced";
 import { useState, useMemo, useEffect } from "react";
 import { toast } from "sonner";
 import {
@@ -74,6 +76,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { languages, type Language } from "@/lib/i18n";
+import { MAX_PARCELAS } from "@shared/pagamento";
 
 /** Nome do idioma na frase do aviso ("enviado em inglês"). */
 const NOME_IDIOMA: Record<Language, string> = { pt: "português", en: "inglês", es: "espanhol" };
@@ -503,7 +506,8 @@ function ObservacoesInternas({
 }
 
 // // ─── Contract Detail Panel ────────────────────────────────────────────────
-function ContractDetail({
+// Exportado para a Agenda abrir o contrato sem sair de lá (2026-11-09).
+export function ContractDetail({
   contractId,
   onBack,
 }: {
@@ -515,6 +519,7 @@ function ContractDetail({
   const { data, isLoading } = trpc.contracts.getById.useQuery({ id: contractId });
   const [closeOpen, setCloseOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
+  const [dadosClienteAberto, setDadosClienteAberto] = useState(false);
   // Q8 — duplicar: um modal só (o período é o passo 1 dele)
   const [dupPayload, setDupPayload] = useState<any>(null);
   const [returnDialogOpen, setReturnDialogOpen] = useState(false);
@@ -595,7 +600,9 @@ function ContractDetail({
   const [payOpen, setPayOpen] = useState(false);
   // Pagamento pode ser DIVIDIDO em várias formas com valor em cada (ex: parte
   // Pix, parte dinheiro) — pedido Cassiana 2026-07-24. Cada linha vira 1 receita.
-  const [payLines, setPayLines] = useState<Array<{ method: string; amount: string }>>([{ method: "", amount: "" }]);
+  // `parcelas` só no crédito (dona, 2026-11-06): quem parcela é a maquininha,
+  // aqui só se registra. 1 = à vista.
+  const [payLines, setPayLines] = useState<Array<{ method: string; amount: string; parcelas?: number }>>([{ method: "", amount: "" }]);
   const resetPay = () => { setPayOpen(false); setPayLines([{ method: "", amount: "" }]); };
   const confirmPaymentMutation = trpc.contracts.confirmPayment.useMutation({
     onSuccess: (res) => {
@@ -644,14 +651,20 @@ function ContractDetail({
 
   if (!data) {
     return (
-      <div className="text-center py-16 text-muted-foreground">
-        Contrato não encontrado.
+      <div className="text-center py-16 text-muted-foreground space-y-3">
+        <p>Contrato não encontrado.</p>
+        <Button variant="ghost" size="sm" onClick={onBack}>
+          <ChevronLeft className="h-4 w-4 mr-1" /> Voltar
+        </Button>
       </div>
     );
   }
 
   return (
     <div className="space-y-6">
+      {dadosClienteAberto && (
+        <ClientDataDialog clientId={data.clientId} onClose={() => setDadosClienteAberto(false)} />
+      )}
       {/* Header — empilha no mobile (senão os botões colidem com o título) */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-3">
@@ -664,7 +677,19 @@ function ContractDetail({
               Contrato #{data.id}
             </h2>
             <p className="text-sm text-muted-foreground">
-              Cliente: <span className="font-medium text-foreground">{data.clientName ?? `#${data.clientId}`}</span>
+              Cliente:{" "}
+              {data.clientName ? (
+                <button
+                  type="button"
+                  onClick={() => setDadosClienteAberto(true)}
+                  title="Ver dados do cliente"
+                  className="-my-1 rounded-sm py-1 text-left font-medium text-foreground underline decoration-dotted underline-offset-4 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  {data.clientName}
+                </button>
+              ) : (
+                <span className="font-medium text-foreground">#{data.clientId}</span>
+              )}
             </p>
           </div>
         </div>
@@ -923,10 +948,14 @@ function ContractDetail({
             <div className="space-y-2">
               <Label className="block text-xs">Formas de pagamento</Label>
               {payLines.map((line, i) => (
-                <div key={i} className="flex items-center gap-2">
+                <div key={i} className="space-y-1.5">
+                <div className="flex items-center gap-2">
                   <Select
                     value={line.method}
-                    onValueChange={(v) => setPayLines((prev) => prev.map((l, j) => j === i ? { ...l, method: v } : l))}
+                    // Trocar de crédito para outra forma descarta as parcelas.
+                    onValueChange={(v) => setPayLines((prev) => prev.map((l, j) => j === i
+                      ? { ...l, method: v, parcelas: v === "credit_card" ? l.parcelas : undefined }
+                      : l))}
                   >
                     <SelectTrigger className="text-sm flex-1 min-w-0"><SelectValue placeholder="Forma" /></SelectTrigger>
                     <SelectContent>
@@ -950,6 +979,23 @@ function ContractDetail({
                       <Trash2 className="h-3.5 w-3.5" />
                     </button>
                   )}
+                </div>
+                {line.method === "credit_card" && (
+                  <div className="flex items-center gap-2 pl-1">
+                    <Label className="text-xs text-muted-foreground shrink-0">Parcelas</Label>
+                    <Select
+                      value={String(line.parcelas ?? 1)}
+                      onValueChange={(v) => setPayLines((prev) => prev.map((l, j) => j === i ? { ...l, parcelas: Number(v) } : l))}
+                    >
+                      <SelectTrigger className="text-sm h-8 w-28" aria-label="Parcelas"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {Array.from({ length: MAX_PARCELAS }, (_, k) => k + 1).map((n) => (
+                          <SelectItem key={n} value={String(n)}>{n === 1 ? "À vista" : `${n}x`}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
                 </div>
               ))}
               {payLines.length < PAYMENT_METHODS.length && (
@@ -988,10 +1034,12 @@ function ContractDetail({
                 // 1 forma sem valor → back-compat (usa o total no servidor).
                 // Várias formas → manda a divisão com valor em cada.
                 payments: (single && !payLines[0].amount)
-                  ? (payLines[0].method ? [{ method: payLines[0].method as any }] : undefined)
+                  ? (payLines[0].method ? [{ method: payLines[0].method as any, parcelas: payLines[0].parcelas }] : undefined)
                   : payLines
                       .filter((l) => l.method)
-                      .map((l) => ({ method: l.method as any, amount: (parseFloat(l.amount) || 0).toFixed(2) })),
+                      .map((l) => ({
+                        method: l.method as any, amount: (parseFloat(l.amount) || 0).toFixed(2), parcelas: l.parcelas,
+                      })),
               })}
               disabled={confirmPaymentMutation.isPending || !podeConfirmar}
             >
@@ -1370,6 +1418,10 @@ export default function Contracts() {
   const [view, setView] = useState<"ativos" | "arquivados" | "excluidos">("ativos");
   const [newContractOpen, setNewContractOpen] = useState(false);
   const limit = 20;
+  // Busca pelo nome do cliente, só em Arquivados (pedido da dona, 2026-11-10).
+  const [busca, setBusca] = useState("");
+  const buscaDigitada = useDebounced(busca, 250);
+  const buscaEnviada = view === "arquivados" ? buscaDigitada.trim() : "";
 
   // Deep-link: open contract from ?contractId=N
   useEffect(() => {
@@ -1384,9 +1436,21 @@ export default function Contracts() {
   const utils = trpc.useUtils();
 
   const { data, isLoading, refetch } = trpc.contracts.list.useQuery(
-    { limit, page, view: view as "ativos" | "arquivados" },
-    { enabled: view !== "excluidos" }
+    { limit, page, view: view as "ativos" | "arquivados", search: buscaEnviada || undefined },
+    {
+      enabled: view !== "excluidos",
+      // Durante a busca, as linhas ficam até o resultado chegar: sem isto a
+      // tabela piscaria a cada letra. Só na busca: na troca de aba mostraria as
+      // linhas da outra aba.
+      placeholderData: buscaEnviada ? (anterior) => anterior : undefined,
+    }
   );
+
+  function mudarBusca(texto: string) {
+    setBusca(texto);
+    // setPage empilha no histórico: chamar a cada letra encheria o botão Voltar.
+    if (page !== 1) setPage(1);
+  }
 
   const { data: deletedData, isLoading: deletedLoading } = trpc.contracts.listDeleted.useQuery(
     { page, limit },
@@ -1705,9 +1769,29 @@ export default function Contracts() {
       {/* Abas Ativos / Arquivados / Excluídos — SegmentedTabs */}
       <SegmentedTabs
         value={view}
-        onValueChange={(v) => { setView(v as typeof view); setPage(1); }}
+        onValueChange={(v) => { setView(v as typeof view); setPage(1); setBusca(""); }}
         options={tabOptions}
       />
+
+      {view === "arquivados" && (
+        <div className="flex items-center gap-2">
+          <div className="relative flex-1 max-w-sm">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+            <Input
+              placeholder="Buscar pelo nome do cliente..."
+              aria-label="Buscar contrato arquivado pelo nome do cliente"
+              value={busca}
+              onChange={(e) => mudarBusca(e.target.value)}
+              className="pl-9 h-9 text-sm"
+            />
+          </div>
+          {busca && (
+            <Button variant="ghost" size="sm" className="h-9 text-xs" onClick={() => mudarBusca("")}>
+              Limpar
+            </Button>
+          )}
+        </div>
+      )}
 
       {/* DataTable */}
       <DataTable
@@ -1721,6 +1805,12 @@ export default function Contracts() {
               icon={Trash2}
               title="Nenhum contrato excluído"
               description="Contratos excluídos ficam aqui e podem ser restaurados."
+            />
+          ) : buscaEnviada ? (
+            <EmptyState
+              icon={Search}
+              title="Nenhum contrato encontrado"
+              description={`Nenhum contrato arquivado tem "${buscaEnviada}" no nome do cliente.`}
             />
           ) : view === "arquivados" ? (
             <EmptyState

@@ -2,13 +2,13 @@
 // A tela do "o que eu faço hoje/essa semana": entregas e devoluções por dia,
 // com ações inline (Devolvida + WhatsApp). Semana corrente a partir de hoje,
 // navegação ← Hoje → de 7 em 7 dias. Atrasadas ficam fixadas no dia de hoje.
-import { useMemo, useState } from "react";
+import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { trpc } from "@/lib/trpc";
-import { Link } from "wouter";
+import { Link, useSearch } from "wouter";
 import { toast } from "sonner";
 import {
   CalendarClock, CalendarDays, CalendarPlus, CalendarRange, Check,
-  ChevronLeft, ChevronRight, MapPin, MessageCircle, Truck,
+  ChevronLeft, ChevronRight, FileText, MapPin, MessageCircle, Truck,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -21,6 +21,7 @@ import { AgendaMiniMonth, type DayDensity } from "@/components/AgendaMiniMonth";
 import { ehBrasil } from "@shared/enderecos";
 import { NewContractModal } from "@/components/NewContractModal";
 import { buildWhatsappUrl } from "@/lib/whatsapp";
+import { ContractDetail } from "./Contracts";
 
 // ─── Datas (locais — o navegador da operação está em SP) ─────────────────────
 const toYmd = (d: Date) =>
@@ -96,6 +97,36 @@ export default function Agenda() {
   const [monthAnchor, setMonthAnchor] = useState(today);
   const [novoContratoEm, setNovoContratoEm] = useState<string | null>(null);
 
+  // ─── Contrato aberto aqui mesmo (dona, 2026-11-09) ───────────────────────
+  // No lugar da lista, e não em /contratos: de lá o "Voltar" cairia na lista de
+  // contratos e ela perderia a semana em que estava. O id fica na URL para o
+  // voltar do navegador e o item "Agenda" do menu também fecharem o contrato.
+  const utils = trpc.useUtils();
+  const contratoAberto = Number(new URLSearchParams(useSearch()).get("contrato")) || null;
+  const posicaoNaLista = useRef(0);
+  const contratoAnterior = useRef(contratoAberto);
+
+  function abrirContrato(id: number) {
+    posicaoNaLista.current = window.scrollY;
+    window.history.pushState(null, "", `/agenda?contrato=${id}`);
+  }
+
+  useLayoutEffect(() => {
+    const fechou = contratoAnterior.current !== null && contratoAberto === null;
+    contratoAnterior.current = contratoAberto;
+    // A altura da página muda: sem isto o contrato abriria pela metade, com o
+    // "Voltar" fora da tela. "instant" porque o CSS da casa rola suave, e a
+    // tela já trocou: deslizar aqui só pareceria um pulo.
+    if (contratoAberto !== null) {
+      window.scrollTo({ top: 0, behavior: "instant" });
+    } else if (fechou) {
+      window.scrollTo({ top: posicaoNaLista.current, behavior: "instant" });
+      // O detalhe não avisa a Agenda: ela pode ter devolvido bike ou recusado
+      // aluguel lá, e a lista ainda mostraria o item.
+      utils.dashboard.agenda.invalidate();
+    }
+  }, [contratoAberto, utils]);
+
   const monthRange = useMemo(() => {
     const [y, m] = monthAnchor.split("-").map(Number);
     const ini = toYmd(new Date(y, m - 1, 1));
@@ -169,8 +200,11 @@ export default function Agenda() {
     // tornou isso visível, porque dá pra navegar pro passado).
     const entregue = kind === "delivery" && item.day < today;
     const loc = locationOf(item);
+    const contrato = item.contractId;
     return (
-      <div className="py-2.5 flex flex-col gap-1.5 sm:flex-row sm:items-center sm:gap-3">
+      // Em linha só do lg: de 768 a 1023 o menu lateral come 256px, e com o botão
+      // Contrato o nome do cliente sumia e os botões saíam do cartão.
+      <div className="py-2.5 flex flex-col gap-1.5 lg:flex-row lg:items-center lg:gap-3">
         <span
           className={`inline-flex w-fit items-center gap-1 rounded-md border px-2 py-0.5 text-xs font-medium shrink-0 ${
             late
@@ -210,6 +244,18 @@ export default function Agenda() {
           </p>
         </div>
         <div className="flex items-center gap-1.5 shrink-0">
+          {contrato != null && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 gap-1.5"
+              title="Abrir contrato"
+              onClick={() => abrirContrato(contrato)}
+            >
+              <FileText className="w-3.5 h-3.5" />
+              Contrato
+            </Button>
+          )}
           <Button
             variant="outline"
             size="sm"
@@ -256,6 +302,17 @@ export default function Agenda() {
       </div>
     );
   };
+
+  if (contratoAberto !== null) {
+    return (
+      <div className="p-6">
+        <ContractDetail
+          contractId={contratoAberto}
+          onBack={() => window.history.replaceState(null, "", "/agenda")}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-1 flex-col">

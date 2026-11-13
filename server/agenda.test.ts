@@ -84,6 +84,14 @@ describe("getAgenda", () => {
     expect(all).not.toContain(deletado);
   });
 
+  it("traz o contrato do aluguel, que é o que o botão da Agenda abre", async () => {
+    const comContrato = await mk({ endDate: "2026-07-24", contractId: 777 });
+    const semContrato = await mk({ endDate: "2026-07-24" });
+    const { returns } = await getAgenda(db, FROM, TO, NOW);
+    expect(returns.find((x) => x.id === comContrato)?.contractId).toBe(777);
+    expect(returns.find((x) => x.id === semContrato)?.contractId).toBeNull();
+  });
+
   it("joins populados (nome do cliente e modelo da bike)", async () => {
     const { returns } = await getAgenda(db, FROM, TO, NOW);
     expect(returns[0]?.clientName).toBe("Cliente Teste");

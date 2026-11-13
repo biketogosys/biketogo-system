@@ -17,6 +17,7 @@ import { maskCPF, maskRG, maskCEP, maskPhone, maskDate, isValidCPF } from "@/hoo
 import { COUNTRIES, countryOptionValue, DDI_OPTIONS } from "@/lib/countries";
 import { ehBrasil, formatoEndereco, paisDaOrigem } from "@shared/enderecos";
 import { bytesDoDataUrl, enviarComRetentativa, prepararFoto } from "@/lib/foto-documento";
+import { limparRG, rgValido } from "@shared/rg";
 
 // ─── Logo URL via env ─────────────────────────────────────────────────────────
 const LOGO_URL = (import.meta as any).env?.VITE_LOGO_URL as string | undefined;
@@ -344,8 +345,10 @@ export default function PublicReservation() {
       case "rg": {
         // RG é OPCIONAL (Cassiana, 2026-07-17) — valida só se preenchido
         if (!isBrazilian) return undefined;
-        const d = rg.replace(/[.\-\s]/g, "");
-        return (d && d.length < 7) ? (lang === "pt" ? "RG incompleto (mín. 7 dígitos)" : lang === "en" ? "Incomplete RG (min. 7 digits)" : "RG incompleto (mín. 7 dígitos)") : undefined;
+        // Letra e mais de 9 dígitos valem (RG de MG e do RS, 2026-11-06).
+        return (limparRG(rg) && !rgValido(rg))
+          ? (lang === "pt" ? "RG inválido: de 7 a 14 letras e números" : lang === "en" ? "Invalid RG: 7 to 14 letters and digits" : "RG inválido: de 7 a 14 letras y números")
+          : undefined;
       }
       case "passport": return (!isBrazilian && (!passport.trim() || passport.trim().length < 5)) ? (lang === "pt" ? "Passaporte obrigatório (mínimo 5 caracteres)" : lang === "en" ? "Passport required (min. 5 characters)" : "Pasaporte obligatorio (mín. 5 caracteres)") : undefined;
       case "birthDate": return (!birthDate || birthDate.length < 10) ? t.invalidDate : undefined;
@@ -804,7 +807,7 @@ export default function PublicReservation() {
                   </Field>
                   <Field label={lang === "en" ? "RG (optional)" : "RG (opcional)"} {...fieldProps("rg")}>
                     <input className={errors.rg ? inputError : inputNormal} placeholder="00.000.000-0"
-                      value={rg} onChange={e => setRg(maskRG(e.target.value))} maxLength={12} />
+                      value={rg} onChange={e => setRg(maskRG(e.target.value))} maxLength={20} />
                   </Field>
                 </div>
               )}

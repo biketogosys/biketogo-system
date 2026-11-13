@@ -27,6 +27,7 @@ import { DataTable } from "@/components/ui/data-table";
 import { type ColumnDef } from "@tanstack/react-table";
 import { useConfirm } from "@/components/ConfirmDialog";
 import { friendlyError } from "@/lib/utils";
+import { formaComParcelas } from "@shared/pagamento";
 
 type TxType = "expense" | "revenue";
 
@@ -41,7 +42,7 @@ interface TxRow {
   meta?: {
     kind?: string;
     contractId?: number;
-    breakdown?: Array<{ method: string; amount: string }>;
+    breakdown?: Array<{ method: string; amount: string; parcelas?: number }>;
   } | null;
 }
 
@@ -50,6 +51,9 @@ const PAY_METHOD_LABELS: Record<string, string> = {
   pix: "Pix", cash: "Dinheiro", credit_card: "Cartão de crédito",
   debit_card: "Cartão de débito", other: "Outro",
 };
+// "Cartão de crédito em 3x" quando o crédito foi parcelado (2026-11-06).
+const rotuloForma = (b: { method: string; parcelas?: number }) =>
+  formaComParcelas(PAY_METHOD_LABELS[b.method] ?? b.method, b.parcelas);
 
 // Célula de descrição com detalhamento expansível (setinha) quando o pagamento
 // foi dividido em mais de uma forma. Componente próprio → estado local por linha.
@@ -60,7 +64,7 @@ function DescriptionCell({ row }: { row: TxRow }) {
   const fmtBRL2 = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
   if (!temSplit) {
     // 1 forma: mostra a forma inline (muted), sem setinha
-    const forma = breakdown[0]?.method ? PAY_METHOD_LABELS[breakdown[0].method] ?? breakdown[0].method : null;
+    const forma = breakdown[0]?.method ? rotuloForma(breakdown[0]) : null;
     return (
       <span className="text-sm text-foreground">
         {row.description || "—"}
@@ -83,7 +87,7 @@ function DescriptionCell({ row }: { row: TxRow }) {
         <div className="mt-1.5 ml-5 space-y-0.5 border-l border-border pl-2.5">
           {breakdown.map((b, i) => (
             <div key={i} className="flex items-center justify-between gap-3 text-xs">
-              <span className="text-muted-foreground">{PAY_METHOD_LABELS[b.method] ?? b.method}</span>
+              <span className="text-muted-foreground">{rotuloForma(b)}</span>
               <span className="tabular-nums text-foreground">{fmtBRL2(parseFloat(b.amount) || 0)}</span>
             </div>
           ))}
@@ -725,15 +729,16 @@ export default function Financial() {
       };
       const dataBr = (iso: string) => (iso ? iso.split("-").reverse().join("/") : "");
       const numeroBr = (v: string) => (Number(v) || 0).toFixed(2).replace(".", ",");
-      const rotuloForma: Record<string, string> = {
+      const nomeForma: Record<string, string> = {
         pix: "Pix", credit_card: "Cartão de crédito", debit_card: "Cartão de débito",
         cash: "Dinheiro", other: "Outra forma",
       };
+      // "credit_card:300.00:3" → "Cartão de crédito em 3x 300,00"
       const formasBr = (f: string | null) =>
         !f ? "" : f.split(" | ")
           .map((p) => {
-            const [m, v] = p.split(":");
-            return `${rotuloForma[m] ?? m} ${numeroBr(v)}`;
+            const [m, v, n] = p.split(":");
+            return `${formaComParcelas(nomeForma[m] ?? m, Number(n) || undefined)} ${numeroBr(v)}`;
           })
           .join(" + ");
 

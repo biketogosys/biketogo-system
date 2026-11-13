@@ -29,6 +29,7 @@ import {
   maskCPF, maskRG, maskCEP, maskPhone, maskDate, isValidCPF, fetchViaCEP,
   dateDisplayToISO, dateISOToDisplay,
 } from "@/hooks/useMask";
+import { limparRG, rgValido } from "@shared/rg";
 import { friendlyError } from "@/lib/utils";
 import { DdiPicker } from "@/components/DdiPicker";
 import { languages, type Language } from "@/lib/i18n";
@@ -203,9 +204,10 @@ export function ClientFormModal({ open, onClose, onSuccess, client }: ClientForm
       // RG obrigatório só na criação: no /reservar ele é opcional para
       // brasileiro, e exigir na edição travaria o cadastro (mesma regra do
       // telefone, logo acima).
-      const rgDigits = form.rg.replace(/[.\-\s]/g, "");
-      if (!isEdit && (!rgDigits || rgDigits.length < 7)) return fail("identificacao", "RG obrigatório (mín. 7 dígitos)");
-      if (isEdit && rgDigits && rgDigits.length < 7) return fail("identificacao", "RG incompleto (mín. 7 dígitos)");
+      // Letra e mais de 9 dígitos valem (RG de MG e do RS, 2026-11-06).
+      const rgPreenchido = !!limparRG(form.rg);
+      if (!isEdit && !rgPreenchido) return fail("identificacao", "RG obrigatório");
+      if (rgPreenchido && !rgValido(form.rg)) return fail("identificacao", "RG inválido: de 7 a 14 letras e números");
     }
     if (form.nacionalidade === "estrangeiro") {
       // Também na edição: o servidor recusa estrangeiro sem passaporte, e a
@@ -411,7 +413,7 @@ export function ClientFormModal({ open, onClose, onSuccess, client }: ClientForm
                       </div>
                       <div>
                         <Label className={labelCls}>RG *</Label>
-                        <Input value={form.rg} onChange={(e) => set("rg", maskRG(e.target.value))} placeholder="00.000.000-0" className={inputCls} maxLength={12} />
+                        <Input value={form.rg} onChange={(e) => set("rg", maskRG(e.target.value))} placeholder="00.000.000-0" className={inputCls} maxLength={20} />
                       </div>
                     </div>
                   ) : (
