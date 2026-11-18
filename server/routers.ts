@@ -7,6 +7,7 @@ import jwt from "jsonwebtoken";
 import { getReturnsDue, todaySaoPaulo } from "./overdue";
 import { getAgenda } from "./agenda";
 import { globalSearch, nomeTemAsPalavras } from "./search";
+import { ordenarPeloNome } from "./ordem-pelo-nome";
 import {
   extendRental,
   applyEarlyReturn,
@@ -2320,10 +2321,15 @@ const publicApiRouter = router({
         };
       }));
 
-      const acessorios = await db
-        .select({ nome: accT.name, qty: caT.qty })
-        .from(caT).leftJoin(accT, eq(caT.accessoryId, accT.id))
-        .where(eq(caT.contractId, contractId));
+      // Na ordem do número do nome, como na tela do contrato (2026-11-17).
+      const acessorios = ordenarPeloNome(
+        await db
+          .select({ nome: accT.name, qty: caT.qty })
+          .from(caT).leftJoin(accT, eq(caT.accessoryId, accT.id))
+          .where(eq(caT.contractId, contractId))
+          .orderBy(caT.id),
+        (a) => a.nome,
+      );
 
       // Período do contrato = menor início e maior fim entre os aluguéis.
       const inicios = itens.map((i) => i.inicio).filter(Boolean).sort() as string[];
@@ -3448,7 +3454,7 @@ export async function releaseBikeUnits(db: any, rentalId: number): Promise<void>
  * saber se está produzindo o PDF OFICIAL do cliente ou uma cópia em outra
  * língua (ver `generatePdf`).
  */
-async function buildContractPdfData(
+export async function buildContractPdfData(
   db: Awaited<ReturnType<typeof getDb>>,
   contractId: number,
   idioma?: Idioma,
@@ -3486,10 +3492,15 @@ async function buildContractPdfData(
     const bikeUnitNumeros2 = unidades2.length ? unidades2.map((u: any) => u.numero).join(", ") : null;
     return { ...r, bikeModel: bike?.model, bikeBrand: bike?.brand, bikeSerialNumber: bike?.serialNumber, tamanho, bikeUnitNumeros: bikeUnitNumeros2 };
   }));
-  const caRows = await db.select({
-    accessoryId: caT.accessoryId, qty: caT.qty, unitId: caT.unitId,
-    accessoryName: accT.name,
-  }).from(caT).leftJoin(accT, eq(caT.accessoryId, accT.id)).where(eq(caT.contractId, contractId));
+  // Na ordem do número do nome, como na tela do contrato (2026-11-17).
+  const caRows = ordenarPeloNome(
+    await db.select({
+      accessoryId: caT.accessoryId, qty: caT.qty, unitId: caT.unitId,
+      accessoryName: accT.name,
+    }).from(caT).leftJoin(accT, eq(caT.accessoryId, accT.id)).where(eq(caT.contractId, contractId))
+      .orderBy(caT.id),
+    (ca) => ca.accessoryName,
+  );
   // Período do contrato = [menor início, maior fim] entre os aluguéis. A data do
   // aluguel vale para os acessórios também (Cassiana 2026-07-24).
   const fmtBr = (d?: string | null) => (d ? d.split("-").reverse().join("/") : null);
@@ -3874,7 +3885,8 @@ const contractsRouter = router({
       })
         .from(contractAccessories)
         .leftJoin(accessoriesTable, eq(contractAccessories.accessoryId, accessoriesTable.id))
-        .where(eq(contractAccessories.contractId, input.id));
+        .where(eq(contractAccessories.contractId, input.id))
+        .orderBy(contractAccessories.id);
       // Nº de série + variante da unidade ligada a cada linha de acessório.
       // ⚠️ Era 1 consulta POR LINHA (a outra metade do N+1). Uma em lote resolve.
       const acessorioUnitIds = accChecklistRaw
@@ -3892,7 +3904,9 @@ const contractsRouter = router({
       const unidadeAcessorioPorId = new Map<number, { serialNumber: string | null; variante: string | null }>(
         (unidadesAcessorio as any[]).map((u) => [u.id, { serialNumber: u.serialNumber ?? null, variante: u.variante ?? null }]),
       );
-      const accChecklist = accChecklistRaw.map((ca) => {
+      // Na ordem do número do nome (pedido da dona, 2026-11-17: "ainda ta fora
+      // de ordem no contrato"). O S18 tinha ordenado só a lista de escolha.
+      const accChecklist = ordenarPeloNome(accChecklistRaw, (ca) => ca.accessoryName).map((ca) => {
         const unit = ca.unitId ? unidadeAcessorioPorId.get(ca.unitId) : undefined;
         return { ...ca, serialNumber: unit?.serialNumber ?? null, variante: unit?.variante ?? null };
       });

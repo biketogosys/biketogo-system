@@ -35,6 +35,7 @@ import {
 } from "./email-layout";
 import { TEXTOS_EMAIL } from "./email-textos";
 import { normalizarIdioma, type Idioma } from "./idioma";
+import { ordenarPeloNome } from "./ordem-pelo-nome";
 import { ENV } from "./_core/env";
 import { formatarBRL, valorPorExtenso } from "./valor-extenso";
 import { billableDaysWithTime } from "./rental-period";
@@ -183,11 +184,17 @@ export async function carregarDadosContrato(db: any, contractId: number): Promis
     };
   }));
 
-  const acessorios = await db
-    .select({ nome: accessoriesTable.name, qty: contractAccessoriesTable.qty })
-    .from(contractAccessoriesTable)
-    .leftJoin(accessoriesTable, eq(contractAccessoriesTable.accessoryId, accessoriesTable.id))
-    .where(eq(contractAccessoriesTable.contractId, contractId));
+  // Na ordem do número do nome, como na tela do contrato (2026-11-17). O
+  // agrupamento abaixo mantém a ordem em que cada nome aparece primeiro.
+  const acessorios = ordenarPeloNome(
+    await db
+      .select({ nome: accessoriesTable.name, qty: contractAccessoriesTable.qty })
+      .from(contractAccessoriesTable)
+      .leftJoin(accessoriesTable, eq(contractAccessoriesTable.accessoryId, accessoriesTable.id))
+      .where(eq(contractAccessoriesTable.contractId, contractId))
+      .orderBy(contractAccessoriesTable.id),
+    (a: { nome: string | null }) => a.nome,
+  );
 
   // Acessório é gravado 1 linha POR UNIDADE: agrupa para o cliente ler
   // "Capacete × 2" em vez de duas linhas iguais.
