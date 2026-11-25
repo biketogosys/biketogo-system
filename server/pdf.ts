@@ -338,6 +338,18 @@ export function conectorPeriodo(language: PdfLanguage): string {
   return PDF_LABELS[language].periodo;
 }
 
+/**
+ * "desconto de 9,09% aplicado", embaixo do subtotal da bike. Redondo sai sem
+ * casas. A vírgula só apareceu como problema com o primeiro desconto quebrado
+ * (2026-11-25, ~9% para fechar R$ 200,00): saía "9.09%" no contrato em português.
+ * Exportada para teste: o texto do PDF não é legível por extração.
+ */
+export function rotuloDesconto(pct: number, language: PdfLanguage): string {
+  const numero = String(Number(pct.toFixed(2)));
+  return PDF_LABELS[language].descontoAplicado
+    .replace("{pct}", language === "en" ? numero : numero.replace(".", ","));
+}
+
 async function fetchSetting(key: string, placeholder: string): Promise<string> {
   try {
     const { getSetting } = await import("./db");
@@ -662,6 +674,7 @@ export async function generateContractPdf(
 
       const modeloCol = cols.find((c) => c.k === "modelo")!;
       const subCol = cols.find((c) => c.k === "sub")!;
+      const diariaCol = cols.find((c) => c.k === "diaria")!;
       data.rentals.forEach((r, i) => {
         doc.fillColor(INK).font("Helvetica").fontSize(8);
         const modeloTxt = [r.bikeModel, r.bikeBrand].filter(Boolean).join(" ") || "—";
@@ -694,10 +707,18 @@ export async function generateContractPdf(
         cols.filter((c) => c.k !== "modelo").forEach((c) =>
           doc.text(single[c.k], c.x + 4, y + 3.5, { width: c.w - 8, align: c.a, lineBreak: false })
         );
-        // Desconto aplicado, logo abaixo do subtotal
+        // Desconto aplicado, logo abaixo do subtotal. A caixa vai da diária ao
+        // subtotal (2026-11-25): só na do subtotal, "desconto de 9,09% aplicado"
+        // quebrava e o "aplicado" caía fora da linha, em cima da bike seguinte.
+        // Com `width` o PDFKit quebra mesmo com `lineBreak: false` (é a armadilha
+        // do título do S17), então a fonte ainda diminui se um dia não couber.
         if (hasDiscount) {
-          doc.fillColor(GOLD).font("Helvetica").fontSize(6.5)
-            .text(L.descontoAplicado.replace("{pct}", String(pct % 1 === 0 ? pct.toFixed(0) : pct)), subCol.x + 4, y + 15, { width: subCol.w - 8, align: "right", lineBreak: false });
+          const rotulo = rotuloDesconto(pct, language);
+          const largura = subCol.x + subCol.w - diariaCol.x - 8;
+          doc.font("Helvetica").fontSize(6.5);
+          const tamanho = tamanhoParaCaber(doc.widthOfString(rotulo), largura, 6.5);
+          doc.fillColor(GOLD).fontSize(tamanho)
+            .text(rotulo, diariaCol.x + 4, y + 15, { width: largura, align: "right", lineBreak: false });
           doc.fillColor(INK).font("Helvetica").fontSize(8);
         }
         y += rowH;

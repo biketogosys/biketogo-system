@@ -4698,6 +4698,10 @@ const contractsRouter = router({
               endTime: b.endTime ?? null,
               totalAmount: b.totalAmount ?? null,
               dailyRate: b.dailyRate ?? null,
+              // Sem isto o desconto dado DEPOIS de assinar mudava o total e não
+              // aparecia no PDF, que lê o percentual daqui (pedido da dona,
+              // 2026-11-25). Vazio apaga: é como o desconto é retirado.
+              discountPercent: b.discountPercent ?? null,
             })
             .where(and(eq(rentalsTable.id, b.rentalId), isNull(rentalsTable.deletedAt)));
           // Re-ligar unidades físicas após atualizar datas (BU-3A / BU-PICK-BACK)
@@ -4718,6 +4722,7 @@ const contractsRouter = router({
             endTime: b.endTime ?? null,
             dailyRate: b.dailyRate ?? null,
             totalAmount: b.totalAmount ?? null,
+            discountPercent: b.discountPercent ?? null,
             paymentType: "presential",
             // Herda a situação do contrato, não "paid" fixo (2026-08-24): num
             // contrato ainda NÃO pago, a bike nova entrava marcada como paga e
