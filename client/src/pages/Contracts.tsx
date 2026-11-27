@@ -1216,6 +1216,11 @@ export function ContractDetail({
               <TableHeader>
                 <TableRow>
                   <TableHead>Acessório</TableHead>
+                  {/* O mesmo nº do PDF (pedido da dona, 2026-11-26: "tem como eles
+                      aparecerem no sistema pra mim?"). Já vinha da API e não era mostrado.
+                      No celular vai embaixo do nome: na coluna, ficava cortado na
+                      borda da tabela, que rola para o lado. */}
+                  <TableHead className="hidden sm:table-cell">Nº sistema</TableHead>
                   <TableHead>Qtd</TableHead>
                   <TableHead>Valor de Reposição</TableHead>
                   <TableHead>Condição</TableHead>
@@ -1230,9 +1235,17 @@ export function ContractDetail({
                     <TableRow key={acc.id}>
                       <TableCell className="font-medium text-sm">
                         {acc.accessoryName ?? `Acessório #${acc.accessoryId}`}
+                        {acc.serialNumber && (
+                          <p className="sm:hidden font-mono text-xs font-normal text-muted-foreground mt-0.5">
+                            Nº {acc.serialNumber}
+                          </p>
+                        )}
                         {acc.observacao && (
                           <p className="text-xs text-muted-foreground mt-0.5">{acc.observacao}</p>
                         )}
+                      </TableCell>
+                      <TableCell className="hidden sm:table-cell font-mono text-xs text-muted-foreground whitespace-nowrap">
+                        {acc.serialNumber ?? "—"}
                       </TableCell>
                       <TableCell>{acc.qty}</TableCell>
                       <TableCell className="text-sm">

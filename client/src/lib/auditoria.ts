@@ -48,6 +48,7 @@ export const ROTULO_ACAO: Record<string, string> = {
   overdue_automatico: "Marcou atraso (automático)",
   atualizou_bike: "Atualizou bike",
   renomeou_variante_acessorio: "Renomeou variante",
+  editou_codigo_acessorio: "Editou nº de sistema",
 };
 
 export function rotuloAcao(acao: string): string {
@@ -173,6 +174,13 @@ export function descreverAuditoria(log: AuditLogItem): string {
       const antes = (log.dadosAntes as any)?.variante ?? "Padrão";
       const unidades = d.unidades ? ` (${plural(Number(d.unidades), "unidade", "unidades")})` : "";
       return `Variante "${antes}" renomeada para "${d.variante}"${unidades}${d.juntou ? ", juntando com a variante que já existia" : ""}.`;
+    }
+
+    case "editou_codigo_acessorio": {
+      const antes = (log.dadosAntes as any)?.serialNumber;
+      return antes
+        ? `Nº de sistema "${antes}" trocado para "${d.serialNumber}".`
+        : `Unidade sem nº de sistema recebeu "${d.serialNumber}".`;
     }
 
     default:

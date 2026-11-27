@@ -44,6 +44,7 @@ import {
   ShieldOff,
   Wrench,
   Check,
+  X,
 } from "lucide-react";
 import { UnitStatusBadge, UNIT_STATUS_LABELS, type BikeUnitStatus } from "@/components/UnitStatusBadge";
 import { DataTable, DataTablePaginationBar } from "@/components/ui/data-table";
@@ -115,6 +116,80 @@ const emptyForm: AccessoryForm = {
   obrigatorio: false,
   notes: "",
 };
+
+/** "CAP-2" antes de "CAP-10": a ordem que se lê na etiqueta. */
+const ordemDoCodigo = new Intl.Collator("pt-BR", { numeric: true, sensitivity: "base" });
+
+/**
+ * Nº de sistema da unidade, editável no lugar (pedido da dona, 2026-11-26: o
+ * sistema gera "3 letras do nome + sequência" e ela quis poder trocar).
+ *
+ * É o MESMO componente em todo lugar do painel que mostra código: unidade livre,
+ * reservada, marcada como alugada sem contrato e fora de circulação. Assim não
+ * existe código que se vê e não se edita. Quem recusa repetido é o servidor.
+ */
+function CodigoDaUnidade({ unit, onSalvo }: {
+  unit: { id: number; serialNumber: string | null };
+  onSalvo: () => void;
+}) {
+  const [editando, setEditando] = useState(false);
+  const [valor, setValor] = useState("");
+  const utils = trpc.useUtils();
+  const salvar = trpc.accessories.updateUnitCode.useMutation({
+    onSuccess: () => {
+      setEditando(false);
+      onSalvo();
+      // A tela do contrato mostra o código da unidade: sem isto, um contrato
+      // aberto antes seguiria com o código velho em cache.
+      utils.contracts.getById.invalidate();
+      toast.success("Nº de sistema alterado.");
+    },
+    onError: (e) => toast.error(friendlyError(e, "Não foi possível alterar o nº de sistema.")),
+  });
+
+  if (!editando) {
+    return (
+      <button
+        type="button"
+        className="group inline-flex items-center gap-1 rounded px-1 -mx-1 font-mono text-xs text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+        title="Editar nº de sistema"
+        onClick={() => { setValor(unit.serialNumber ?? ""); setEditando(true); }}
+      >
+        {unit.serialNumber || "sem nº"}
+        <Pencil className="w-3 h-3 opacity-40 group-hover:opacity-100" aria-hidden />
+      </button>
+    );
+  }
+
+  return (
+    <form
+      className="inline-flex items-center gap-1"
+      onSubmit={(e) => { e.preventDefault(); salvar.mutate({ unitId: unit.id, serialNumber: valor }); }}
+    >
+      <Input
+        autoFocus
+        value={valor}
+        maxLength={50}
+        onChange={(e) => setValor(e.target.value)}
+        aria-label="Nº de sistema"
+        className="h-7 w-28 px-2 font-mono text-xs"
+      />
+      <Button
+        type="submit"
+        size="sm"
+        variant="ghost"
+        className="h-7 w-7 p-0 text-emerald-600 hover:text-emerald-500 dark:text-emerald-400"
+        disabled={salvar.isPending || !valor.trim()}
+        title="Salvar"
+      >
+        <Check className="w-3.5 h-3.5" />
+      </Button>
+      <Button type="button" size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => setEditando(false)} title="Cancelar">
+        <X className="w-3.5 h-3.5" />
+      </Button>
+    </form>
+  );
+}
 
 // ─── Accessory Units Panel (ACC-2: grouped by variante) ────────────────────────
 function AccessoryUnitsPanel({ accessoryId, onClose }: { accessoryId: number; onClose: () => void }) {
@@ -278,6 +353,12 @@ function AccessoryUnitsPanel({ accessoryId, onClose }: { accessoryId: number; on
               const fantasmas = varianteUnits.filter(
                 (u: any) => u.status === "alugado" && (u.reservas?.length ?? 0) === 0,
               );
+              // As livres, sem reserva e sem pendência, uma a uma com o código
+              // (2026-11-26). Antes viravam só "N unidades no estoque" e o código
+              // delas não aparecia em tela nenhuma.
+              const livres = varianteUnits
+                .filter((u: any) => u.status === "disponivel" && (u.reservas?.length ?? 0) === 0)
+                .sort((a: any, b: any) => ordemDoCodigo.compare(a.serialNumber ?? "", b.serialNumber ?? ""));
 
               // Uma entrada por situação, na ordem de leitura da Cassiana:
               // o que dá pra alugar hoje primeiro, problema por último.
@@ -534,6 +615,13 @@ function AccessoryUnitsPanel({ accessoryId, onClose }: { accessoryId: number; on
                       {disponivel > 0 && (
                         <p className="text-xs text-muted-foreground">{disponivel} unidade{disponivel !== 1 ? "s" : ""} no estoque</p>
                       )}
+                      {livres.length > 0 && (
+                        <div className="flex flex-wrap gap-x-3 gap-y-1.5">
+                          {livres.map((u: any) => (
+                            <CodigoDaUnidade key={u.id} unit={u} onSalvo={invalidate} />
+                          ))}
+                        </div>
+                      )}
 
                       {/* Onde a unidade está comprometida. Pedido da Cassiana
                           (2026-07-29): "não consigo ver onde ele ta alugado".
@@ -542,7 +630,7 @@ function AccessoryUnitsPanel({ accessoryId, onClose }: { accessoryId: number; on
                       {varianteUnits.filter((u: any) => (u.reservas?.length ?? 0) > 0).map((u: any) => (
                         <div key={`res-${u.id}`} className="rounded-md border border-border bg-card px-3 py-2 space-y-1">
                           <div className="flex items-center gap-2 flex-wrap">
-                            {u.serialNumber && <span className="text-xs font-mono text-muted-foreground">{u.serialNumber}</span>}
+                            <CodigoDaUnidade unit={u} onSalvo={invalidate} />
                             <span className={`inline-flex items-center rounded-md border px-1.5 py-0.5 text-[10px] font-medium ${
                               u.emUsoHoje
                                 ? "bg-amber-500/20 text-amber-600 border-amber-500/30 dark:text-amber-400"
@@ -567,8 +655,8 @@ function AccessoryUnitsPanel({ accessoryId, onClose }: { accessoryId: number; on
                           reservar marcava status. Deixa ela resolver na hora. */}
                       {fantasmas.map((u: any) => (
                         <div key={`fant-${u.id}`} className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 flex items-center justify-between gap-2 flex-wrap">
-                          <div className="min-w-0">
-                            {u.serialNumber && <span className="text-xs font-mono text-muted-foreground mr-2">{u.serialNumber}</span>}
+                          <div className="min-w-0 flex items-center gap-2 flex-wrap">
+                            <CodigoDaUnidade unit={u} onSalvo={invalidate} />
                             <span className="text-xs text-amber-700 dark:text-amber-300">
                               Marcada como alugada, mas nenhum contrato ativo usa esta unidade.
                             </span>
@@ -590,9 +678,7 @@ function AccessoryUnitsPanel({ accessoryId, onClose }: { accessoryId: number; on
                         <div key={unit.id} className="border border-border rounded-md overflow-hidden bg-card">
                           <div className="flex items-center justify-between px-3 py-2">
                             <div className="flex items-center gap-2 flex-wrap">
-                              {unit.serialNumber && (
-                                <span className="text-xs font-mono text-muted-foreground">{unit.serialNumber}</span>
-                              )}
+                              <CodigoDaUnidade unit={unit} onSalvo={invalidate} />
                               <UnitStatusBadge status={unit.status as UnitStatus} />
                               {unit.observacao && (
                                 <span className="text-xs text-muted-foreground italic">{unit.observacao}</span>

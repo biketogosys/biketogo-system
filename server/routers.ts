@@ -1671,6 +1671,53 @@ const accessoriesRouter = router({
       return { success: true };
     }),
 
+  /**
+   * Código (nº de sistema) da unidade, editado pela loja (2026-11-26). O gerador
+   * faz "3 letras do nome + sequência", e a dona quis poder trocar.
+   *
+   * Não repete dentro do MESMO acessório (maiúscula e espaço não contam): dois
+   * "CAP-020" no mesmo contrato tornariam impossível conferir a devolução. Entre
+   * acessórios diferentes pode, porque o próprio gerador já faz isso (os dois
+   * faróis saem FAR-001). O PDF já gerado guarda o código antigo até "Gerar PDF".
+   */
+  updateUnitCode: adminAuthProcedure
+    .input(z.object({
+      unitId: z.number(),
+      serialNumber: z.string().trim().min(1, "Informe o código.").max(50, "Use no máximo 50 caracteres."),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const { accessoryUnits } = await import("../drizzle/schema");
+      const db = await (await import("./db")).getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      const [unidade] = await db.select().from(accessoryUnits).where(eq(accessoryUnits.id, input.unitId));
+      if (!unidade) throw new TRPCError({ code: "NOT_FOUND", message: "Unidade não encontrada." });
+
+      const [repetida] = await db.select({ id: accessoryUnits.id }).from(accessoryUnits).where(and(
+        eq(accessoryUnits.accessoryId, unidade.accessoryId),
+        drizzleSql`${accessoryUnits.id} <> ${unidade.id}`,
+        drizzleSql`lower(trim(${accessoryUnits.serialNumber})) = lower(${input.serialNumber})`,
+      )).limit(1);
+      if (repetida) {
+        throw new TRPCError({
+          code: "CONFLICT",
+          message: `Já existe outra unidade deste acessório com o código ${input.serialNumber}.`,
+        });
+      }
+
+      await db.update(accessoryUnits)
+        .set({ serialNumber: input.serialNumber })
+        .where(eq(accessoryUnits.id, unidade.id));
+      await createAuditLog({
+        adminId: (ctx as any).adminUser?.id ?? null,
+        acao: "editou_codigo_acessorio",
+        tabela: "accessories",
+        registroId: unidade.accessoryId,
+        dadosAntes: { serialNumber: unidade.serialNumber },
+        dadosDepois: { serialNumber: input.serialNumber, unitId: unidade.id },
+      });
+      return { success: true };
+    }),
+
   deleteUnit: adminAuthProcedure
     .input(z.object({ unitId: z.number() }))
     .mutation(async ({ input }) => {

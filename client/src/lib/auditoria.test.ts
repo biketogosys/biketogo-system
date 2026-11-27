@@ -18,6 +18,18 @@ describe("descreverAuditoria", () => {
     expect(rotuloAcao("renomeou_variante_acessorio")).toBe("Renomeou variante");
   });
 
+  it("nº de sistema do acessório editado: o código de antes e o de depois (2026-11-26)", () => {
+    const item: AuditLogItem = {
+      ...log("editou_codigo_acessorio", { serialNumber: "CAP-020", unitId: 31 }),
+      tabela: "accessories",
+      dadosAntes: { serialNumber: "CAP-001" },
+    } as AuditLogItem;
+    expect(descreverAuditoria(item)).toBe('Nº de sistema "CAP-001" trocado para "CAP-020".');
+    expect(rotuloAcao("editou_codigo_acessorio")).toBe("Editou nº de sistema");
+    expect(descreverAuditoria({ ...item, dadosAntes: { serialNumber: null } }))
+      .toBe('Unidade sem nº de sistema recebeu "CAP-020".');
+  });
+
   it("contrato criado: conta bikes, acessórios e o desconto com o motivo", () => {
     expect(descreverAuditoria(log("criou_contrato_manual", {
       clientId: 1, bikes: 2, accessories: 3,
